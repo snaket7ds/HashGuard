@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+
+# Local app data
+config/
+logs/
+updates/
+*.log
+
+# User/editor files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Generated installer/update leftovers
+*.bak
+*.bak-*
+*.update-bak
+*.new
+
+# Generated release artifacts
+dist/HashGuard.exe
+dist/HashGuard-*-win-x64.tar.gz

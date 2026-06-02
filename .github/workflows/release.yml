@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish
+        run: dotnet publish HashGuardScanner.csproj -c Release -r win-x64 --self-contained true
+
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $publishDir = "bin/Release/net8.0-windows/win-x64/publish"
+          $hash = (Get-FileHash "$publishDir/HashGuard.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  HashGuard.exe" | Out-File "$publishDir/HashGuard.exe.sha256" -Encoding ascii -NoNewline
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: |
+            bin/Release/net8.0-windows/win-x64/publish/HashGuard.exe
+            bin/Release/net8.0-windows/win-x64/publish/HashGuard.exe.sha256
