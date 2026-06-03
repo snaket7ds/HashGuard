@@ -3,6 +3,7 @@ using System.Drawing;
 using System.IO.Pipes;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Runtime.InteropServices;
@@ -62,6 +63,7 @@ public sealed class MainForm : Form
     private readonly CheckBox startMinimizedBox = new() { Text = "Start minimized to tray", AutoSize = true };
     private readonly CheckBox autoProcessScanBox = new() { Text = "Scan automatically at startup", AutoSize = true, Checked = true };
     private readonly CheckBox runElevatedBox = new() { Text = "Run Elevated (Windows UAC permissions)", AutoSize = true };
+    private readonly CheckBox scanAllFilesBox = new() { Text = "Scan files I open or select", AutoSize = true };
     private readonly CheckBox uploadUnknownBox = new() { Text = "Upload files missing from VirusTotal", AutoSize = true };
     private readonly CheckBox virusTotalEnabledBox = new() { Text = "Use VirusTotal", AutoSize = true, Checked = true };
     private readonly CheckBox metaDefenderEnabledBox = new() { Text = "Use MetaDefender Cloud", AutoSize = true, Checked = true };
@@ -92,8 +94,14 @@ public sealed class MainForm : Form
     private readonly QuotaTracker quotaTracker = new();
     private readonly HashSet<string> ignoredHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ProcessFileState> monitoredProcessFiles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<string> allFileScanQueue = new();
+    private readonly HashSet<string> queuedAllFileScanPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<FileSystemWatcher> allFileWatchers = [];
+    private readonly Dictionary<string, ProcessFileState> userTouchedFileScanStates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object allFileScanLock = new();
     private readonly System.Windows.Forms.Timer processMonitorTimer = new() { Interval = 5000 };
     private readonly System.Windows.Forms.Timer updateCheckTimer = new() { Interval = 60000 };
+    private readonly System.Windows.Forms.Timer allFileScanTimer = new() { Interval = 15000 };
     private readonly string? startupScanFile;
     private readonly bool startupMinimized;
     private readonly int closedOlderInstances;
@@ -103,10 +111,75 @@ public sealed class MainForm : Form
     private bool processMonitorScanRunning;
     private bool trayRunningNotificationShown;
     private bool uploadWarningShown;
+    private bool scanAllFilesWarningShown;
     private bool exitRequested;
     private bool suppressSettingEvents;
     private bool updateCheckRunning;
+    private bool allFileScanRunning;
+    private bool processBaselineReady;
     private string lastAutoPromptedUpdateVersion = "";
+    private string lastSkippedProcessLogSignature = "";
+    private const int MaxAllFileScanQueueSize = 200;
+    private static readonly HashSet<string> SensitiveFileScanExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".3fr",
+        ".3g2",
+        ".3gp",
+        ".aif",
+        ".aiff",
+        ".arw",
+        ".avi",
+        ".bmp",
+        ".cr2",
+        ".cr3",
+        ".crw",
+        ".dcr",
+        ".dng",
+        ".erf",
+        ".flac",
+        ".flv",
+        ".gif",
+        ".heic",
+        ".heif",
+        ".iiq",
+        ".jpeg",
+        ".jpg",
+        ".k25",
+        ".kdc",
+        ".m2ts",
+        ".m4a",
+        ".m4v",
+        ".mef",
+        ".mkv",
+        ".mos",
+        ".mov",
+        ".mp3",
+        ".mp4",
+        ".mpeg",
+        ".mpg",
+        ".mrw",
+        ".mts",
+        ".nef",
+        ".nrw",
+        ".ogg",
+        ".orf",
+        ".pef",
+        ".png",
+        ".raf",
+        ".raw",
+        ".rw2",
+        ".rwl",
+        ".sr2",
+        ".srf",
+        ".tif",
+        ".tiff",
+        ".wav",
+        ".webm",
+        ".webp",
+        ".wma",
+        ".wmv",
+        ".x3f",
+    };
 
     private static string GetCurrentVersion()
     {
@@ -141,6 +214,7 @@ public sealed class MainForm : Form
 
         scanButton.Click += async (_, _) => await StartScanAsync();
         processMonitorTimer.Tick += async (_, _) => await ScanNewProcessFilesAsync();
+        allFileScanTimer.Tick += async (_, _) => await ScanQueuedAllFileAsync();
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
         settingsButton.Click += (_, _) => ShowSettingsDialog();
@@ -149,6 +223,7 @@ public sealed class MainForm : Form
         startWithWindowsBox.CheckedChanged += (_, _) => StartWithWindowsPreferenceChanged();
         startMinimizedBox.CheckedChanged += (_, _) => SaveCurrentAppSettings();
         autoProcessScanBox.CheckedChanged += (_, _) => SaveCurrentAppSettings();
+        scanAllFilesBox.CheckedChanged += (_, _) => ScanAllFilesPreferenceChanged();
         autoUpdateChecksBox.CheckedChanged += (_, _) =>
         {
             SaveCurrentAppSettings();
@@ -156,7 +231,11 @@ public sealed class MainForm : Form
         };
         Resize += (_, _) => MinimizeToTrayIfNeeded();
         FormClosing += (_, e) => CloseToTrayUnlessExiting(e);
-        FormClosed += (_, _) => scanPipeCancellation.Cancel();
+        FormClosed += (_, _) =>
+        {
+            scanPipeCancellation.Cancel();
+            StopAllFileWatchers();
+        };
         Shown += async (_, _) =>
         {
             if (startupScanFile is not null)
@@ -186,6 +265,7 @@ public sealed class MainForm : Form
             }
         };
         UpdateAutomaticUpdateTimer();
+        UpdateAllFileScanner();
         _ = ListenForScanRequestsAsync(scanPipeCancellation.Token);
     }
 
@@ -498,14 +578,14 @@ public sealed class MainForm : Form
 
     private IEnumerable<string> GetEnabledReputationProviders()
     {
-        if (virusTotalEnabledBox.Checked)
-        {
-            yield return "VT";
-        }
-
         if (metaDefenderEnabledBox.Checked)
         {
             yield return "MetaDefender";
+        }
+
+        if (virusTotalEnabledBox.Checked)
+        {
+            yield return "VT";
         }
 
         if (mhrEnabledBox.Checked)
@@ -654,7 +734,7 @@ public sealed class MainForm : Form
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
             MinimizeBox = false,
-            ClientSize = new Size(720, 540),
+            ClientSize = new Size(720, 620),
         };
 
         var vtEnabled = new CheckBox { Text = "Enable VirusTotal", Checked = virusTotalEnabledBox.Checked, AutoSize = true };
@@ -668,6 +748,7 @@ public sealed class MainForm : Form
         var startMinimized = new CheckBox { Text = "Start minimized to tray", Checked = startMinimizedBox.Checked, AutoSize = true };
         var autoProcessScan = new CheckBox { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
         var runElevated = new CheckBox { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
+        var scanAllFiles = new CheckBox { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
         var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
         var uploadUnknown = new CheckBox { Text = "Upload files missing from VirusTotal", Checked = uploadUnknownBox.Checked, AutoSize = true };
@@ -676,24 +757,29 @@ public sealed class MainForm : Form
         var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
 
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        dialog.Controls.Add(root);
+
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(18), AutoScroll = true };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        dialog.Controls.Add(layout);
+        root.Controls.Add(layout, 0, 0);
 
         layout.Controls.Add(SectionLabel("Hash Scanners"), 1, 0);
-        layout.Controls.Add(vtEnabled, 1, 1);
-        layout.Controls.Add(new Label { Text = "VirusTotal API key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
-        layout.Controls.Add(apiKey, 1, 2);
-        layout.Controls.Add(freeLimit, 1, 3);
-        layout.Controls.Add(uploadUnknown, 1, 4);
-        layout.Controls.Add(new Label { Text = "VT delay per request", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
-        layout.Controls.Add(delay, 1, 5);
-        layout.Controls.Add(new Label { Text = "VT timeout", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 6);
-        layout.Controls.Add(timeout, 1, 6);
-        layout.Controls.Add(mdEnabled, 1, 7);
-        layout.Controls.Add(new Label { Text = "MetaDefender API key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 8);
-        layout.Controls.Add(metaDefenderApiKey, 1, 8);
+        layout.Controls.Add(mdEnabled, 1, 1);
+        layout.Controls.Add(new Label { Text = "MetaDefender API key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
+        layout.Controls.Add(metaDefenderApiKey, 1, 2);
+        layout.Controls.Add(vtEnabled, 1, 3);
+        layout.Controls.Add(new Label { Text = "VirusTotal API key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
+        layout.Controls.Add(apiKey, 1, 4);
+        layout.Controls.Add(freeLimit, 1, 5);
+        layout.Controls.Add(uploadUnknown, 1, 6);
+        layout.Controls.Add(new Label { Text = "VirusTotal delay per request", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 7);
+        layout.Controls.Add(delay, 1, 7);
+        layout.Controls.Add(new Label { Text = "VirusTotal timeout", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 8);
+        layout.Controls.Add(timeout, 1, 8);
         layout.Controls.Add(mhrEnabled, 1, 9);
         layout.Controls.Add(SectionLabel("App Settings"), 1, 10);
         layout.Controls.Add(hashCache, 1, 11);
@@ -702,13 +788,20 @@ public sealed class MainForm : Form
         layout.Controls.Add(startMinimized, 1, 14);
         layout.Controls.Add(autoProcessScan, 1, 15);
         layout.Controls.Add(runElevated, 1, 16);
-        layout.Controls.Add(autoUpdates, 1, 17);
-        layout.Controls.Add(new Label { Text = $"HashGuard version {CurrentVersion}", AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9, FontStyle.Bold) }, 1, 18);
+        layout.Controls.Add(scanAllFiles, 1, 17);
+        layout.Controls.Add(autoUpdates, 1, 18);
+        layout.Controls.Add(new Label { Text = $"HashGuard version {CurrentVersion}", AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9, FontStyle.Bold) }, 1, 19);
 
-        var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill };
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.RightToLeft,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(18, 8, 18, 14),
+        };
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
-        layout.Controls.Add(buttons, 1, 19);
+        root.Controls.Add(buttons, 0, 1);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
 
@@ -725,22 +818,23 @@ public sealed class MainForm : Form
         metaDefenderEnabledBox.Checked = mdEnabled.Checked;
         mhrEnabledBox.Checked = mhrEnabled.Checked;
         freeApiLimitBox.Checked = freeLimit.Checked;
-        if (uploadUnknown.Checked && !uploadUnknownBox.Checked && !ConfirmVirusTotalUploads())
-        {
-            uploadUnknown.Checked = false;
-        }
-
-        uploadUnknownBox.Checked = uploadUnknown.Checked;
+        uploadUnknownBox.Checked = uploadUnknown.Checked && !scanAllFiles.Checked && EnableVirusTotalUploadsWithWarning();
         hashCacheEnabledBox.Checked = hashCache.Checked;
         rightClickScanBox.Checked = rightClickScan.Checked;
         startWithWindowsBox.Checked = startWithWindows.Checked;
         startMinimizedBox.Checked = startMinimized.Checked;
         autoProcessScanBox.Checked = autoProcessScan.Checked;
         runElevatedBox.Checked = runElevated.Checked;
+        scanAllFilesBox.Checked = scanAllFiles.Checked && EnableAllFileScanningWithWarning();
+        if (scanAllFilesBox.Checked)
+        {
+            DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
+        }
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
         UpdateReputationTile();
         UpdateHashCacheTile();
         UpdateAutomaticUpdateTimer();
+        UpdateAllFileScanner();
         SaveCurrentAppSettings();
     }
 
@@ -823,9 +917,11 @@ public sealed class MainForm : Form
 
         try
         {
-            var grouped = CollectProcessFiles();
+            var processCollection = CollectProcessFiles();
+            var grouped = processCollection.Files;
             var paths = grouped.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToList();
             RefreshMonitoredProcessFiles(grouped.Keys);
+            AddSkippedProcessLogIfNeeded(processCollection, force: true);
 
             totalCount = paths.Count;
             progressBar.Maximum = Math.Max(paths.Count, 1);
@@ -925,6 +1021,7 @@ public sealed class MainForm : Form
             scanButton.Enabled = true;
             if (completedScan)
             {
+                processBaselineReady = true;
                 processMonitorTimer.Start();
             }
         }
@@ -937,12 +1034,14 @@ public sealed class MainForm : Form
             return;
         }
 
-        var grouped = CollectProcessFiles();
+        var processCollection = CollectProcessFiles();
+        var grouped = processCollection.Files;
         var newPaths = grouped.Keys
             .Where(ShouldMonitorScanPath)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
         RefreshMonitoredProcessFiles(grouped.Keys);
+        AddSkippedProcessLogIfNeeded(processCollection, force: false);
 
         if (newPaths.Count == 0)
         {
@@ -1055,6 +1154,373 @@ public sealed class MainForm : Form
         }
     }
 
+    private void UpdateAllFileScanner()
+    {
+        if (scanAllFilesBox.Checked)
+        {
+            StartAllFileWatchers();
+            QueueExplorerSelectedFiles();
+            allFileScanTimer.Start();
+            return;
+        }
+
+        allFileScanTimer.Stop();
+        StopAllFileWatchers();
+        lock (allFileScanLock)
+        {
+            allFileScanQueue.Clear();
+            queuedAllFileScanPaths.Clear();
+            userTouchedFileScanStates.Clear();
+        }
+    }
+
+    private void StartAllFileWatchers()
+    {
+        if (allFileWatchers.Count > 0)
+        {
+            return;
+        }
+
+        var recentPath = Environment.GetFolderPath(Environment.SpecialFolder.Recent);
+        if (string.IsNullOrWhiteSpace(recentPath) || !Directory.Exists(recentPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var watcher = new FileSystemWatcher(recentPath, "*.lnk")
+            {
+                IncludeSubdirectories = false,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                InternalBufferSize = 16 * 1024,
+            };
+            watcher.Created += (_, e) => QueueRecentShortcutTarget(e.FullPath);
+            watcher.Changed += (_, e) => QueueRecentShortcutTarget(e.FullPath);
+            watcher.Renamed += (_, e) => QueueRecentShortcutTarget(e.FullPath);
+            watcher.Error += (_, _) => BeginInvoke(() => statusLabel.Text = "Recent-file watcher missed activity. It will continue with new events.");
+            watcher.EnableRaisingEvents = true;
+            allFileWatchers.Add(watcher);
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = $"Could not watch recent files: {ex.Message}";
+        }
+    }
+
+    private void StopAllFileWatchers()
+    {
+        foreach (var watcher in allFileWatchers)
+        {
+            try
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
+            catch
+            {
+                // Watcher cleanup is best-effort during shutdown/settings changes.
+            }
+        }
+
+        allFileWatchers.Clear();
+    }
+
+    private void QueueAllFileScan(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        if (!ShouldQueueActiveFileScan(path))
+        {
+            return;
+        }
+
+        if (!TryGetProcessFileState(path, out var currentState))
+        {
+            return;
+        }
+
+        lock (allFileScanLock)
+        {
+            if (queuedAllFileScanPaths.Contains(path) || queuedAllFileScanPaths.Count >= MaxAllFileScanQueueSize)
+            {
+                return;
+            }
+
+            if (userTouchedFileScanStates.TryGetValue(path, out var previousState) &&
+                currentState.Equals(previousState))
+            {
+                return;
+            }
+
+            userTouchedFileScanStates[path] = currentState;
+            queuedAllFileScanPaths.Add(path);
+            allFileScanQueue.Enqueue(path);
+        }
+    }
+
+    private void QueueRecentShortcutTarget(string shortcutPath)
+    {
+        var targetPath = ResolveShortcutTarget(shortcutPath);
+        if (!string.IsNullOrWhiteSpace(targetPath))
+        {
+            QueueAllFileScan(targetPath);
+        }
+    }
+
+    private static string? ResolveShortcutTarget(string shortcutPath)
+    {
+        try
+        {
+            var shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType is null)
+            {
+                return null;
+            }
+
+            dynamic shell = Activator.CreateInstance(shellType)!;
+            dynamic shortcut = shell.CreateShortcut(shortcutPath);
+            string? targetPath = shortcut.TargetPath;
+            return targetPath;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void QueueExplorerSelectedFiles()
+    {
+        foreach (var path in GetExplorerSelectedFilePaths())
+        {
+            QueueAllFileScan(path);
+        }
+    }
+
+    private static IEnumerable<string> GetExplorerSelectedFilePaths()
+    {
+        var shellType = Type.GetTypeFromProgID("Shell.Application");
+        if (shellType is null)
+        {
+            yield break;
+        }
+
+        dynamic? shell = null;
+        try
+        {
+            shell = Activator.CreateInstance(shellType);
+        }
+        catch
+        {
+            yield break;
+        }
+
+        if (shell is null)
+        {
+            yield break;
+        }
+
+        dynamic windows;
+        try
+        {
+            windows = shell.Windows();
+        }
+        catch
+        {
+            yield break;
+        }
+
+        foreach (var window in windows)
+        {
+            if (!IsExplorerWindow(window))
+            {
+                continue;
+            }
+
+            foreach (var path in GetExplorerWindowFilePaths(window))
+            {
+                yield return path;
+            }
+        }
+    }
+
+    private static bool IsExplorerWindow(dynamic window)
+    {
+        try
+        {
+            var fullName = (string?)window.FullName;
+            return !string.IsNullOrWhiteSpace(fullName) &&
+                string.Equals(Path.GetFileName(fullName), "explorer.exe", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static IEnumerable<string> GetExplorerWindowFilePaths(dynamic window)
+    {
+        dynamic document;
+        try
+        {
+            document = window.Document;
+        }
+        catch
+        {
+            yield break;
+        }
+
+        var yieldedSelected = false;
+        dynamic selectedItems;
+        try
+        {
+            selectedItems = document.SelectedItems();
+        }
+        catch
+        {
+            selectedItems = null!;
+        }
+
+        if (selectedItems is not null)
+        {
+            foreach (var item in selectedItems)
+            {
+                string? path = TryGetShellItemPath(item);
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    yieldedSelected = true;
+                    yield return path;
+                }
+            }
+        }
+
+        if (yieldedSelected)
+        {
+            yield break;
+        }
+
+        string? focusedPath;
+        try
+        {
+            focusedPath = TryGetShellItemPath(document.FocusedItem);
+        }
+        catch
+        {
+            yield break;
+        }
+
+        if (!string.IsNullOrWhiteSpace(focusedPath))
+        {
+            yield return focusedPath;
+        }
+    }
+
+    private static string? TryGetShellItemPath(dynamic item)
+    {
+        try
+        {
+            string? path = item.Path;
+            return path;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task ScanQueuedAllFileAsync()
+    {
+        if (!scanAllFilesBox.Checked || !processBaselineReady || scanCancellation is not null || processMonitorScanRunning || allFileScanRunning)
+        {
+            return;
+        }
+
+        QueueExplorerSelectedFiles();
+
+        string? path = null;
+        lock (allFileScanLock)
+        {
+            while (allFileScanQueue.Count > 0)
+            {
+                var candidate = allFileScanQueue.Dequeue();
+                queuedAllFileScanPaths.Remove(candidate);
+                if (File.Exists(candidate))
+                {
+                    path = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        allFileScanRunning = true;
+        statusLabel.Text = $"Idle file scan: {path}";
+        SetDashboardState("Scanning", "Process monitoring is idle. Checking file activity.", false);
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds((int)timeoutBox.Value) };
+            var apiKey = apiKeyBox.Text.Trim();
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                http.DefaultRequestHeaders.Add("x-apikey", apiKey);
+            }
+
+            await hashCache.LoadAsync();
+            hashCache.ImportScanLogs(GetLogDirectories());
+            await quotaTracker.LoadAsync();
+
+            var result = await ScanPathAsync(
+                http,
+                path,
+                [new ProcessFile(0, "File activity", path)],
+                allowVirusTotalUploads: false);
+            results.Add(result);
+            AddResultRow(result);
+            UpdateSummary();
+
+            int queued;
+            lock (allFileScanLock)
+            {
+                queued = allFileScanQueue.Count;
+            }
+
+            statusLabel.Text = $"Idle file scan complete. {queued} queued file(s).";
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = $"Idle file scan failed: {ex.Message}";
+            AddResultRow(new ScanResult(path, "File activity", "")
+            {
+                Status = "error",
+                Notes = $"Idle file scan failed: {ex.Message}",
+            });
+            UpdateSummary();
+        }
+        finally
+        {
+            allFileScanRunning = false;
+        }
+    }
+
+    private static bool ShouldQueueActiveFileScan(string path)
+    {
+        try
+        {
+            return File.Exists(path) && !SensitiveFileScanExcludedExtensions.Contains(Path.GetExtension(path));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static string FormatCentralTime(DateTimeOffset timestamp)
     {
         try
@@ -1085,7 +1551,7 @@ public sealed class MainForm : Form
         {
             try
             {
-                await using var pipe = new NamedPipeServerStream(ScanPipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                await using var pipe = CreateScanRequestPipe();
                 await pipe.WaitForConnectionAsync(cancellationToken);
                 using var reader = new StreamReader(pipe, Encoding.UTF8);
                 var path = await reader.ReadLineAsync(cancellationToken);
@@ -1107,6 +1573,29 @@ public sealed class MainForm : Form
                 await Task.Delay(1000, cancellationToken);
             }
         }
+    }
+
+    private static NamedPipeServerStream CreateScanRequestPipe()
+    {
+        var pipeSecurity = new PipeSecurity();
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            WindowsIdentity.GetCurrent().User!,
+            PipeAccessRights.FullControl,
+            AccessControlType.Allow));
+        pipeSecurity.AddAccessRule(new PipeAccessRule(
+            new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            PipeAccessRights.Write,
+            AccessControlType.Allow));
+
+        return NamedPipeServerStreamAcl.Create(
+            ScanPipeName,
+            PipeDirection.In,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous,
+            0,
+            0,
+            pipeSecurity);
     }
 
     private async Task ScanSingleFileAsync(string path)
@@ -1177,9 +1666,69 @@ public sealed class MainForm : Form
         }
     }
 
-    private static Dictionary<string, List<ProcessFile>> CollectProcessFiles()
+    private void AddSkippedProcessLogIfNeeded(ProcessCollectionResult processCollection, bool force)
+    {
+        if (processCollection.Skipped.Count == 0)
+        {
+            return;
+        }
+
+        var signature = string.Join("|", processCollection.Skipped
+            .OrderBy(process => process.Pid)
+            .ThenBy(process => process.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(process => $"{process.Pid}:{process.Name}"));
+        if (!force && string.Equals(signature, lastSkippedProcessLogSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lastSkippedProcessLogSignature = signature;
+        var result = CreateSkippedProcessResult(processCollection.Skipped);
+        results.Add(result);
+        AddResultRow(result);
+        UpdateSummary();
+    }
+
+    private static ScanResult CreateSkippedProcessResult(IReadOnlyList<SkippedProcess> skippedProcesses)
+    {
+        const int displayLimit = 20;
+        var names = skippedProcesses
+            .Select(process => process.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Take(displayLimit)
+            .ToList();
+        var pids = skippedProcesses
+            .Select(process => process.Pid)
+            .Where(pid => pid > 0)
+            .Distinct()
+            .OrderBy(pid => pid)
+            .Take(displayLimit)
+            .Select(pid => pid.ToString())
+            .ToList();
+        var skippedList = skippedProcesses
+            .OrderBy(process => process.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(process => process.Pid)
+            .Take(displayLimit)
+            .Select(process => $"{process.Name} ({process.Pid})")
+            .ToList();
+        var remaining = skippedProcesses.Count - skippedList.Count;
+        var skippedText = skippedList.Count == 0
+            ? ""
+            : $" Skipped: {string.Join("; ", skippedList)}{(remaining > 0 ? $"; +{remaining} more" : "")}.";
+
+        return new ScanResult("", string.Join(", ", names), string.Join(", ", pids))
+        {
+            Status = "limited access",
+            Notes = $"Windows protected {skippedProcesses.Count} running process(es) from inspection, or the process exited during collection. This is not a threat by itself. Run HashGuard elevated for more complete coverage, though some protected system/security processes may still be blocked.{skippedText}",
+        };
+    }
+
+    private static ProcessCollectionResult CollectProcessFiles()
     {
         var grouped = new Dictionary<string, List<ProcessFile>>(StringComparer.OrdinalIgnoreCase);
+        var skipped = new List<SkippedProcess>();
         foreach (var process in Process.GetProcesses())
         {
             try
@@ -1199,13 +1748,45 @@ public sealed class MainForm : Form
 
                 files.Add(new ProcessFile(process.Id, process.ProcessName, path));
             }
-            catch
+            catch (Exception ex)
             {
-                // Protected or short-lived processes may not expose MainModule.
+                skipped.Add(GetSkippedProcess(process, ex));
+            }
+            finally
+            {
+                process.Dispose();
             }
         }
 
-        return grouped;
+        return new ProcessCollectionResult(grouped, skipped);
+    }
+
+    private static SkippedProcess GetSkippedProcess(Process process, Exception ex)
+    {
+        var pid = 0;
+        var name = "Unknown process";
+        try
+        {
+            pid = process.Id;
+        }
+        catch
+        {
+            // Process metadata is best-effort after collection failures.
+        }
+
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(process.ProcessName))
+            {
+                name = process.ProcessName;
+            }
+        }
+        catch
+        {
+            // Process metadata is best-effort after collection failures.
+        }
+
+        return new SkippedProcess(pid, name, ex.GetType().Name);
     }
 
     private async Task CheckForUpdatesAsync(bool automatic = false)
@@ -1497,7 +2078,12 @@ public sealed class MainForm : Form
         return $"Could not {action}. {note}{detailText}";
     }
 
-    private async Task<ScanResult> ScanPathAsync(HttpClient http, string path, List<ProcessFile> processFiles, CancellationToken cancellationToken = default)
+    private async Task<ScanResult> ScanPathAsync(
+        HttpClient http,
+        string path,
+        List<ProcessFile> processFiles,
+        CancellationToken cancellationToken = default,
+        bool allowVirusTotalUploads = true)
     {
         var names = string.Join(", ", processFiles.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n));
         var pids = string.Join(", ", processFiles.Select(p => p.Pid).OrderBy(pid => pid));
@@ -1530,16 +2116,16 @@ public sealed class MainForm : Form
             }
 
             var checkedAnyService = false;
-            if (virusTotalEnabledBox.Checked)
-            {
-                checkedAnyService = true;
-                await ApplyVirusTotalReportAsync(http, result, path, cancellationToken);
-            }
-
             if (metaDefenderEnabledBox.Checked)
             {
                 checkedAnyService = true;
                 await ApplyMetaDefenderReportAsync(result, cancellationToken);
+            }
+
+            if (virusTotalEnabledBox.Checked)
+            {
+                checkedAnyService = true;
+                await ApplyVirusTotalReportAsync(http, result, path, allowVirusTotalUploads, cancellationToken);
             }
 
             if (mhrEnabledBox.Checked)
@@ -1584,23 +2170,37 @@ public sealed class MainForm : Form
         return ex.Message;
     }
 
-    private async Task ApplyVirusTotalReportAsync(HttpClient http, ScanResult result, string path, CancellationToken cancellationToken)
+    private async Task ApplyVirusTotalReportAsync(HttpClient http, ScanResult result, string path, bool allowUploads, CancellationToken cancellationToken)
     {
         try
         {
             EnsureVirusTotalApiKey(http);
-            await WaitForQuotaAsync("VirusTotal file report", cancellationToken);
+            if (!await TryReserveVirusTotalQuotaAsync(result))
+            {
+                return;
+            }
+
             using var reportResponse = await http.GetAsync(string.Format(FileReportUrl, result.Sha256), cancellationToken);
             if (reportResponse.StatusCode == HttpStatusCode.NotFound)
             {
                 result.Status = "unknown";
                 AppendResultNote(result, "VirusTotal: hash not found.");
-                if (uploadUnknownBox.Checked)
+                if (uploadUnknownBox.Checked && allowUploads)
                 {
-                    var analysisId = await UploadFileAsync(http, path, cancellationToken);
+                    AppendResultNote(result, "VirusTotal: uploading unknown file for analysis.");
+                    var analysisId = await UploadFileAsync(http, path, result, cancellationToken);
+                    if (string.IsNullOrWhiteSpace(analysisId))
+                    {
+                        return;
+                    }
+
                     result.Status = "uploaded";
                     AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
                     await PollAnalysisAsync(http, analysisId, result, path, cancellationToken);
+                }
+                else if (uploadUnknownBox.Checked && !allowUploads)
+                {
+                    AppendResultNote(result, "VirusTotal: full-file upload skipped for background active-file scanning.");
                 }
 
                 return;
@@ -1621,6 +2221,10 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             AppendResultNote(result, $"VirusTotal lookup failed: {FormatScanError(ex)}");
+            if (uploadUnknownBox.Checked && allowUploads && string.Equals(result.Status, "unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                result.Status = "error";
+            }
         }
     }
 
@@ -1679,7 +2283,11 @@ public sealed class MainForm : Form
             statusLabel.Text = $"Waiting for VirusTotal analysis {attempt} of 6: {path}";
             await Task.Delay(TimeSpan.FromSeconds(Math.Max((double)delayBox.Value, 15.0)), cancellationToken);
 
-            await WaitForQuotaAsync("VirusTotal analysis status", cancellationToken);
+            if (!await TryReserveVirusTotalQuotaAsync(result))
+            {
+                return;
+            }
+
             using var analysisResponse = await http.GetAsync(string.Format(AnalysisUrl, analysisId), cancellationToken);
             analysisResponse.EnsureSuccessStatusCode();
             await using var analysisStream = await analysisResponse.Content.ReadAsStreamAsync();
@@ -1873,24 +2481,26 @@ public sealed class MainForm : Form
         }
     }
 
-    private async Task WaitForQuotaAsync(string operation, CancellationToken cancellationToken = default)
+    private async Task<bool> TryReserveVirusTotalQuotaAsync(ScanResult? result = null)
     {
         if (!freeApiLimitBox.Checked)
         {
-            return;
+            return true;
         }
 
-        while (true)
+        var reservation = await quotaTracker.TryReserveAsync();
+        if (reservation.Available)
         {
-            var wait = await quotaTracker.ReserveAsync();
-            if (wait <= TimeSpan.Zero)
-            {
-                return;
-            }
-
-            statusLabel.Text = $"Free API limit reached. Waiting {Math.Ceiling(wait.TotalSeconds)} seconds for {operation}...";
-            await Task.Delay(wait, cancellationToken);
+            return true;
         }
+
+        if (result is not null)
+        {
+            result.VirusTotalDeferred = true;
+            AppendResultNote(result, $"VirusTotal: queued for a future scan because the free API {reservation.LimitName} limit is reached.");
+        }
+
+        return false;
     }
 
     private void EnsureVirusTotalApiKey(HttpClient http)
@@ -1914,7 +2524,7 @@ public sealed class MainForm : Form
 
     private async Task SaveResultToCacheAsync(ScanResult result)
     {
-        if (string.IsNullOrWhiteSpace(result.Sha256) || result.Status == "error")
+        if (string.IsNullOrWhiteSpace(result.Sha256) || result.Status == "error" || result.VirusTotalDeferred)
         {
             return;
         }
@@ -1928,13 +2538,17 @@ public sealed class MainForm : Form
         await hashCache.SaveAsync();
     }
 
-    private async Task<string> UploadFileAsync(HttpClient http, string path, CancellationToken cancellationToken)
+    private async Task<string?> UploadFileAsync(HttpClient http, string path, ScanResult result, CancellationToken cancellationToken)
     {
         var uploadUrl = FileUploadUrl;
         var info = new FileInfo(path);
         if (info.Length >= RegularUploadLimitBytes)
         {
-            await WaitForQuotaAsync("VirusTotal large-file upload URL", cancellationToken);
+            if (!await TryReserveVirusTotalQuotaAsync(result))
+            {
+                return null;
+            }
+
             using var uploadUrlResponse = await http.GetAsync(LargeFileUploadUrl, cancellationToken);
             uploadUrlResponse.EnsureSuccessStatusCode();
             await using var uploadUrlStream = await uploadUrlResponse.Content.ReadAsStreamAsync();
@@ -1948,7 +2562,11 @@ public sealed class MainForm : Form
         fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
         form.Add(fileContent, "file", Path.GetFileName(path));
 
-        await WaitForQuotaAsync("VirusTotal file upload", cancellationToken);
+        if (!await TryReserveVirusTotalQuotaAsync(result))
+        {
+            return null;
+        }
+
         using var uploadResponse = await http.PostAsync(uploadUrl, form, cancellationToken);
         uploadResponse.EnsureSuccessStatusCode();
         await using var responseStream = await uploadResponse.Content.ReadAsStreamAsync();
@@ -1980,6 +2598,10 @@ public sealed class MainForm : Form
         {
             item.BackColor = Color.LemonChiffon;
         }
+        else if (result.Status == "limited access")
+        {
+            item.BackColor = Color.LemonChiffon;
+        }
         else if (result.Status == "error")
         {
             item.BackColor = Color.LightCoral;
@@ -2003,7 +2625,7 @@ public sealed class MainForm : Form
         {
             item.BackColor = Color.MistyRose;
         }
-        else if (status is "unknown" or "uploaded")
+        else if (status is "unknown" or "uploaded" or "limited access")
         {
             item.BackColor = Color.LemonChiffon;
         }
@@ -2344,18 +2966,98 @@ public sealed class MainForm : Form
 
     private void ConfirmUploads()
     {
-        if (!uploadUnknownBox.Checked || uploadWarningShown)
+        if (suppressSettingEvents)
         {
             return;
         }
 
-        if (ConfirmVirusTotalUploads())
+        if (uploadUnknownBox.Checked && scanAllFilesBox.Checked)
         {
-            uploadWarningShown = true;
+            DisableVirusTotalUploadsForActiveFileScanning(showMessage: true);
+            SaveCurrentAppSettings();
+            return;
         }
-        else
+
+        if (uploadUnknownBox.Checked && !EnableVirusTotalUploadsWithWarning())
         {
+            suppressSettingEvents = true;
             uploadUnknownBox.Checked = false;
+            suppressSettingEvents = false;
+        }
+
+        SaveCurrentAppSettings();
+    }
+
+    private bool EnableVirusTotalUploadsWithWarning()
+    {
+        if (uploadWarningShown)
+        {
+            return true;
+        }
+
+        uploadWarningShown = ConfirmVirusTotalUploads();
+        return uploadWarningShown;
+    }
+
+    private void ScanAllFilesPreferenceChanged()
+    {
+        if (suppressSettingEvents)
+        {
+            return;
+        }
+
+        if (scanAllFilesBox.Checked && !EnableAllFileScanningWithWarning())
+        {
+            suppressSettingEvents = true;
+            scanAllFilesBox.Checked = false;
+            suppressSettingEvents = false;
+        }
+
+        if (scanAllFilesBox.Checked)
+        {
+            DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
+        }
+
+        SaveCurrentAppSettings();
+        UpdateAllFileScanner();
+    }
+
+    private bool EnableAllFileScanningWithWarning()
+    {
+        if (scanAllFilesWarningShown)
+        {
+            return true;
+        }
+
+        var accepted = MessageBox.Show(
+            this,
+            $"HashGuard will watch Windows Recent files and poll open File Explorer windows for selected or focused files, excluding common pictures, videos, audio files, and camera/raw media. It no longer performs a drive-wide discovery sweep or watches every folder. Scanning starts only when process scans are idle.{Environment.NewLine}{Environment.NewLine}To prevent background file uploads, enabling this will turn off \"Upload files missing from VirusTotal\". Open/selected file scanning uses hash lookups only and never uploads full files automatically.{Environment.NewLine}{Environment.NewLine}Enable open/selected file scanning?",
+            "Confirm open/selected file scanning",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        scanAllFilesWarningShown = accepted == DialogResult.Yes;
+        return scanAllFilesWarningShown;
+    }
+
+    private void DisableVirusTotalUploadsForActiveFileScanning(bool showMessage)
+    {
+        if (!uploadUnknownBox.Checked)
+        {
+            return;
+        }
+
+        suppressSettingEvents = true;
+        uploadUnknownBox.Checked = false;
+        suppressSettingEvents = false;
+        uploadWarningShown = false;
+        if (showMessage)
+        {
+            MessageBox.Show(
+                this,
+                "Upload files missing from VirusTotal was turned off because open/selected file scanning never uploads full files automatically.",
+                "VirusTotal uploads disabled",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
     }
 
@@ -2422,6 +3124,12 @@ public sealed class MainForm : Form
         startMinimizedBox.Checked = appSettings.StartMinimized;
         autoProcessScanBox.Checked = appSettings.AutoProcessScan;
         runElevatedBox.Checked = appSettings.RunElevated;
+        scanAllFilesBox.Checked = appSettings.ScanAllFiles;
+        if (scanAllFilesBox.Checked)
+        {
+            uploadUnknownBox.Checked = false;
+        }
+
         autoUpdateChecksBox.Checked = appSettings.AutoUpdateChecks;
         delayBox.Value = Math.Clamp(appSettings.DelaySeconds, (int)delayBox.Minimum, (int)delayBox.Maximum);
         timeoutBox.Value = Math.Clamp(appSettings.TimeoutSeconds, (int)timeoutBox.Minimum, (int)timeoutBox.Maximum);
@@ -2443,6 +3151,7 @@ public sealed class MainForm : Form
         appSettings.StartMinimized = startMinimizedBox.Checked;
         appSettings.AutoProcessScan = autoProcessScanBox.Checked;
         appSettings.RunElevated = runElevatedBox.Checked;
+        appSettings.ScanAllFiles = scanAllFilesBox.Checked;
         appSettings.AutoUpdateChecks = autoUpdateChecksBox.Checked;
         appSettings.DelaySeconds = (int)delayBox.Value;
         appSettings.TimeoutSeconds = (int)timeoutBox.Value;
@@ -3157,7 +3866,9 @@ public sealed class MainForm : Form
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 
+    private sealed record ProcessCollectionResult(Dictionary<string, List<ProcessFile>> Files, List<SkippedProcess> Skipped);
     private sealed record ProcessFile(int Pid, string Name, string Path);
+    private sealed record SkippedProcess(int Pid, string Name, string Reason);
     private readonly record struct ProcessFileState(long Length, DateTime LastWriteTimeUtc);
 
     private sealed class HashCache
@@ -3587,7 +4298,7 @@ public sealed class MainForm : Form
             await SaveAsync();
         }
 
-        public async Task<TimeSpan> ReserveAsync()
+        public async Task<QuotaReservation> TryReserveAsync()
         {
             ResetIfNewDay();
             var now = DateTimeOffset.UtcNow;
@@ -3595,20 +4306,18 @@ public sealed class MainForm : Form
 
             if (state.DailyCount >= DailyLimit)
             {
-                var tomorrow = now.Date.AddDays(1);
-                throw new InvalidOperationException($"VirusTotal free API daily limit reached ({DailyLimit}/day). Try again after {tomorrow:yyyy-MM-dd} UTC, or disable Free API limits if your key has a higher quota.");
+                return new QuotaReservation(false, "daily");
             }
 
             if (state.MinuteRequestsUtc.Count >= MinuteLimit)
             {
-                var oldest = state.MinuteRequestsUtc.Min();
-                return oldest.AddMinutes(1) - now + TimeSpan.FromSeconds(1);
+                return new QuotaReservation(false, "minute");
             }
 
             state.MinuteRequestsUtc.Add(now);
             state.DailyCount++;
             await SaveAsync();
-            return TimeSpan.Zero;
+            return new QuotaReservation(true, "");
         }
 
         private void ResetIfNewDay()
@@ -3638,6 +4347,8 @@ public sealed class MainForm : Form
             await JsonSerializer.SerializeAsync(stream, state, new JsonSerializerOptions { WriteIndented = true });
         }
     }
+
+    private readonly record struct QuotaReservation(bool Available, string LimitName);
 
     private sealed class CacheEntry
     {
@@ -3715,6 +4426,7 @@ public sealed class MainForm : Form
         public bool StartMinimized { get; set; }
         public bool AutoProcessScan { get; set; } = true;
         public bool RunElevated { get; set; }
+        public bool ScanAllFiles { get; set; }
         public bool AutoUpdateChecks { get; set; }
         public int DelaySeconds { get; set; } = 16;
         public int TimeoutSeconds { get; set; } = 60;
@@ -3737,6 +4449,7 @@ public sealed class MainForm : Form
         public int Undetected { get; set; }
         public string Link { get; set; } = "";
         public string Notes { get; set; } = "";
+        public bool VirusTotalDeferred { get; set; }
         public bool IsDetection => Malicious > 0 || Suspicious > 0;
         public bool IsAlert => IsDetection && !string.Equals(Status, "ignored", StringComparison.OrdinalIgnoreCase);
 

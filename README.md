@@ -6,6 +6,7 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 
 - Scans running process executable files.
 - Adds an optional Windows Explorer right-click action for scanning a single file.
+- Can hash-scan files you open or select in File Explorer, while skipping common picture, video, audio, and camera/raw media files.
 - Checks file reputation using VirusTotal, MetaDefender Cloud, and Team Cymru Malware Hash Registry when enabled.
 - Caches clean hashes locally to reduce repeat lookups.
 - Logs scan results for later review.
@@ -15,6 +16,8 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 ## How Scanning Works
 
 HashGuard groups running processes by executable path, computes each file's SHA-256 hash, and checks enabled reputation providers. Results are shown with process names, PIDs, hash, path, provider status, detection counts, and notes.
+
+When "Scan files I open or select" is enabled, HashGuard watches Windows Recent files and polls open File Explorer windows for selected or focused files. It skips common personal media types such as pictures, videos, audio, and camera/raw files, and it never uploads full files from this background mode.
 
 Files are marked for action when a provider reports malicious or suspicious detections, or when a scan error needs review. Clean and recently cached hashes are skipped when the hash cache is enabled.
 
@@ -57,7 +60,7 @@ The published executable is named `HashGuard.exe`.
 
 ## Releases And Updates
 
-The built-in updater reads GitHub Releases from `snaket7ds/HashGuard`. Release tags should match the app version, such as `v1.0.27`.
+The built-in updater reads GitHub Releases from `snaket7ds/HashGuard`. Release tags should match the app version, such as `v1.0.28`.
 
 Attach both files to each release:
 

@@ -43,7 +43,7 @@ internal static class Program
         try
         {
             using var pipe = new NamedPipeClientStream(".", MainForm.ScanPipeName, PipeDirection.Out);
-            pipe.Connect(700);
+            pipe.Connect(2500);
             using var writer = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true };
             writer.WriteLine(scanFile);
             return true;
