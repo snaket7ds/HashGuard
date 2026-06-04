@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.30 - 2026-06-04
 
 - Added scheduled task persistence scanning.
 - Added smarter short-lived cache reuse for unknown, error, and quota-deferred provider results.
