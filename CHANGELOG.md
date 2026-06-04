@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Improved scan-status layout so long file paths do not cut off live scan text.
 - Added structured per-provider reputation state tracking.
 - Improved no-API local scanning so VirusTotal can be skipped without aborting scans.
 - Hardened quarantine restore with hash verification, protected-path confirmation, and alternate restore paths.

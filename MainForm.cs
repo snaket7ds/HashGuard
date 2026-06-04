@@ -91,13 +91,13 @@ public sealed class MainForm : Form
     private readonly NumericUpDown timeoutBox = new() { Minimum = 10, Maximum = 300, Value = 60, Width = 64 };
     private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = true };
     private readonly ProgressBar progressBar = new();
-    private readonly Label statusLabel = new() { AutoEllipsis = true };
+    private readonly Label statusLabel = new() { AutoEllipsis = false };
     private readonly Label countLabel = new() { AutoSize = true };
     private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "action" };
     private readonly Label statusTitle = new() { Text = "You are not protected", AutoSize = true, Font = new Font("Segoe UI", 24, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label statusSubtitle = new() { Text = "Run a process scan to verify protection.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label summaryLabel = new() { Text = "0 files scanned", AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
-    private readonly Label actionLabel = new() { Text = "0 action needed", AutoSize = true, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
+    private readonly Label summaryLabel = new() { Text = "0 files scanned", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label actionLabel = new() { Text = "0 action needed", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label reputationStateLabel = new();
     private readonly Label reputationProtectionLabel = new();
     private readonly Label hashCacheStateLabel = new();
@@ -386,9 +386,16 @@ public sealed class MainForm : Form
         statusText.Controls.Add(statusTitle);
         statusText.Controls.Add(statusSubtitle);
         statusLayout.Controls.Add(statusText, 0, 0);
-        var stats = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 14, 0, 0) };
+        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 14, 0, 0), AutoSize = true };
+        stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        stats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        stats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        summaryLabel.Dock = DockStyle.Fill;
+        summaryLabel.MaximumSize = new Size(680, 0);
+        summaryLabel.Height = 42;
+        actionLabel.Dock = DockStyle.Fill;
+        actionLabel.Height = 24;
         stats.Controls.Add(summaryLabel);
-        stats.Controls.Add(new Label { Text = "  |  ", AutoSize = true, ForeColor = Color.Silver });
         stats.Controls.Add(actionLabel);
         statusLayout.Controls.Add(stats, 0, 1);
         statusCard.Controls.Add(statusLayout);
@@ -418,8 +425,8 @@ public sealed class MainForm : Form
             Padding = new Padding(14, 10, 14, 10),
         };
         var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = new Padding(0), Padding = new Padding(0) };
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 78));
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         progressBar.Anchor = AnchorStyles.Left | AnchorStyles.Right;
@@ -428,6 +435,9 @@ public sealed class MainForm : Form
         statusLabel.Dock = DockStyle.Fill;
         statusLabel.TextAlign = ContentAlignment.MiddleLeft;
         statusLabel.Margin = new Padding(0, 0, 12, 0);
+        statusLabel.AutoSize = false;
+        statusLabel.MaximumSize = new Size(0, 0);
+        statusLabel.UseMnemonic = false;
         countLabel.AutoSize = false;
         countLabel.Dock = DockStyle.Fill;
         countLabel.TextAlign = ContentAlignment.MiddleRight;
@@ -979,7 +989,7 @@ public sealed class MainForm : Form
             {
                 token.ThrowIfCancellationRequested();
                 var path = paths[index];
-                statusLabel.Text = $"Scanning {index + 1} of {paths.Count}: {path}";
+                statusLabel.Text = $"Scanning {index + 1} of {paths.Count}: {FormatDisplayPath(path)}";
                 countLabel.Text = $"{index + 1} / {paths.Count}";
                 var result = await ScanPathAsync(http, path, grouped[path], token);
                 results.Add(result);
@@ -1110,7 +1120,7 @@ public sealed class MainForm : Form
             for (var index = 0; index < newPaths.Count; index++)
             {
                 var path = newPaths[index];
-                statusLabel.Text = $"Monitoring scan {index + 1} of {newPaths.Count}: {path}";
+                statusLabel.Text = $"Monitoring scan {index + 1} of {newPaths.Count}: {FormatDisplayPath(path)}";
                 countLabel.Text = $"{index + 1} / {newPaths.Count}";
                 var result = await ScanPathAsync(http, path, grouped[path]);
                 results.Add(result);
@@ -1572,6 +1582,22 @@ public sealed class MainForm : Form
         }
     }
 
+    private static string FormatDisplayPath(string path, int maxLength = 110)
+    {
+        if (string.IsNullOrWhiteSpace(path) || path.Length <= maxLength)
+        {
+            return path;
+        }
+
+        var fileName = Path.GetFileName(path);
+        var root = Path.GetPathRoot(path) ?? "";
+        var directory = Path.GetDirectoryName(path) ?? "";
+        var reserved = fileName.Length + root.Length + 8;
+        var tailBudget = Math.Max(16, maxLength - reserved);
+        var tail = directory.Length <= tailBudget ? directory : directory[^tailBudget..];
+        return $"{root}...{tail}{Path.DirectorySeparatorChar}{fileName}";
+    }
+
     private async Task RunStartupFileScanAsync()
     {
         if (string.IsNullOrWhiteSpace(startupScanFile))
@@ -1650,7 +1676,7 @@ public sealed class MainForm : Form
         progressBar.Value = 0;
         progressBar.Maximum = 1;
         countLabel.Text = "1 / 1";
-        statusLabel.Text = $"Scanning selected file: {path}";
+        statusLabel.Text = $"Scanning selected file: {FormatDisplayPath(path)}";
         summaryLabel.Text = "Preparing scan";
         actionLabel.Text = "0 action needed";
         SetDashboardState("Scanning", "Checking the selected file with enabled reputation services.", false);
@@ -2767,7 +2793,7 @@ public sealed class MainForm : Form
     {
         for (var attempt = 1; attempt <= 6; attempt++)
         {
-            statusLabel.Text = $"Waiting for VirusTotal analysis {attempt} of 6: {path}";
+            statusLabel.Text = $"Waiting for VirusTotal analysis {attempt} of 6: {FormatDisplayPath(path)}";
             await Task.Delay(TimeSpan.FromSeconds(Math.Max((double)delayBox.Value, 15.0)), cancellationToken);
 
             if (!await TryReserveVirusTotalQuotaAsync(result))
