@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.29 - 2026-06-04
 
 - Added local risk scoring and trust summaries for scanned files.
 - Added Authenticode signer/publisher inspection and risky-path/recent-file triage notes.
