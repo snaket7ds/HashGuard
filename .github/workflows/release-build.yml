@@ -1,0 +1,36 @@
+name: Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: Build Windows executable
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish HashGuard
+        run: dotnet publish HashGuardScanner.csproj -c Release -r win-x64 --self-contained true
+
+      - name: Upload unsigned executable
+        id: upload-unsigned-artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HashGuard-unsigned
+          path: bin/Release/net8.0-windows/win-x64/publish/HashGuard.exe
+          if-no-files-found: error

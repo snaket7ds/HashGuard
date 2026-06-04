@@ -62,6 +62,10 @@ The published executable is named `HashGuard.exe`.
 
 The built-in updater reads GitHub Releases from `snaket7ds/HashGuard`. Release tags should match the app version, such as `v1.0.28`.
 
+HashGuard's Code signing policy is documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md). HashGuard intends to use free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/), for public Windows release binaries when accepted by SignPath Foundation.
+
+SignPath Foundation application notes are kept in [SIGNPATH_APPLICATION.md](SIGNPATH_APPLICATION.md).
+
 Attach both files to each release:
 
 ```text
@@ -74,3 +78,7 @@ See [GITHUB_RELEASES.md](GITHUB_RELEASES.md) for release asset details.
 ## License
 
 HashGuard is released under the license in [LICENSE](LICENSE).
+
+## Privacy
+
+HashGuard's privacy policy is documented in [PRIVACY.md](PRIVACY.md).
