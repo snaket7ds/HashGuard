@@ -12,6 +12,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Forms;
+using System.Xml.Linq;
 using Microsoft.Win32;
 
 namespace HashGuardScanner;
@@ -1637,17 +1638,6 @@ public sealed class MainForm : Form
     private async Task ScanSingleFileAsync(string path)
     {
         var apiKey = apiKeyBox.Text.Trim();
-        if (virusTotalEnabledBox.Checked && string.IsNullOrWhiteSpace(apiKey))
-        {
-            MessageBox.Show(this, "Open Settings and paste your VirusTotal API key before scanning.", "API key required", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            ShowSettingsDialog();
-            apiKey = apiKeyBox.Text.Trim();
-            if (virusTotalEnabledBox.Checked && string.IsNullOrWhiteSpace(apiKey))
-            {
-                return;
-            }
-        }
-
         if (!File.Exists(path))
         {
             MessageBox.Show(this, $"File not found:{Environment.NewLine}{path}", "Right-click scan", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -1667,6 +1657,11 @@ public sealed class MainForm : Form
 
         try
         {
+            if (virusTotalEnabledBox.Checked && string.IsNullOrWhiteSpace(apiKey))
+            {
+                statusLabel.Text = "VirusTotal API key is not configured. Running local/provider checks that do not require it.";
+            }
+
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds((int)timeoutBox.Value) };
             if (virusTotalEnabledBox.Checked && !string.IsNullOrWhiteSpace(apiKey))
             {
@@ -1918,6 +1913,11 @@ public sealed class MainForm : Form
             yield break;
         }
 
+        foreach (var target in CollectScheduledTaskXmlTargets())
+        {
+            yield return target;
+        }
+
         string output;
         try
         {
@@ -1970,6 +1970,40 @@ public sealed class MainForm : Form
         }
     }
 
+    private static IEnumerable<PersistenceTarget> CollectScheduledTaskXmlTargets()
+    {
+        var taskRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "Tasks");
+        if (!Directory.Exists(taskRoot))
+        {
+            yield break;
+        }
+
+        foreach (var taskFile in Directory.EnumerateFiles(taskRoot, "*", SearchOption.AllDirectories))
+        {
+            XDocument document;
+            try
+            {
+                document = XDocument.Load(taskFile);
+            }
+            catch
+            {
+                continue;
+            }
+
+            var execNodes = document.Descendants().Where(element => element.Name.LocalName == "Exec");
+            foreach (var exec in execNodes)
+            {
+                var command = exec.Elements().FirstOrDefault(element => element.Name.LocalName == "Command")?.Value;
+                var arguments = exec.Elements().FirstOrDefault(element => element.Name.LocalName == "Arguments")?.Value;
+                var path = TryExtractExecutablePath($"{command} {arguments}".Trim());
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    yield return new PersistenceTarget(path, $"Scheduled task: {Path.GetRelativePath(taskRoot, taskFile)}");
+                }
+            }
+        }
+    }
+
     private static string? TryResolveShortcutTarget(string shortcutPath)
     {
         try
@@ -1992,45 +2026,7 @@ public sealed class MainForm : Form
 
     private static string? TryExtractExecutablePath(string? command)
     {
-        if (string.IsNullOrWhiteSpace(command))
-        {
-            return null;
-        }
-
-        var expanded = Environment.ExpandEnvironmentVariables(command.Trim());
-        if (expanded.StartsWith("\"", StringComparison.Ordinal))
-        {
-            var endQuote = expanded.IndexOf('"', 1);
-            if (endQuote > 1)
-            {
-                return NormalizeExecutablePath(expanded[1..endQuote]);
-            }
-        }
-
-        var exeIndex = expanded.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-        if (exeIndex >= 0)
-        {
-            return NormalizeExecutablePath(expanded[..(exeIndex + 4)].Trim());
-        }
-
-        return NormalizeExecutablePath(expanded.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
-    }
-
-    private static string? NormalizeExecutablePath(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            return Path.GetFullPath(path.Trim());
-        }
-        catch
-        {
-            return path.Trim();
-        }
+        return HashGuardLogic.TryExtractExecutablePath(command);
     }
 
     private static SkippedProcess GetSkippedProcess(Process process, Exception ex)
@@ -2421,11 +2417,15 @@ public sealed class MainForm : Form
             if (!checkedAnyService)
             {
                 result.Status = "unknown";
+                AddProviderResult(result, "Local", ProviderState.Unknown, "No reputation services are enabled.");
                 AppendResultNote(result, "No reputation services are enabled.");
             }
             else if (string.IsNullOrWhiteSpace(result.Status))
             {
-                result.Status = result.IsAlert ? "detected" : "clean";
+                result.Status = result.IsAlert ? "detected"
+                    : result.ProviderResults.Count > 0 && result.ProviderResults.All(provider => provider.State is ProviderState.NotChecked or ProviderState.Deferred or ProviderState.Error)
+                        ? "unknown"
+                        : "clean";
             }
 
             ApplyIgnoredHash(result);
@@ -2483,9 +2483,18 @@ public sealed class MainForm : Form
             using var cert2 = new X509Certificate2(certificate);
             var publisher = cert2.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
             var expired = DateTime.Now < cert2.NotBefore || DateTime.Now > cert2.NotAfter;
+            using var chain = new X509Chain();
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+            chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
+            chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(3);
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
+            var chainValid = chain.Build(cert2);
+            var chainStatus = chainValid
+                ? "chain valid"
+                : string.Join(", ", chain.ChainStatus.Select(status => status.Status.ToString()).Distinct());
             var summary = expired
-                ? $"Signed by {publisher}; certificate outside validity period"
-                : $"Signed by {publisher}";
+                ? $"Signed by {publisher}; certificate outside validity period; {chainStatus}"
+                : $"Signed by {publisher}; {chainStatus}";
             return new SignatureInfo(summary, publisher);
         }
         catch
@@ -2636,9 +2645,16 @@ public sealed class MainForm : Form
     {
         try
         {
-            EnsureVirusTotalApiKey(http);
+            if (!http.DefaultRequestHeaders.Contains("x-apikey"))
+            {
+                AddProviderResult(result, "VirusTotal", ProviderState.NotChecked, "API key not configured.");
+                AppendResultNote(result, "VirusTotal: skipped, API key not configured.");
+                return;
+            }
+
             if (!await TryReserveVirusTotalQuotaAsync(result))
             {
+                AddProviderResult(result, "VirusTotal", ProviderState.Deferred, "Free API quota reached.");
                 return;
             }
 
@@ -2646,6 +2662,7 @@ public sealed class MainForm : Form
             if (reportResponse.StatusCode == HttpStatusCode.NotFound)
             {
                 result.Status = "unknown";
+                AddProviderResult(result, "VirusTotal", ProviderState.Unknown, "Hash not found.");
                 AppendResultNote(result, "VirusTotal: hash not found.");
                 if (uploadUnknownBox.Checked && allowUploads)
                 {
@@ -2657,6 +2674,7 @@ public sealed class MainForm : Form
                     }
 
                     result.Status = "uploaded";
+                    AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Uploaded for analysis: {analysisId}");
                     AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
                     await PollAnalysisAsync(http, analysisId, result, path, cancellationToken);
                 }
@@ -2672,6 +2690,8 @@ public sealed class MainForm : Form
             await using var reportStream = await reportResponse.Content.ReadAsStreamAsync(cancellationToken);
             using var reportJson = await JsonDocument.ParseAsync(reportStream, cancellationToken: cancellationToken);
             ApplyFileReportStats(result, reportJson.RootElement);
+            AddProviderResult(result, "VirusTotal", result.IsDetection ? ProviderState.Detected : ProviderState.Clean,
+                result.IsDetection ? $"{result.Malicious} malicious, {result.Suspicious} suspicious." : "No malicious or suspicious detections.");
             AppendResultNote(result, result.IsDetection
                 ? $"VirusTotal: {result.Malicious} malicious, {result.Suspicious} suspicious."
                 : "VirusTotal: no malicious or suspicious detections.");
@@ -2683,6 +2703,7 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             AppendResultNote(result, $"VirusTotal lookup failed: {FormatScanError(ex)}");
+            AddProviderResult(result, "VirusTotal", ProviderState.Error, FormatScanError(ex));
             if (uploadUnknownBox.Checked && allowUploads && string.Equals(result.Status, "unknown", StringComparison.OrdinalIgnoreCase))
             {
                 result.Status = "error";
@@ -2701,6 +2722,7 @@ public sealed class MainForm : Form
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 metaDefenderEnabledBox.Checked = false;
+                AddProviderResult(result, "MetaDefender", ProviderState.NotChecked, "API key not configured.");
                 AppendResultNote(result, "MetaDefender Cloud: skipped, API key not configured.");
                 return;
             }
@@ -2713,12 +2735,14 @@ public sealed class MainForm : Form
             using var response = await http.GetAsync(string.Format(MetaDefenderHashUrl, result.Sha256), cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
+                AddProviderResult(result, "MetaDefender", ProviderState.Unknown, "Hash not found.");
                 AppendResultNote(result, "MetaDefender Cloud: hash not found.");
                 return;
             }
 
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
+                AddProviderResult(result, "MetaDefender", ProviderState.Error, "401 Unauthorized.");
                 AppendResultNote(result, "MetaDefender Cloud: 401 Unauthorized. Verify the API key in Settings.");
                 return;
             }
@@ -2735,6 +2759,7 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             AppendResultNote(result, $"MetaDefender Cloud lookup failed: {ex.Message}");
+            AddProviderResult(result, "MetaDefender", ProviderState.Error, ex.Message);
         }
     }
 
@@ -2747,6 +2772,7 @@ public sealed class MainForm : Form
 
             if (!await TryReserveVirusTotalQuotaAsync(result))
             {
+                AddProviderResult(result, "VirusTotal", ProviderState.Deferred, "Free API quota reached while polling analysis.");
                 return;
             }
 
@@ -2759,12 +2785,15 @@ public sealed class MainForm : Form
             var status = ReadString(analysisJson.RootElement, "data", "attributes", "status");
             if (status == "completed")
             {
+                AddProviderResult(result, "VirusTotal", result.IsDetection ? ProviderState.Detected : ProviderState.Clean,
+                    result.IsDetection ? $"{result.Malicious} malicious, {result.Suspicious} suspicious." : "Analysis completed clean.");
                 AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
                 return;
             }
         }
 
         AppendResultNote(result, $"VirusTotal analysis still running: {analysisId}");
+        AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Analysis still running: {analysisId}");
     }
 
     private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken = default)
@@ -2819,6 +2848,7 @@ public sealed class MainForm : Form
 
             result.Status = "detected";
             var detail = string.IsNullOrWhiteSpace(threatName) ? "" : $", {threatName}";
+            AddProviderResult(result, "MetaDefender", ProviderState.Detected, $"Detected by {detected}/{total} engines{detail}.");
             AppendResultNote(result, $"MetaDefender Cloud: detected by {detected}/{total} engines{detail}.");
             return;
         }
@@ -2829,6 +2859,7 @@ public sealed class MainForm : Form
         }
 
         var totalText = total > 0 ? $" across {total} engines" : "";
+        AddProviderResult(result, "MetaDefender", ProviderState.Clean, $"No threat detected{totalText}.");
         AppendResultNote(result, $"MetaDefender Cloud: no threat detected{totalText}.");
     }
 
@@ -2844,11 +2875,13 @@ public sealed class MainForm : Form
             var reputation = await QueryCymruAsync(result.Sha256, cancellationToken);
             if (reputation is null)
             {
+                AddProviderResult(result, "Cymru MHR", ProviderState.Clean, "No malware match.");
                 AppendResultNote(result, "Team Cymru MHR: no malware match.");
                 return;
             }
 
             AppendResultNote(result, $"Team Cymru MHR: malware match, {reputation.DetectionPercent}% AV hit rate, last seen {reputation.LastSeenUtc:yyyy-MM-dd} UTC.");
+            AddProviderResult(result, "Cymru MHR", ProviderState.Detected, $"{reputation.DetectionPercent}% AV hit rate, last seen {reputation.LastSeenUtc:yyyy-MM-dd} UTC.");
             if (!result.IsDetection)
             {
                 result.Malicious = 1;
@@ -2862,6 +2895,7 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             AppendResultNote(result, $"Team Cymru MHR lookup failed: {ex.Message}");
+            AddProviderResult(result, "Cymru MHR", ProviderState.Error, ex.Message);
         }
     }
 
@@ -2930,6 +2964,12 @@ public sealed class MainForm : Form
         result.Notes = string.IsNullOrWhiteSpace(result.Notes)
             ? note
             : $"{result.Notes}; {note}";
+    }
+
+    private static void AddProviderResult(ScanResult result, string provider, ProviderState state, string detail)
+    {
+        result.ProviderResults.RemoveAll(item => string.Equals(item.Provider, provider, StringComparison.OrdinalIgnoreCase));
+        result.ProviderResults.Add(new ProviderResult(provider, state, detail));
     }
 
     private void ApplyIgnoredHash(ScanResult result)
@@ -3141,7 +3181,7 @@ public sealed class MainForm : Form
             using var writer = new StreamWriter(logPath, append: true, Encoding.UTF8);
             if (writeHeader)
             {
-                writer.WriteLine("timestamp,status,risk_score,risk_level,trust,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes");
+                writer.WriteLine("timestamp,status,risk_score,risk_level,trust,provider_results,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes");
             }
 
             writer.WriteLine(string.Join(",", new[]
@@ -3151,6 +3191,7 @@ public sealed class MainForm : Form
                 Csv(result.RiskScore.ToString()),
                 Csv(result.RiskLevel),
                 Csv(result.TrustSummary),
+                Csv(result.ProviderSummary),
                 Csv(result.Malicious.ToString()),
                 Csv(result.Suspicious.ToString()),
                 Csv(result.Harmless.ToString()),
@@ -3668,7 +3709,9 @@ public sealed class MainForm : Form
             var currentPath = GetAppSettingsPath();
             if (File.Exists(currentPath))
             {
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(currentPath, Encoding.UTF8)) ?? new AppSettings();
+                var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(currentPath, Encoding.UTF8)) ?? new AppSettings();
+                settings.TrustedPublishers ??= new AppSettings().TrustedPublishers;
+                return settings;
             }
 
             return new AppSettings();
@@ -3967,7 +4010,7 @@ public sealed class MainForm : Form
 
         var accepted = MessageBox.Show(
             this,
-            $"Terminate {selections.Count} selected process(es)? HashGuard will only kill a PID if its current executable path still matches the selected row. Unsaved work in those processes may be lost.",
+            $"Terminate {selections.Count} selected process(es)? HashGuard will only kill a PID if its current executable path still matches the selected row. Unsaved work in those processes may be lost.{Environment.NewLine}{Environment.NewLine}{BuildSelectedActionSummary(sourceView)}",
             "Kill selected processes",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -4027,7 +4070,7 @@ public sealed class MainForm : Form
 
         var accepted = MessageBox.Show(
             this,
-            $"Move {paths.Count} selected file(s) to HashGuard quarantine? Running files may need their process killed first.",
+            $"Move {paths.Count} selected file(s) to HashGuard quarantine? Running files may need their process killed first.{Environment.NewLine}{Environment.NewLine}{BuildSelectedActionSummary(sourceView)}",
             "Quarantine selected files",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -4084,6 +4127,29 @@ public sealed class MainForm : Form
         {
             MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be quarantined", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    private static string BuildSelectedActionSummary(ListView sourceView)
+    {
+        var lines = sourceView.SelectedItems
+            .Cast<ListViewItem>()
+            .Take(5)
+            .Select(item =>
+            {
+                var risk = GetSubItemText(item, ColRisk);
+                var pids = GetSubItemText(item, ColPids);
+                var path = GetSubItemText(item, ColPath);
+                var trust = GetSubItemText(item, ColTrust);
+                return $"{risk} | PID {pids} | {Path.GetFileName(path)} | {trust}";
+            })
+            .ToList();
+        var remaining = sourceView.SelectedItems.Count - lines.Count;
+        if (remaining > 0)
+        {
+            lines.Add($"+{remaining} more");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private void ShowQuarantineDialog()
@@ -4169,7 +4235,41 @@ public sealed class MainForm : Form
             {
                 if (File.Exists(entry.OriginalPath))
                 {
-                    throw new IOException("Original path already exists.");
+                    using var saveDialog = new SaveFileDialog
+                    {
+                        Title = "Restore quarantined file as",
+                        FileName = Path.GetFileName(entry.OriginalPath),
+                        InitialDirectory = Directory.Exists(Path.GetDirectoryName(entry.OriginalPath)) ? Path.GetDirectoryName(entry.OriginalPath) : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                    };
+                    if (saveDialog.ShowDialog(this) != DialogResult.OK)
+                    {
+                        continue;
+                    }
+
+                    entry.OriginalPath = saveDialog.FileName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(entry.Sha256))
+                {
+                    var quarantinedHash = Sha256FileAsync(entry.QuarantinePath).GetAwaiter().GetResult();
+                    if (!string.Equals(quarantinedHash, entry.Sha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("Quarantined file hash no longer matches the manifest.");
+                    }
+                }
+
+                if (IsWindowsOrProgramFilesPath(entry.OriginalPath))
+                {
+                    var sensitiveAccepted = MessageBox.Show(
+                        this,
+                        $"Restore into a protected system or Program Files location?{Environment.NewLine}{entry.OriginalPath}",
+                        "Confirm protected restore",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+                    if (sensitiveAccepted != DialogResult.Yes)
+                    {
+                        continue;
+                    }
                 }
 
                 Directory.CreateDirectory(Path.GetDirectoryName(entry.OriginalPath)!);
@@ -4635,7 +4735,7 @@ public sealed class MainForm : Form
 
         var lines = new List<string>
         {
-            "status,risk,trust,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes",
+            "status,risk,trust,provider_results,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes",
         };
         foreach (ListViewItem item in sourceView.Items)
         {
@@ -4644,6 +4744,7 @@ public sealed class MainForm : Form
                 Csv(GetSubItemText(item, 0)),
                 Csv(GetSubItemText(item, ColRisk)),
                 Csv(GetSubItemText(item, ColTrust)),
+                Csv(""),
                 Csv(GetSubItemText(item, ColMalicious)),
                 Csv(GetSubItemText(item, ColSuspicious)),
                 Csv(""),
@@ -4673,38 +4774,7 @@ public sealed class MainForm : Form
 
     private static List<string> ParseCsvLine(string line)
     {
-        var values = new List<string>();
-        var current = new StringBuilder();
-        var quoted = false;
-
-        for (var index = 0; index < line.Length; index++)
-        {
-            var character = line[index];
-            if (character == '"')
-            {
-                if (quoted && index + 1 < line.Length && line[index + 1] == '"')
-                {
-                    current.Append('"');
-                    index++;
-                }
-                else
-                {
-                    quoted = !quoted;
-                }
-            }
-            else if (character == ',' && !quoted)
-            {
-                values.Add(current.ToString());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(character);
-            }
-        }
-
-        values.Add(current.ToString());
-        return values;
+        return HashGuardLogic.ParseCsvLine(line);
     }
 
     private static JsonElement ReadElement(JsonElement root, params string[] path)
@@ -4744,6 +4814,7 @@ public sealed class MainForm : Form
     private sealed record SkippedProcess(int Pid, string Name, string Reason);
     private sealed record PersistenceTarget(string Path, string Source);
     private sealed record SignatureInfo(string Summary, string Publisher);
+    private sealed record ProviderResult(string Provider, ProviderState State, string Detail);
     private readonly record struct ProcessFileState(long Length, DateTime LastWriteTimeUtc);
 
     private sealed class HashCache
@@ -4977,20 +5048,7 @@ public sealed class MainForm : Form
 
         public static bool IsReusablePendingEntry(CacheEntry entry)
         {
-            if (entry.CheckedAtUtc == default)
-            {
-                return false;
-            }
-
-            var age = DateTimeOffset.UtcNow - entry.CheckedAtUtc;
-            return string.Equals(entry.Status, "unknown", StringComparison.OrdinalIgnoreCase)
-                    && age <= UnknownCacheMaxAge
-                || string.Equals(entry.Status, "uploaded", StringComparison.OrdinalIgnoreCase)
-                    && age <= UnknownCacheMaxAge
-                || string.Equals(entry.Status, "error", StringComparison.OrdinalIgnoreCase)
-                    && age <= ErrorCacheMaxAge
-                || entry.VirusTotalDeferred
-                    && age <= DeferredCacheMaxAge;
+            return HashGuardLogic.CanReuseProviderCache(entry.Status, entry.VirusTotalDeferred, entry.CheckedAtUtc, DateTimeOffset.UtcNow);
         }
 
         private static string NormalizeCachedStatus(string status)
@@ -5000,38 +5058,7 @@ public sealed class MainForm : Form
 
         private static List<string> ParseCsvLine(string line)
         {
-            var values = new List<string>();
-            var current = new StringBuilder();
-            var quoted = false;
-
-            for (var index = 0; index < line.Length; index++)
-            {
-                var character = line[index];
-                if (character == '"')
-                {
-                    if (quoted && index + 1 < line.Length && line[index + 1] == '"')
-                    {
-                        current.Append('"');
-                        index++;
-                    }
-                    else
-                    {
-                        quoted = !quoted;
-                    }
-                }
-                else if (character == ',' && !quoted)
-                {
-                    values.Add(current.ToString());
-                    current.Clear();
-                }
-                else
-                {
-                    current.Append(character);
-                }
-            }
-
-            values.Add(current.ToString());
-            return values;
+            return HashGuardLogic.ParseCsvLine(line);
         }
 
         public async Task SaveAsync()
@@ -5364,6 +5391,10 @@ public sealed class MainForm : Form
         public int Undetected { get; set; }
         public string Link { get; set; } = "";
         public string Notes { get; set; } = "";
+        public List<ProviderResult> ProviderResults { get; } = [];
+        public string ProviderSummary => ProviderResults.Count == 0
+            ? ""
+            : string.Join(" | ", ProviderResults.Select(result => $"{result.Provider}: {result.State}{(string.IsNullOrWhiteSpace(result.Detail) ? "" : $" ({result.Detail})")}"));
         public int RiskScore { get; set; }
         public string RiskLevel { get; set; } = "Low";
         public string TrustSummary { get; set; } = "";

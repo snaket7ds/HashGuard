@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added structured per-provider reputation state tracking.
+- Improved no-API local scanning so VirusTotal can be skipped without aborting scans.
+- Hardened quarantine restore with hash verification, protected-path confirmation, and alternate restore paths.
+- Improved scheduled task persistence scanning with XML task parsing.
+- Added release workflow installer upload and logic tests for parsing/cache helpers.
+
 ## v1.0.30 - 2026-06-04
 
 - Added scheduled task persistence scanning.
