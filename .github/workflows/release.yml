@@ -31,11 +31,36 @@ jobs:
           $hash = (Get-FileHash "$publishDir/HashGuard.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  HashGuard.exe" | Out-File "$publishDir/HashGuard.exe.sha256" -Encoding ascii -NoNewline
 
+      - name: Extract release notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $lines = Get-Content CHANGELOG.md
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match "^##\s+$([regex]::Escape($tag))(\s|$)") {
+              $start = $i
+              break
+            }
+          }
+          if ($start -lt 0) {
+            "Release notes for $tag were not found in CHANGELOG.md." | Out-File release-notes.md -Encoding utf8
+            exit 0
+          }
+          $end = $lines.Count
+          for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match "^##\s+") {
+              $end = $i
+              break
+            }
+          }
+          $lines[$start..($end - 1)] | Out-File release-notes.md -Encoding utf8
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          body_path: CHANGELOG.md
+          body_path: release-notes.md
           files: |
             bin/Release/net8.0-windows/win-x64/publish/HashGuard.exe
             bin/Release/net8.0-windows/win-x64/publish/HashGuard.exe.sha256

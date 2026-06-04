@@ -62,6 +62,8 @@ dotnet publish HashGuardScanner.csproj -c Release -r win-x64 --self-contained tr
 
 The published executable is named `HashGuard.exe`.
 
+An Inno Setup installer scaffold is available at `installer/HashGuard.iss`. Build the release executable first, then compile the installer script on Windows with Inno Setup.
+
 ## Releases And Updates
 
 The built-in updater reads GitHub Releases from `snaket7ds/HashGuard`. Release tags should match the app version, such as `v1.0.28`.

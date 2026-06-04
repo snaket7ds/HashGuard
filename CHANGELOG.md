@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Added scheduled task persistence scanning.
+- Added smarter short-lived cache reuse for unknown, error, and quota-deferred provider results.
+- Added trusted publisher allowlist support in Settings.
+- Added quarantine manifest tracking with restore/delete actions.
+- Updated the release workflow to publish only the matching changelog section.
+- Added an Inno Setup installer scaffold.
+
 ## v1.0.29 - 2026-06-04
 
 - Added local risk scoring and trust summaries for scanned files.

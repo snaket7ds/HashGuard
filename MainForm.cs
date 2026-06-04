@@ -31,10 +31,15 @@ public sealed class MainForm : Form
     private const string ConfigFolderName = "config";
     private const string AppSettingsFileName = "settings.json";
     private const string IgnoredHashesFileName = "ignored-hashes.json";
+    private const string QuarantineFolderName = "quarantine";
+    private const string QuarantineManifestFileName = "quarantine-manifest.json";
     private static readonly string CurrentVersion = GetCurrentVersion();
     private const string GitHubOwner = "snaket7ds";
     private const string GitHubRepo = "HashGuard";
     private static readonly TimeSpan CleanCacheMaxAge = TimeSpan.FromDays(7);
+    private static readonly TimeSpan UnknownCacheMaxAge = TimeSpan.FromHours(12);
+    private static readonly TimeSpan ErrorCacheMaxAge = TimeSpan.FromHours(1);
+    private static readonly TimeSpan DeferredCacheMaxAge = TimeSpan.FromMinutes(30);
     private static readonly string[] ContextMenuRegistryPaths =
     [
         @"Software\Classes\*\shell\HashGuard",
@@ -765,6 +770,14 @@ public sealed class MainForm : Form
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
         var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
         var uploadUnknown = new CheckBox { Text = "Upload files missing from VirusTotal", Checked = uploadUnknownBox.Checked, AutoSize = true };
+        var trustedPublishers = new TextBox
+        {
+            Text = string.Join(Environment.NewLine, appSettings.TrustedPublishers),
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ScrollBars = ScrollBars.Vertical,
+            Height = 82,
+        };
         var delay = new NumericUpDown { Minimum = 0, Maximum = 120, Value = delayBox.Value, Width = 70 };
         var timeout = new NumericUpDown { Minimum = 10, Maximum = 300, Value = timeoutBox.Value, Width = 70 };
         var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true };
@@ -803,7 +816,10 @@ public sealed class MainForm : Form
         layout.Controls.Add(runElevated, 1, 16);
         layout.Controls.Add(scanAllFiles, 1, 17);
         layout.Controls.Add(autoUpdates, 1, 18);
-        layout.Controls.Add(new Label { Text = $"HashGuard version {CurrentVersion}", AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9, FontStyle.Bold) }, 1, 19);
+        layout.Controls.Add(SectionLabel("Trusted Publishers"), 1, 19);
+        layout.Controls.Add(new Label { Text = "One publisher per line", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 20);
+        layout.Controls.Add(trustedPublishers, 1, 20);
+        layout.Controls.Add(new Label { Text = $"HashGuard version {CurrentVersion}", AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9, FontStyle.Bold) }, 1, 21);
 
         var buttons = new FlowLayoutPanel
         {
@@ -844,6 +860,12 @@ public sealed class MainForm : Form
             DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
         }
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
+        appSettings.TrustedPublishers = trustedPublishers.Lines
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(line => line, StringComparer.OrdinalIgnoreCase)
+            .ToList();
         UpdateReputationTile();
         UpdateHashCacheTile();
         UpdateAutomaticUpdateTimer();
@@ -1818,6 +1840,11 @@ public sealed class MainForm : Form
         {
             yield return target;
         }
+
+        foreach (var target in CollectScheduledTaskTargets())
+        {
+            yield return target;
+        }
     }
 
     private static IEnumerable<PersistenceTarget> CollectRunKeyPersistenceTargets(RegistryKey root, string rootName, string subKeyPath)
@@ -1880,6 +1907,65 @@ public sealed class MainForm : Form
             if (!string.IsNullOrWhiteSpace(path))
             {
                 yield return new PersistenceTarget(path, $"Service: {serviceName}");
+            }
+        }
+    }
+
+    private static IEnumerable<PersistenceTarget> CollectScheduledTaskTargets()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            yield break;
+        }
+
+        string output;
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo("schtasks.exe", "/query /fo csv /v")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+            });
+            if (process is null)
+            {
+                yield break;
+            }
+
+            output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit(10000);
+            if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(output))
+            {
+                yield break;
+            }
+        }
+        catch
+        {
+            yield break;
+        }
+
+        var lines = output.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length < 2)
+        {
+            yield break;
+        }
+
+        var headers = ParseCsvLine(lines[0]);
+        var columns = headers
+            .Select((name, index) => new { Name = name.Trim(), Index = index })
+            .ToDictionary(item => item.Name, item => item.Index, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var line in lines.Skip(1))
+        {
+            var row = ParseCsvLine(line);
+            var taskName = GetCsvValue(row, columns, "TaskName");
+            var action = GetCsvValue(row, columns, "Task To Run");
+            var path = TryExtractExecutablePath(action);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                yield return new PersistenceTarget(path, $"Scheduled task: {taskName}");
             }
         }
     }
@@ -2302,6 +2388,15 @@ public sealed class MainForm : Form
                     ApplyRiskAndTrust(result);
                     return result;
                 }
+
+                if (HashCache.IsReusablePendingEntry(cached))
+                {
+                    result.ApplyCache(cached, "Recent cached provider state");
+                    result.Status = cached.Status;
+                    AppendResultNote(result, "Provider lookups skipped temporarily to reduce repeat API usage.");
+                    ApplyRiskAndTrust(result);
+                    return result;
+                }
             }
 
             var checkedAnyService = false;
@@ -2375,10 +2470,12 @@ public sealed class MainForm : Form
             // Local metadata is best-effort and should not block reputation checks.
         }
 
-        result.SignatureSummary = GetSignatureSummary(result.Path);
+        var signature = GetSignatureInfo(result.Path);
+        result.SignatureSummary = signature.Summary;
+        result.SignaturePublisher = signature.Publisher;
     }
 
-    private static string GetSignatureSummary(string path)
+    private static SignatureInfo GetSignatureInfo(string path)
     {
         try
         {
@@ -2386,17 +2483,18 @@ public sealed class MainForm : Form
             using var cert2 = new X509Certificate2(certificate);
             var publisher = cert2.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
             var expired = DateTime.Now < cert2.NotBefore || DateTime.Now > cert2.NotAfter;
-            return expired
+            var summary = expired
                 ? $"Signed by {publisher}; certificate outside validity period"
                 : $"Signed by {publisher}";
+            return new SignatureInfo(summary, publisher);
         }
         catch
         {
-            return "Unsigned or signature unavailable";
+            return new SignatureInfo("Unsigned or signature unavailable", "");
         }
     }
 
-    private static void ApplyRiskAndTrust(ScanResult result)
+    private void ApplyRiskAndTrust(ScanResult result)
     {
         var score = 0;
         var reasons = new List<string>();
@@ -2440,10 +2538,16 @@ public sealed class MainForm : Form
             trust.Add(string.Join("; ", result.PersistenceSources));
         }
 
+        var trustedPublisher = IsTrustedPublisher(result.SignaturePublisher);
         if (result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase))
         {
             score += 15;
             reasons.Add("unsigned");
+        }
+        else if (trustedPublisher)
+        {
+            score = Math.Max(0, score - 20);
+            trust.Add($"trusted publisher: {result.SignaturePublisher}");
         }
         else if (!string.IsNullOrWhiteSpace(result.SignatureSummary))
         {
@@ -2473,6 +2577,18 @@ public sealed class MainForm : Form
         {
             AppendResultNote(result, $"Risk: {string.Join(", ", reasons.Distinct(StringComparer.OrdinalIgnoreCase))}.");
         }
+    }
+
+    private bool IsTrustedPublisher(string publisher)
+    {
+        if (string.IsNullOrWhiteSpace(publisher))
+        {
+            return false;
+        }
+
+        return appSettings.TrustedPublishers.Any(trusted =>
+            publisher.Contains(trusted, StringComparison.OrdinalIgnoreCase)
+            || trusted.Contains(publisher, StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsRiskyUserWritablePath(string path)
@@ -2870,7 +2986,7 @@ public sealed class MainForm : Form
 
     private async Task SaveResultToCacheAsync(ScanResult result)
     {
-        if (string.IsNullOrWhiteSpace(result.Sha256) || result.Status == "error" || result.VirusTotalDeferred)
+        if (string.IsNullOrWhiteSpace(result.Sha256))
         {
             return;
         }
@@ -2990,8 +3106,11 @@ public sealed class MainForm : Form
         var alerts = results.Count(result => result.IsAlert);
         var unknown = results.Count(result => result.Status is "unknown" or "uploaded");
         var errors = results.Count(result => result.Status == "error");
-        summaryLabel.Text = $"{results.Count} files scanned";
-        actionLabel.Text = $"{alerts} action needed";
+        var highRisk = results.Count(result => result.RiskScore >= 70);
+        var persistent = results.Count(result => result.PersistenceSources.Count > 0);
+        var unsigned = results.Count(result => result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase));
+        summaryLabel.Text = $"{results.Count} files scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown";
+        actionLabel.Text = $"{alerts + highRisk + errors} action needed";
         if (scanCancellation is not null || processMonitorScanRunning)
         {
             return;
@@ -3090,6 +3209,7 @@ public sealed class MainForm : Form
         var openFileLocation = new Button { Text = "Open File Location", AutoSize = true };
         var killProcess = new Button { Text = "Kill Process", AutoSize = true };
         var quarantineFile = new Button { Text = "Quarantine File", AutoSize = true };
+        var restoreQuarantine = new Button { Text = "Restore Quarantine", AutoSize = true };
         var copyHash = new Button { Text = "Copy Hash", AutoSize = true };
         var ignoreSelected = new Button { Text = "Ignore Selected", AutoSize = true };
         var exportCsv = new Button { Text = "Export CSV", AutoSize = true };
@@ -3100,6 +3220,7 @@ public sealed class MainForm : Form
         openFileLocation.Click += (_, _) => OpenSelectedFileLocation(detailView);
         killProcess.Click += (_, _) => KillSelectedProcesses(detailView);
         quarantineFile.Click += (_, _) => QuarantineSelectedFiles(detailView);
+        restoreQuarantine.Click += (_, _) => ShowQuarantineDialog();
         copyHash.Click += (_, _) => CopySelectedHash(detailView);
         ignoreSelected.Click += (_, _) =>
         {
@@ -3121,6 +3242,7 @@ public sealed class MainForm : Form
         buttons.Controls.Add(openLogs);
         buttons.Controls.Add(exportCsv);
         buttons.Controls.Add(ignoreSelected);
+        buttons.Controls.Add(restoreQuarantine);
         buttons.Controls.Add(quarantineFile);
         buttons.Controls.Add(killProcess);
         buttons.Controls.Add(copyHash);
@@ -3726,6 +3848,16 @@ public sealed class MainForm : Form
         return Path.Combine(GetConfigDirectory(), IgnoredHashesFileName);
     }
 
+    private static string GetQuarantineDirectory()
+    {
+        return Path.Combine(GetConfigDirectory(), QuarantineFolderName);
+    }
+
+    private static string GetQuarantineManifestPath()
+    {
+        return Path.Combine(GetConfigDirectory(), QuarantineManifestFileName);
+    }
+
     private void LoadIgnoredHashes()
     {
         ignoredHashes.Clear();
@@ -3904,8 +4036,9 @@ public sealed class MainForm : Form
             return;
         }
 
-        var quarantineDir = Path.Combine(GetConfigDirectory(), "quarantine");
+        var quarantineDir = GetQuarantineDirectory();
         Directory.CreateDirectory(quarantineDir);
+        var manifest = LoadQuarantineManifest();
         var moved = 0;
         var failures = new List<string>();
 
@@ -3913,10 +4046,28 @@ public sealed class MainForm : Form
         {
             try
             {
+                var sha256 = sourceView.Items
+                    .Cast<ListViewItem>()
+                    .Where(item => string.Equals(GetSubItemText(item, ColPath), path, StringComparison.OrdinalIgnoreCase))
+                    .Select(item => GetSubItemText(item, ColSha256))
+                    .FirstOrDefault(hash => !string.IsNullOrWhiteSpace(hash)) ?? "";
+                var notes = sourceView.Items
+                    .Cast<ListViewItem>()
+                    .Where(item => string.Equals(GetSubItemText(item, ColPath), path, StringComparison.OrdinalIgnoreCase))
+                    .Select(item => GetSubItemText(item, ColNotes))
+                    .FirstOrDefault() ?? "";
                 var target = Path.Combine(
                     quarantineDir,
                     $"{Path.GetFileName(path)}.{DateTime.Now:yyyyMMddHHmmss}.quarantine");
                 File.Move(path, target);
+                manifest.Add(new QuarantineEntry
+                {
+                    OriginalPath = path,
+                    QuarantinePath = target,
+                    Sha256 = sha256,
+                    Notes = notes,
+                    QuarantinedAtUtc = DateTimeOffset.UtcNow,
+                });
                 moved++;
                 MarkRowsQuarantined(sourceView, path, target);
                 MarkRowsQuarantined(resultsView, path, target);
@@ -3927,11 +4078,205 @@ public sealed class MainForm : Form
             }
         }
 
+        SaveQuarantineManifest(manifest);
         statusLabel.Text = $"Quarantined {moved} file(s).";
         if (failures.Count > 0)
         {
             MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be quarantined", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
+    }
+
+    private void ShowQuarantineDialog()
+    {
+        var manifest = LoadQuarantineManifest()
+            .Where(entry => File.Exists(entry.QuarantinePath))
+            .OrderByDescending(entry => entry.QuarantinedAtUtc)
+            .ToList();
+
+        using var dialog = new Form
+        {
+            Text = "HashGuard Quarantine",
+            StartPosition = FormStartPosition.CenterParent,
+            Size = new Size(980, 520),
+            MinimumSize = new Size(760, 420),
+        };
+
+        var view = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = true };
+        view.Columns.Add("Quarantined", 150);
+        view.Columns.Add("SHA-256", 300);
+        view.Columns.Add("Original Path", 420);
+        view.Columns.Add("Notes", 360);
+        foreach (var entry in manifest)
+        {
+            var item = new ListViewItem(entry.QuarantinedAtUtc.LocalDateTime.ToString("g"));
+            item.SubItems.Add(entry.Sha256);
+            item.SubItems.Add(entry.OriginalPath);
+            item.SubItems.Add(entry.Notes);
+            item.Tag = entry;
+            view.Items.Add(item);
+        }
+
+        var restore = new Button { Text = "Restore Selected", AutoSize = true };
+        var delete = new Button { Text = "Delete Selected", AutoSize = true };
+        var openFolder = new Button { Text = "Open Quarantine", AutoSize = true };
+        var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
+
+        restore.Click += (_, _) => RestoreSelectedQuarantineEntries(view);
+        delete.Click += (_, _) => DeleteSelectedQuarantineEntries(view);
+        openFolder.Click += (_, _) =>
+        {
+            Directory.CreateDirectory(GetQuarantineDirectory());
+            Process.Start(new ProcessStartInfo(GetQuarantineDirectory()) { UseShellExecute = true });
+        };
+
+        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        buttons.Controls.Add(close);
+        buttons.Controls.Add(openFolder);
+        buttons.Controls.Add(delete);
+        buttons.Controls.Add(restore);
+
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(12) };
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(view, 0, 0);
+        layout.Controls.Add(buttons, 0, 1);
+        dialog.Controls.Add(layout);
+        dialog.AcceptButton = close;
+        dialog.ShowDialog(this);
+    }
+
+    private void RestoreSelectedQuarantineEntries(ListView view)
+    {
+        var entries = GetSelectedQuarantineEntries(view);
+        if (entries.Count == 0)
+        {
+            MessageBox.Show(this, "Select one or more quarantined files first.", "No quarantine selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var accepted = MessageBox.Show(this, $"Restore {entries.Count} quarantined file(s) to their original paths?", "Restore quarantine", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var manifest = LoadQuarantineManifest();
+        var restored = 0;
+        var failures = new List<string>();
+        foreach (var entry in entries)
+        {
+            try
+            {
+                if (File.Exists(entry.OriginalPath))
+                {
+                    throw new IOException("Original path already exists.");
+                }
+
+                Directory.CreateDirectory(Path.GetDirectoryName(entry.OriginalPath)!);
+                File.Move(entry.QuarantinePath, entry.OriginalPath);
+                manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
+                restored++;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{entry.OriginalPath}: {ex.Message}");
+            }
+        }
+
+        SaveQuarantineManifest(manifest);
+        statusLabel.Text = $"Restored {restored} quarantined file(s).";
+        if (failures.Count > 0)
+        {
+            MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be restored", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        RemoveQuarantineRows(view, entries);
+    }
+
+    private void DeleteSelectedQuarantineEntries(ListView view)
+    {
+        var entries = GetSelectedQuarantineEntries(view);
+        if (entries.Count == 0)
+        {
+            MessageBox.Show(this, "Select one or more quarantined files first.", "No quarantine selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var accepted = MessageBox.Show(this, $"Permanently delete {entries.Count} quarantined file(s)?", "Delete quarantine", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var manifest = LoadQuarantineManifest();
+        foreach (var entry in entries)
+        {
+            try
+            {
+                if (File.Exists(entry.QuarantinePath))
+                {
+                    File.Delete(entry.QuarantinePath);
+                }
+
+                manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "Delete quarantine failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        SaveQuarantineManifest(manifest);
+        statusLabel.Text = "Selected quarantine entries deleted.";
+        RemoveQuarantineRows(view, entries);
+    }
+
+    private static void RemoveQuarantineRows(ListView view, List<QuarantineEntry> entries)
+    {
+        var quarantinedPaths = entries
+            .Select(entry => entry.QuarantinePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in view.Items.Cast<ListViewItem>().ToList())
+        {
+            if (item.Tag is QuarantineEntry entry && quarantinedPaths.Contains(entry.QuarantinePath))
+            {
+                view.Items.Remove(item);
+            }
+        }
+    }
+
+    private static List<QuarantineEntry> GetSelectedQuarantineEntries(ListView view)
+    {
+        return view.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(item => item.Tag as QuarantineEntry)
+            .Where(entry => entry is not null)
+            .Cast<QuarantineEntry>()
+            .ToList();
+    }
+
+    private static List<QuarantineEntry> LoadQuarantineManifest()
+    {
+        try
+        {
+            var path = GetQuarantineManifestPath();
+            return File.Exists(path)
+                ? JsonSerializer.Deserialize<List<QuarantineEntry>>(File.ReadAllText(path, Encoding.UTF8)) ?? []
+                : [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static void SaveQuarantineManifest(List<QuarantineEntry> manifest)
+    {
+        Directory.CreateDirectory(GetConfigDirectory());
+        File.WriteAllText(
+            GetQuarantineManifestPath(),
+            JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
+            Encoding.UTF8);
     }
 
     private static void MarkRowsQuarantined(ListView view, string originalPath, string quarantinePath)
@@ -4398,6 +4743,7 @@ public sealed class MainForm : Form
     private sealed record ProcessFile(int Pid, string Name, string Path);
     private sealed record SkippedProcess(int Pid, string Name, string Reason);
     private sealed record PersistenceTarget(string Path, string Source);
+    private sealed record SignatureInfo(string Summary, string Publisher);
     private readonly record struct ProcessFileState(long Length, DateTime LastWriteTimeUtc);
 
     private sealed class HashCache
@@ -4472,6 +4818,7 @@ public sealed class MainForm : Form
                 Link = result.Link,
                 Notes = result.Notes,
                 CheckedAtUtc = DateTimeOffset.UtcNow,
+                VirusTotalDeferred = result.VirusTotalDeferred,
             };
             SetFileState(result);
         }
@@ -4628,6 +4975,24 @@ public sealed class MainForm : Form
                 && DateTimeOffset.UtcNow - entry.CheckedAtUtc <= CleanCacheMaxAge;
         }
 
+        public static bool IsReusablePendingEntry(CacheEntry entry)
+        {
+            if (entry.CheckedAtUtc == default)
+            {
+                return false;
+            }
+
+            var age = DateTimeOffset.UtcNow - entry.CheckedAtUtc;
+            return string.Equals(entry.Status, "unknown", StringComparison.OrdinalIgnoreCase)
+                    && age <= UnknownCacheMaxAge
+                || string.Equals(entry.Status, "uploaded", StringComparison.OrdinalIgnoreCase)
+                    && age <= UnknownCacheMaxAge
+                || string.Equals(entry.Status, "error", StringComparison.OrdinalIgnoreCase)
+                    && age <= ErrorCacheMaxAge
+                || entry.VirusTotalDeferred
+                    && age <= DeferredCacheMaxAge;
+        }
+
         private static string NormalizeCachedStatus(string status)
         {
             return string.Equals(status, "clean/seen", StringComparison.OrdinalIgnoreCase) ? "clean" : status;
@@ -4758,7 +5123,7 @@ public sealed class MainForm : Form
         private void MergeEntry(string sha256, CacheEntry entry, DateTimeOffset fallbackCheckedAtUtc)
         {
             entry.Status = NormalizeCachedStatus(entry.Status);
-            if (sha256.Length != 64 || string.IsNullOrWhiteSpace(entry.Status) || string.Equals(entry.Status, "error", StringComparison.OrdinalIgnoreCase))
+            if (sha256.Length != 64 || string.IsNullOrWhiteSpace(entry.Status))
             {
                 return;
             }
@@ -4889,6 +5254,7 @@ public sealed class MainForm : Form
         public string Link { get; set; } = "";
         public string Notes { get; set; } = "";
         public DateTimeOffset CheckedAtUtc { get; set; }
+        public bool VirusTotalDeferred { get; set; }
     }
 
     private sealed class FileStateEntry
@@ -4963,6 +5329,26 @@ public sealed class MainForm : Form
         public string MetaDefenderApiKeyEncrypted { get; set; } = "";
         public string ApiKey { get; set; } = "";
         public string MetaDefenderApiKey { get; set; } = "";
+        public List<string> TrustedPublishers { get; set; } =
+        [
+            "Microsoft Corporation",
+            "Microsoft Windows",
+            "NVIDIA Corporation",
+            "Advanced Micro Devices",
+            "Intel Corporation",
+            "Dell Inc.",
+            "HP Inc.",
+            "Lenovo",
+        ];
+    }
+
+    private sealed class QuarantineEntry
+    {
+        public string OriginalPath { get; set; } = "";
+        public string QuarantinePath { get; set; } = "";
+        public string Sha256 { get; set; } = "";
+        public string Notes { get; set; } = "";
+        public DateTimeOffset QuarantinedAtUtc { get; set; }
     }
 
     private sealed class ScanResult(string path, string processNames, string pids)
@@ -4982,6 +5368,7 @@ public sealed class MainForm : Form
         public string RiskLevel { get; set; } = "Low";
         public string TrustSummary { get; set; } = "";
         public string SignatureSummary { get; set; } = "";
+        public string SignaturePublisher { get; set; } = "";
         public long FileSizeBytes { get; set; }
         public DateTime LastWriteTimeUtc { get; set; }
         public double FileAgeDays { get; set; } = -1;
@@ -4998,6 +5385,7 @@ public sealed class MainForm : Form
             Harmless = entry.Harmless;
             Undetected = entry.Undetected;
             Link = entry.Link;
+            VirusTotalDeferred = entry.VirusTotalDeferred;
             Notes = $"{prefix} {entry.CheckedAtUtc.LocalDateTime:g}";
             if (!string.IsNullOrWhiteSpace(entry.Notes))
             {
