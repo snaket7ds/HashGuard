@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -51,6 +52,16 @@ public sealed class MainForm : Form
     ];
     private const string RunRegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunRegistryValueName = "HashGuard";
+    private const int ColStatus = 0;
+    private const int ColRisk = 1;
+    private const int ColTrust = 2;
+    private const int ColMalicious = 3;
+    private const int ColSuspicious = 4;
+    private const int ColProcess = 5;
+    private const int ColPids = 6;
+    private const int ColSha256 = 7;
+    private const int ColPath = 8;
+    private const int ColNotes = 9;
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
@@ -612,6 +623,8 @@ public sealed class MainForm : Form
         }
 
         view.Columns.Add("Status", 100);
+        view.Columns.Add("Risk", 92);
+        view.Columns.Add("Trust", 240);
         view.Columns.Add("Mal", 52);
         view.Columns.Add("Susp", 52);
         view.Columns.Add("Process", 170);
@@ -919,6 +932,7 @@ public sealed class MainForm : Form
         {
             var processCollection = CollectProcessFiles();
             var grouped = processCollection.Files;
+            AddPersistenceTargets(grouped);
             var paths = grouped.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToList();
             RefreshMonitoredProcessFiles(grouped.Keys);
             AddSkippedProcessLogIfNeeded(processCollection, force: true);
@@ -1761,6 +1775,178 @@ public sealed class MainForm : Form
         return new ProcessCollectionResult(grouped, skipped);
     }
 
+    private static void AddPersistenceTargets(Dictionary<string, List<ProcessFile>> grouped)
+    {
+        foreach (var target in CollectPersistenceTargets())
+        {
+            if (!File.Exists(target.Path))
+            {
+                continue;
+            }
+
+            if (!grouped.TryGetValue(target.Path, out var files))
+            {
+                files = [];
+                grouped[target.Path] = files;
+            }
+
+            files.Add(new ProcessFile(0, target.Source, target.Path));
+        }
+    }
+
+    private static IEnumerable<PersistenceTarget> CollectPersistenceTargets()
+    {
+        foreach (var target in CollectRunKeyPersistenceTargets(Registry.CurrentUser, "HKCU", RunRegistryPath))
+        {
+            yield return target;
+        }
+
+        foreach (var target in CollectRunKeyPersistenceTargets(Registry.LocalMachine, "HKLM", RunRegistryPath))
+        {
+            yield return target;
+        }
+
+        foreach (var folder in GetStartupFolders())
+        {
+            foreach (var target in CollectStartupFolderTargets(folder))
+            {
+                yield return target;
+            }
+        }
+
+        foreach (var target in CollectServiceTargets())
+        {
+            yield return target;
+        }
+    }
+
+    private static IEnumerable<PersistenceTarget> CollectRunKeyPersistenceTargets(RegistryKey root, string rootName, string subKeyPath)
+    {
+        using var key = root.OpenSubKey(subKeyPath);
+        if (key is null)
+        {
+            yield break;
+        }
+
+        foreach (var valueName in key.GetValueNames())
+        {
+            var value = key.GetValue(valueName)?.ToString();
+            var path = TryExtractExecutablePath(value);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                yield return new PersistenceTarget(path, $"Startup: {rootName}\\Run\\{valueName}");
+            }
+        }
+    }
+
+    private static IEnumerable<string> GetStartupFolders()
+    {
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.Startup);
+        yield return Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup);
+    }
+
+    private static IEnumerable<PersistenceTarget> CollectStartupFolderTargets(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            yield break;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(folder))
+        {
+            var targetPath = Path.GetExtension(file).Equals(".lnk", StringComparison.OrdinalIgnoreCase)
+                ? TryResolveShortcutTarget(file)
+                : file;
+            if (!string.IsNullOrWhiteSpace(targetPath))
+            {
+                yield return new PersistenceTarget(targetPath, $"Startup folder: {Path.GetFileName(file)}");
+            }
+        }
+    }
+
+    private static IEnumerable<PersistenceTarget> CollectServiceTargets()
+    {
+        using var services = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services");
+        if (services is null)
+        {
+            yield break;
+        }
+
+        foreach (var serviceName in services.GetSubKeyNames())
+        {
+            using var service = services.OpenSubKey(serviceName);
+            var imagePath = service?.GetValue("ImagePath")?.ToString();
+            var path = TryExtractExecutablePath(Environment.ExpandEnvironmentVariables(imagePath ?? ""));
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                yield return new PersistenceTarget(path, $"Service: {serviceName}");
+            }
+        }
+    }
+
+    private static string? TryResolveShortcutTarget(string shortcutPath)
+    {
+        try
+        {
+            var shell = Type.GetTypeFromProgID("WScript.Shell");
+            if (shell is null)
+            {
+                return null;
+            }
+
+            dynamic shellObject = Activator.CreateInstance(shell)!;
+            dynamic shortcut = shellObject.CreateShortcut(shortcutPath);
+            return TryExtractExecutablePath((string?)shortcut.TargetPath);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryExtractExecutablePath(string? command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return null;
+        }
+
+        var expanded = Environment.ExpandEnvironmentVariables(command.Trim());
+        if (expanded.StartsWith("\"", StringComparison.Ordinal))
+        {
+            var endQuote = expanded.IndexOf('"', 1);
+            if (endQuote > 1)
+            {
+                return NormalizeExecutablePath(expanded[1..endQuote]);
+            }
+        }
+
+        var exeIndex = expanded.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+        if (exeIndex >= 0)
+        {
+            return NormalizeExecutablePath(expanded[..(exeIndex + 4)].Trim());
+        }
+
+        return NormalizeExecutablePath(expanded.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
+    }
+
+    private static string? NormalizeExecutablePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path.Trim());
+        }
+        catch
+        {
+            return path.Trim();
+        }
+    }
+
     private static SkippedProcess GetSkippedProcess(Process process, Exception ex)
     {
         var pid = 0;
@@ -2088,6 +2274,7 @@ public sealed class MainForm : Form
         var names = string.Join(", ", processFiles.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n));
         var pids = string.Join(", ", processFiles.Select(p => p.Pid).OrderBy(pid => pid));
         var result = new ScanResult(path, names, pids);
+        ApplyLocalFileIntelligence(result, processFiles);
 
         try
         {
@@ -2098,6 +2285,7 @@ public sealed class MainForm : Form
                 result.Link = string.Format(ReportUrl, result.Sha256);
                 result.ApplyCache(cachedEntry, "Skipped unchanged file");
                 result.Status = "clean/seen";
+                ApplyRiskAndTrust(result);
                 return result;
             }
 
@@ -2111,6 +2299,7 @@ public sealed class MainForm : Form
                     result.Status = "clean/seen";
                     hashCache.SetFileState(result);
                     await hashCache.SaveAsync();
+                    ApplyRiskAndTrust(result);
                     return result;
                 }
             }
@@ -2145,6 +2334,7 @@ public sealed class MainForm : Form
             }
 
             ApplyIgnoredHash(result);
+            ApplyRiskAndTrust(result);
             await SaveResultToCacheAsync(result);
             return result;
         }
@@ -2156,8 +2346,164 @@ public sealed class MainForm : Form
         {
             result.Status = "error";
             result.Notes = FormatScanError(ex);
+            ApplyRiskAndTrust(result);
             return result;
         }
+    }
+
+    private static void ApplyLocalFileIntelligence(ScanResult result, List<ProcessFile> processFiles)
+    {
+        result.PersistenceSources = processFiles
+            .Where(file => file.Pid == 0 && file.Name.Contains(':', StringComparison.Ordinal))
+            .Select(file => file.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(source => source, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        try
+        {
+            var info = new FileInfo(result.Path);
+            if (info.Exists)
+            {
+                result.FileSizeBytes = info.Length;
+                result.LastWriteTimeUtc = info.LastWriteTimeUtc;
+                result.FileAgeDays = Math.Max(0, (DateTime.UtcNow - info.LastWriteTimeUtc).TotalDays);
+            }
+        }
+        catch
+        {
+            // Local metadata is best-effort and should not block reputation checks.
+        }
+
+        result.SignatureSummary = GetSignatureSummary(result.Path);
+    }
+
+    private static string GetSignatureSummary(string path)
+    {
+        try
+        {
+            var certificate = X509Certificate.CreateFromSignedFile(path);
+            using var cert2 = new X509Certificate2(certificate);
+            var publisher = cert2.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
+            var expired = DateTime.Now < cert2.NotBefore || DateTime.Now > cert2.NotAfter;
+            return expired
+                ? $"Signed by {publisher}; certificate outside validity period"
+                : $"Signed by {publisher}";
+        }
+        catch
+        {
+            return "Unsigned or signature unavailable";
+        }
+    }
+
+    private static void ApplyRiskAndTrust(ScanResult result)
+    {
+        var score = 0;
+        var reasons = new List<string>();
+        var trust = new List<string>();
+
+        if (result.Malicious > 0)
+        {
+            score += 80;
+            reasons.Add($"{result.Malicious} malicious detection(s)");
+        }
+
+        if (result.Suspicious > 0)
+        {
+            score += Math.Min(50, result.Suspicious * 15);
+            reasons.Add($"{result.Suspicious} suspicious detection(s)");
+        }
+
+        if (string.Equals(result.Status, "unknown", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(result.Status, "uploaded", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 20;
+            reasons.Add("hash not known clean");
+        }
+
+        if (string.Equals(result.Status, "error", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 25;
+            reasons.Add("scan error needs review");
+        }
+
+        if (IsRiskyUserWritablePath(result.Path))
+        {
+            score += 25;
+            reasons.Add("user-writable/risky path");
+        }
+
+        if (result.PersistenceSources.Count > 0)
+        {
+            score += 25;
+            reasons.Add("starts automatically");
+            trust.Add(string.Join("; ", result.PersistenceSources));
+        }
+
+        if (result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 15;
+            reasons.Add("unsigned");
+        }
+        else if (!string.IsNullOrWhiteSpace(result.SignatureSummary))
+        {
+            trust.Add(result.SignatureSummary);
+        }
+
+        if (result.FileAgeDays is >= 0 and < 7)
+        {
+            score += 10;
+            reasons.Add("recently modified");
+        }
+
+        if (IsWindowsOrProgramFilesPath(result.Path) && !result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase))
+        {
+            score = Math.Max(0, score - 15);
+            trust.Add("trusted install location");
+        }
+
+        result.RiskScore = Math.Clamp(score, 0, 100);
+        result.RiskLevel = result.RiskScore >= 70 ? "High"
+            : result.RiskScore >= 40 ? "Medium"
+            : result.RiskScore >= 15 ? "Low"
+            : "Low";
+        result.TrustSummary = trust.Count == 0 ? result.SignatureSummary : string.Join("; ", trust.Distinct(StringComparer.OrdinalIgnoreCase));
+
+        if (reasons.Count > 0)
+        {
+            AppendResultNote(result, $"Risk: {string.Join(", ", reasons.Distinct(StringComparer.OrdinalIgnoreCase))}.");
+        }
+    }
+
+    private static bool IsRiskyUserWritablePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var lower = path.ToLowerInvariant();
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).ToLowerInvariant();
+        return lower.Contains(@"\appdata\", StringComparison.Ordinal)
+            || lower.Contains(@"\temp\", StringComparison.Ordinal)
+            || lower.Contains(@"\downloads\", StringComparison.Ordinal)
+            || (!string.IsNullOrWhiteSpace(userProfile) && lower.StartsWith(userProfile, StringComparison.OrdinalIgnoreCase) && !IsWindowsOrProgramFilesPath(path));
+    }
+
+    private static bool IsWindowsOrProgramFilesPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var fullPath = path.ToLowerInvariant();
+        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows).ToLowerInvariant();
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles).ToLowerInvariant();
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86).ToLowerInvariant();
+        return (!string.IsNullOrWhiteSpace(windows) && fullPath.StartsWith(windows, StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrWhiteSpace(programFiles) && fullPath.StartsWith(programFiles, StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrWhiteSpace(programFilesX86) && fullPath.StartsWith(programFilesX86, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FormatScanError(Exception ex)
@@ -2577,6 +2923,8 @@ public sealed class MainForm : Form
     private void AddResultRow(ScanResult result)
     {
         var item = new ListViewItem(result.Status);
+        item.SubItems.Add($"{result.RiskLevel} {result.RiskScore}");
+        item.SubItems.Add(result.TrustSummary);
         item.SubItems.Add(result.Malicious.ToString());
         item.SubItems.Add(result.Suspicious.ToString());
         item.SubItems.Add(result.ProcessNames);
@@ -2614,8 +2962,9 @@ public sealed class MainForm : Form
     private static void ApplyResultRowColor(ListViewItem item)
     {
         var status = item.Text;
-        var malicious = item.SubItems.Count > 1 && int.TryParse(item.SubItems[1].Text, out var mal) ? mal : 0;
-        var suspicious = item.SubItems.Count > 2 && int.TryParse(item.SubItems[2].Text, out var susp) ? susp : 0;
+        var malicious = item.SubItems.Count > ColMalicious && int.TryParse(item.SubItems[ColMalicious].Text, out var mal) ? mal : 0;
+        var suspicious = item.SubItems.Count > ColSuspicious && int.TryParse(item.SubItems[ColSuspicious].Text, out var susp) ? susp : 0;
+        var riskText = item.SubItems.Count > ColRisk ? item.SubItems[ColRisk].Text : "";
 
         if (status == "ignored")
         {
@@ -2625,7 +2974,8 @@ public sealed class MainForm : Form
         {
             item.BackColor = Color.MistyRose;
         }
-        else if (status is "unknown" or "uploaded" or "limited access")
+        else if (riskText.StartsWith("Medium", StringComparison.OrdinalIgnoreCase)
+            || status is "unknown" or "uploaded" or "limited access")
         {
             item.BackColor = Color.LemonChiffon;
         }
@@ -2672,13 +3022,16 @@ public sealed class MainForm : Form
             using var writer = new StreamWriter(logPath, append: true, Encoding.UTF8);
             if (writeHeader)
             {
-                writer.WriteLine("timestamp,status,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes");
+                writer.WriteLine("timestamp,status,risk_score,risk_level,trust,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes");
             }
 
             writer.WriteLine(string.Join(",", new[]
             {
                 Csv(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
                 Csv(result.Status),
+                Csv(result.RiskScore.ToString()),
+                Csv(result.RiskLevel),
+                Csv(result.TrustSummary),
                 Csv(result.Malicious.ToString()),
                 Csv(result.Suspicious.ToString()),
                 Csv(result.Harmless.ToString()),
@@ -2723,10 +3076,10 @@ public sealed class MainForm : Form
 
         var detailView = new ListView { View = View.Details, FullRowSelect = true, GridLines = true };
         ConfigureResultsView(detailView);
-        detailView.Columns[3].Width = 150;
-        detailView.Columns[5].Width = 300;
-        detailView.Columns[6].Width = 360;
-        detailView.Columns[7].Width = 300;
+        detailView.Columns[ColProcess].Width = 150;
+        detailView.Columns[ColSha256].Width = 300;
+        detailView.Columns[ColPath].Width = 360;
+        detailView.Columns[ColNotes].Width = 300;
         detailView.Dock = DockStyle.Fill;
         foreach (var item in LoadActivityLogItems())
         {
@@ -2735,6 +3088,9 @@ public sealed class MainForm : Form
 
         var openReport = new Button { Text = "Open Report...", AutoSize = true };
         var openFileLocation = new Button { Text = "Open File Location", AutoSize = true };
+        var killProcess = new Button { Text = "Kill Process", AutoSize = true };
+        var quarantineFile = new Button { Text = "Quarantine File", AutoSize = true };
+        var copyHash = new Button { Text = "Copy Hash", AutoSize = true };
         var ignoreSelected = new Button { Text = "Ignore Selected", AutoSize = true };
         var exportCsv = new Button { Text = "Export CSV", AutoSize = true };
         var openLogs = new Button { Text = "Open Logs", AutoSize = true };
@@ -2742,6 +3098,9 @@ public sealed class MainForm : Form
 
         openReport.Click += (_, _) => OpenSelectedReport(detailView);
         openFileLocation.Click += (_, _) => OpenSelectedFileLocation(detailView);
+        killProcess.Click += (_, _) => KillSelectedProcesses(detailView);
+        quarantineFile.Click += (_, _) => QuarantineSelectedFiles(detailView);
+        copyHash.Click += (_, _) => CopySelectedHash(detailView);
         ignoreSelected.Click += (_, _) =>
         {
             ToggleSelectedIgnoreFlag(detailView);
@@ -2762,6 +3121,9 @@ public sealed class MainForm : Form
         buttons.Controls.Add(openLogs);
         buttons.Controls.Add(exportCsv);
         buttons.Controls.Add(ignoreSelected);
+        buttons.Controls.Add(quarantineFile);
+        buttons.Controls.Add(killProcess);
+        buttons.Controls.Add(copyHash);
         buttons.Controls.Add(openFileLocation);
         buttons.Controls.Add(openReport);
         layout.Controls.Add(buttons, 0, 1);
@@ -2826,6 +3188,12 @@ public sealed class MainForm : Form
             }
 
             var item = new ListViewItem(GetCsvValue(row, columns, "status"));
+            var riskLevel = GetCsvValue(row, columns, "risk_level");
+            var riskScore = GetCsvValue(row, columns, "risk_score");
+            item.SubItems.Add(string.IsNullOrWhiteSpace(riskLevel) && string.IsNullOrWhiteSpace(riskScore)
+                ? ""
+                : $"{riskLevel} {riskScore}".Trim());
+            item.SubItems.Add(GetCsvValue(row, columns, "trust"));
             item.SubItems.Add(GetCsvValue(row, columns, "malicious"));
             item.SubItems.Add(GetCsvValue(row, columns, "suspicious"));
             item.SubItems.Add(GetCsvValue(row, columns, "process_names"));
@@ -3424,6 +3792,164 @@ public sealed class MainForm : Form
         OpenSelectedReport(resultsView);
     }
 
+    private void CopySelectedHash(ListView sourceView)
+    {
+        if (sourceView.SelectedIndices.Count == 0)
+        {
+            MessageBox.Show(this, "Select a row with a SHA-256 hash first.", "No hash selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var sha256 = GetSubItemText(sourceView.SelectedItems[0], ColSha256);
+        if (string.IsNullOrWhiteSpace(sha256))
+        {
+            MessageBox.Show(this, "The selected row has no SHA-256 hash.", "No hash selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        Clipboard.SetText(sha256);
+        statusLabel.Text = "SHA-256 copied to clipboard.";
+    }
+
+    private void KillSelectedProcesses(ListView sourceView)
+    {
+        var selections = sourceView.SelectedItems
+            .Cast<ListViewItem>()
+            .SelectMany(item => GetSubItemText(item, ColPids)
+                .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Select(pid => new
+                {
+                    Pid = int.TryParse(pid, out var value) ? value : 0,
+                    Path = GetSubItemText(item, ColPath),
+                }))
+            .Where(selection => selection.Pid > 0 && selection.Pid != Environment.ProcessId)
+            .GroupBy(selection => selection.Pid)
+            .Select(group => group.First())
+            .ToList();
+
+        if (selections.Count == 0)
+        {
+            MessageBox.Show(this, "Select one or more rows with running process IDs.", "No running process selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var accepted = MessageBox.Show(
+            this,
+            $"Terminate {selections.Count} selected process(es)? HashGuard will only kill a PID if its current executable path still matches the selected row. Unsaved work in those processes may be lost.",
+            "Kill selected processes",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var killed = 0;
+        var failures = new List<string>();
+        foreach (var selection in selections)
+        {
+            try
+            {
+                using var process = Process.GetProcessById(selection.Pid);
+                var currentPath = GetProcessPath(process);
+                if (string.IsNullOrWhiteSpace(currentPath)
+                    || !string.Equals(currentPath, selection.Path, StringComparison.OrdinalIgnoreCase))
+                {
+                    failures.Add($"{selection.Pid}: current process path no longer matches the selected row.");
+                    continue;
+                }
+
+                process.Kill(entireProcessTree: true);
+                if (process.WaitForExit(5000))
+                {
+                    killed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{selection.Pid}: {ex.Message}");
+            }
+        }
+
+        statusLabel.Text = $"Killed {killed} process(es).";
+        if (failures.Count > 0)
+        {
+            MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some processes could not be killed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void QuarantineSelectedFiles(ListView sourceView)
+    {
+        var paths = sourceView.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(item => GetSubItemText(item, ColPath))
+            .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (paths.Count == 0)
+        {
+            MessageBox.Show(this, "Select one or more rows with existing files.", "No file selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var accepted = MessageBox.Show(
+            this,
+            $"Move {paths.Count} selected file(s) to HashGuard quarantine? Running files may need their process killed first.",
+            "Quarantine selected files",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var quarantineDir = Path.Combine(GetConfigDirectory(), "quarantine");
+        Directory.CreateDirectory(quarantineDir);
+        var moved = 0;
+        var failures = new List<string>();
+
+        foreach (var path in paths)
+        {
+            try
+            {
+                var target = Path.Combine(
+                    quarantineDir,
+                    $"{Path.GetFileName(path)}.{DateTime.Now:yyyyMMddHHmmss}.quarantine");
+                File.Move(path, target);
+                moved++;
+                MarkRowsQuarantined(sourceView, path, target);
+                MarkRowsQuarantined(resultsView, path, target);
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{path}: {ex.Message}");
+            }
+        }
+
+        statusLabel.Text = $"Quarantined {moved} file(s).";
+        if (failures.Count > 0)
+        {
+            MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be quarantined", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private static void MarkRowsQuarantined(ListView view, string originalPath, string quarantinePath)
+    {
+        foreach (ListViewItem item in view.Items)
+        {
+            if (!string.Equals(GetSubItemText(item, ColPath), originalPath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var notes = GetSubItemText(item, ColNotes);
+            item.SubItems[ColNotes].Text = string.IsNullOrWhiteSpace(notes)
+                ? $"Quarantined to {quarantinePath}"
+                : $"{notes}; Quarantined to {quarantinePath}";
+        }
+    }
+
     private void OpenSelectedFileLocation(ListView sourceView)
     {
         if (sourceView.SelectedIndices.Count == 0)
@@ -3432,7 +3958,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        var path = GetSubItemText(sourceView.SelectedItems[0], 6);
+        var path = GetSubItemText(sourceView.SelectedItems[0], ColPath);
         if (string.IsNullOrWhiteSpace(path))
         {
             MessageBox.Show(this, "The selected row has no file path.", "No file path", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -3493,11 +4019,11 @@ public sealed class MainForm : Form
             .Cast<ListViewItem>()
             .Where(item =>
             {
-                var malicious = int.TryParse(GetSubItemText(item, 1), out var mal) ? mal : 0;
-                var suspicious = int.TryParse(GetSubItemText(item, 2), out var susp) ? susp : 0;
-                return malicious + suspicious > 0 && !string.IsNullOrWhiteSpace(GetSubItemText(item, 5));
+                var malicious = int.TryParse(GetSubItemText(item, ColMalicious), out var mal) ? mal : 0;
+                var suspicious = int.TryParse(GetSubItemText(item, ColSuspicious), out var susp) ? susp : 0;
+                return malicious + suspicious > 0 && !string.IsNullOrWhiteSpace(GetSubItemText(item, ColSha256));
             })
-            .Select(item => GetSubItemText(item, 5))
+            .Select(item => GetSubItemText(item, ColSha256))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -3507,7 +4033,7 @@ public sealed class MainForm : Form
         return ignoredHashes.Contains(sha256)
             || sourceView.SelectedItems
                 .Cast<ListViewItem>()
-                .Any(item => string.Equals(GetSubItemText(item, 5), sha256, StringComparison.OrdinalIgnoreCase)
+                .Any(item => string.Equals(GetSubItemText(item, ColSha256), sha256, StringComparison.OrdinalIgnoreCase)
                     && string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -3592,14 +4118,14 @@ public sealed class MainForm : Form
     {
         foreach (ListViewItem row in view.Items)
         {
-            if (!string.Equals(GetSubItemText(row, 5), sha256, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(GetSubItemText(row, ColSha256), sha256, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
             row.Text = "ignored";
-            var notes = GetSubItemText(row, 7);
-            row.SubItems[7].Text = notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            var notes = GetSubItemText(row, ColNotes);
+            row.SubItems[ColNotes].Text = notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
                 ? notes
                 : string.IsNullOrWhiteSpace(notes)
                     ? "Detection ignored by user."
@@ -3612,15 +4138,15 @@ public sealed class MainForm : Form
     {
         foreach (ListViewItem row in view.Items)
         {
-            if (!string.Equals(GetSubItemText(row, 5), sha256, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(GetSubItemText(row, ColSha256), sha256, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            var malicious = int.TryParse(GetSubItemText(row, 1), out var mal) ? mal : 0;
-            var suspicious = int.TryParse(GetSubItemText(row, 2), out var susp) ? susp : 0;
+            var malicious = int.TryParse(GetSubItemText(row, ColMalicious), out var mal) ? mal : 0;
+            var suspicious = int.TryParse(GetSubItemText(row, ColSuspicious), out var susp) ? susp : 0;
             row.Text = malicious + suspicious > 0 ? "detected" : "clean";
-            row.SubItems[7].Text = RemoveIgnoreNote(GetSubItemText(row, 7));
+            row.SubItems[ColNotes].Text = RemoveIgnoreNote(GetSubItemText(row, ColNotes));
             ApplyResultRowColor(row);
         }
     }
@@ -3646,7 +4172,7 @@ public sealed class MainForm : Form
         }
 
         var item = sourceView.SelectedItems[0];
-        var sha256 = GetSubItemText(item, 5);
+        var sha256 = GetSubItemText(item, ColSha256);
         if (string.IsNullOrWhiteSpace(sha256) || sha256.Length != 64)
         {
             MessageBox.Show(this, "The selected row has no valid SHA-256 hash.", "No report selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -3764,23 +4290,25 @@ public sealed class MainForm : Form
 
         var lines = new List<string>
         {
-            "status,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes",
+            "status,risk,trust,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes",
         };
         foreach (ListViewItem item in sourceView.Items)
         {
             lines.Add(string.Join(",", new[]
             {
                 Csv(GetSubItemText(item, 0)),
-                Csv(GetSubItemText(item, 1)),
-                Csv(GetSubItemText(item, 2)),
+                Csv(GetSubItemText(item, ColRisk)),
+                Csv(GetSubItemText(item, ColTrust)),
+                Csv(GetSubItemText(item, ColMalicious)),
+                Csv(GetSubItemText(item, ColSuspicious)),
                 Csv(""),
                 Csv(""),
-                Csv(GetSubItemText(item, 3)),
-                Csv(GetSubItemText(item, 4)),
-                Csv(GetSubItemText(item, 5)),
-                Csv(GetSubItemText(item, 6)),
+                Csv(GetSubItemText(item, ColProcess)),
+                Csv(GetSubItemText(item, ColPids)),
+                Csv(GetSubItemText(item, ColSha256)),
+                Csv(GetSubItemText(item, ColPath)),
                 Csv(item.Tag as string ?? ""),
-                Csv(GetSubItemText(item, 7)),
+                Csv(GetSubItemText(item, ColNotes)),
             }));
         }
 
@@ -3869,6 +4397,7 @@ public sealed class MainForm : Form
     private sealed record ProcessCollectionResult(Dictionary<string, List<ProcessFile>> Files, List<SkippedProcess> Skipped);
     private sealed record ProcessFile(int Pid, string Name, string Path);
     private sealed record SkippedProcess(int Pid, string Name, string Reason);
+    private sealed record PersistenceTarget(string Path, string Source);
     private readonly record struct ProcessFileState(long Length, DateTime LastWriteTimeUtc);
 
     private sealed class HashCache
@@ -4449,6 +4978,14 @@ public sealed class MainForm : Form
         public int Undetected { get; set; }
         public string Link { get; set; } = "";
         public string Notes { get; set; } = "";
+        public int RiskScore { get; set; }
+        public string RiskLevel { get; set; } = "Low";
+        public string TrustSummary { get; set; } = "";
+        public string SignatureSummary { get; set; } = "";
+        public long FileSizeBytes { get; set; }
+        public DateTime LastWriteTimeUtc { get; set; }
+        public double FileAgeDays { get; set; } = -1;
+        public List<string> PersistenceSources { get; set; } = [];
         public bool VirusTotalDeferred { get; set; }
         public bool IsDetection => Malicious > 0 || Suspicious > 0;
         public bool IsAlert => IsDetection && !string.Equals(Status, "ignored", StringComparison.OrdinalIgnoreCase);

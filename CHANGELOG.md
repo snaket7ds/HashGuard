@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added local risk scoring and trust summaries for scanned files.
+- Added Authenticode signer/publisher inspection and risky-path/recent-file triage notes.
+- Added startup persistence scanning for Run keys, Startup folders, and Windows services.
+- Added review actions for copying hashes, killing selected processes, and quarantining selected files.
+
 ## v1.0.28 - 2026-06-03
 
 - Added "Scan files I open or select" background scanning for files touched through File Explorer or Windows Recent files.

@@ -11,6 +11,8 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 - Caches clean hashes locally to reduce repeat lookups.
 - Logs scan results for later review.
 - Can monitor newly seen process files after an initial scan.
+- Adds local triage context such as signer/publisher status, risky paths, startup persistence, and risk scoring.
+- Can review selected results by opening reports, copying hashes, killing selected processes, and quarantining selected files.
 - Supports startup scanning, tray minimization, Windows startup registration, and update checks from GitHub Releases.
 
 ## How Scanning Works
@@ -20,6 +22,8 @@ HashGuard groups running processes by executable path, computes each file's SHA-
 When "Scan files I open or select" is enabled, HashGuard watches Windows Recent files and polls open File Explorer windows for selected or focused files. It skips common personal media types such as pictures, videos, audio, and camera/raw files, and it never uploads full files from this background mode.
 
 Files are marked for action when a provider reports malicious or suspicious detections, or when a scan error needs review. Clean and recently cached hashes are skipped when the hash cache is enabled.
+
+HashGuard also adds local trust and triage context. It checks whether scanned files are signed, whether they live in risky user-writable paths, whether they were recently modified, and whether they are referenced by common persistence locations such as Run keys, Startup folders, and Windows services.
 
 ## Privacy Notes
 
