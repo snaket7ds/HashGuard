@@ -424,19 +424,19 @@ public sealed class MainForm : Form
             Margin = new Padding(0),
             Padding = new Padding(14, 10, 14, 10),
         };
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = new Padding(0), Padding = new Padding(0) };
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 12));
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
         bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         progressBar.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         progressBar.Height = 14;
-        progressBar.Margin = new Padding(0, 0, 12, 0);
+        progressBar.Margin = new Padding(0, 0, 0, 0);
         statusLabel.Dock = DockStyle.Fill;
-        statusLabel.TextAlign = ContentAlignment.MiddleLeft;
-        statusLabel.Margin = new Padding(0, 0, 12, 0);
+        statusLabel.TextAlign = ContentAlignment.TopLeft;
+        statusLabel.Margin = new Padding(0, 6, 0, 0);
         statusLabel.AutoSize = false;
-        statusLabel.MaximumSize = new Size(0, 0);
         statusLabel.UseMnemonic = false;
         countLabel.AutoSize = false;
         countLabel.Dock = DockStyle.Fill;
@@ -444,8 +444,10 @@ public sealed class MainForm : Form
         countLabel.Margin = new Padding(0, 0, 0, 0);
         countLabel.Width = 120;
         bottom.Controls.Add(progressBar, 0, 0);
-        bottom.Controls.Add(statusLabel, 1, 0);
+        bottom.SetColumnSpan(progressBar, 2);
         bottom.Controls.Add(countLabel, 2, 0);
+        bottom.Controls.Add(statusLabel, 0, 1);
+        bottom.SetColumnSpan(statusLabel, 3);
         bottomCard.Controls.Add(bottom);
         dashboard.Controls.Add(bottomCard, 0, 2);
 
@@ -1582,7 +1584,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private static string FormatDisplayPath(string path, int maxLength = 110)
+    private static string FormatDisplayPath(string path, int maxLength = 86)
     {
         if (string.IsNullOrWhiteSpace(path) || path.Length <= maxLength)
         {
