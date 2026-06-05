@@ -813,10 +813,12 @@ public sealed class MainForm : Form
         {
             Text = "Settings",
             StartPosition = FormStartPosition.CenterParent,
-            FormBorderStyle = FormBorderStyle.FixedDialog,
-            MaximizeBox = false,
+            FormBorderStyle = FormBorderStyle.Sizable,
+            MaximizeBox = true,
             MinimizeBox = false,
-            ClientSize = new Size(720, 620),
+            ClientSize = new Size(860, 680),
+            MinimumSize = new Size(760, 560),
+            BackColor = Color.FromArgb(246, 247, 249),
         };
 
         var vtEnabled = new CheckBox { Text = "Enable VirusTotal", Checked = virusTotalEnabledBox.Checked, AutoSize = true };
@@ -847,43 +849,78 @@ public sealed class MainForm : Form
         var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(16) };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         dialog.Controls.Add(root);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(18), AutoScroll = true };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        root.Controls.Add(layout, 0, 0);
+        root.Controls.Add(new Label
+        {
+            Text = $"HashGuard Settings  |  Version {CurrentVersion}",
+            Dock = DockStyle.Fill,
+            Height = 34,
+            Font = new Font("Segoe UI", 13, FontStyle.Bold),
+            ForeColor = Color.FromArgb(35, 35, 35),
+            TextAlign = ContentAlignment.MiddleLeft,
+        }, 0, 0);
 
-        layout.Controls.Add(SectionLabel("Hash Scanners"), 1, 0);
-        layout.Controls.Add(mdEnabled, 1, 1);
-        layout.Controls.Add(new Label { Text = "MetaDefender API key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
-        layout.Controls.Add(metaDefenderApiKey, 1, 2);
-        layout.Controls.Add(vtEnabled, 1, 3);
-        layout.Controls.Add(new Label { Text = "VirusTotal API key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
-        layout.Controls.Add(apiKey, 1, 4);
-        layout.Controls.Add(freeLimit, 1, 5);
-        layout.Controls.Add(uploadUnknown, 1, 6);
-        layout.Controls.Add(new Label { Text = "VirusTotal delay per request", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 7);
-        layout.Controls.Add(delay, 1, 7);
-        layout.Controls.Add(new Label { Text = "VirusTotal timeout", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 8);
-        layout.Controls.Add(timeout, 1, 8);
-        layout.Controls.Add(mhrEnabled, 1, 9);
-        layout.Controls.Add(SectionLabel("App Settings"), 1, 10);
-        layout.Controls.Add(hashCache, 1, 11);
-        layout.Controls.Add(rightClickScan, 1, 12);
-        layout.Controls.Add(startWithWindows, 1, 13);
-        layout.Controls.Add(startMinimized, 1, 14);
-        layout.Controls.Add(autoProcessScan, 1, 15);
-        layout.Controls.Add(runElevated, 1, 16);
-        layout.Controls.Add(scanAllFiles, 1, 17);
-        layout.Controls.Add(autoUpdates, 1, 18);
-        layout.Controls.Add(SectionLabel("Trusted Publishers"), 1, 19);
-        layout.Controls.Add(new Label { Text = "One publisher per line", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 20);
-        layout.Controls.Add(trustedPublishers, 1, 20);
-        layout.Controls.Add(new Label { Text = $"HashGuard version {CurrentVersion}", AutoSize = true, ForeColor = Color.DimGray, Font = new Font("Segoe UI", 9, FontStyle.Bold) }, 1, 21);
+        var tabs = new TabControl { Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 12) };
+        root.Controls.Add(tabs, 0, 1);
+
+        var reputationPage = CreateSettingsPage();
+        reputationPage.Controls.Add(CreateSettingsSection("Reputation Providers",
+        [
+            vtEnabled,
+            mdEnabled,
+            mhrEnabled,
+            freeLimit,
+            uploadUnknown,
+        ]));
+        reputationPage.Controls.Add(CreateSettingsSection("API Keys",
+        [
+            CreateSettingRow("VirusTotal API key", apiKey),
+            CreateSettingRow("MetaDefender API key", metaDefenderApiKey),
+        ]));
+        reputationPage.Controls.Add(CreateSettingsSection("Request Timing",
+        [
+            CreateSettingRow("VirusTotal delay per request", delay),
+            CreateSettingRow("Request timeout", timeout),
+        ]));
+        tabs.TabPages.Add(new TabPage("Reputation") { Controls = { reputationPage }, BackColor = Color.FromArgb(246, 247, 249) });
+
+        var behaviorPage = CreateSettingsPage();
+        behaviorPage.Controls.Add(CreateSettingsSection("Scanning",
+        [
+            hashCache,
+            autoProcessScan,
+            scanAllFiles,
+            runElevated,
+        ]));
+        behaviorPage.Controls.Add(CreateSettingsSection("Windows Integration",
+        [
+            rightClickScan,
+            startWithWindows,
+            startMinimized,
+            autoUpdates,
+        ]));
+        tabs.TabPages.Add(new TabPage("Behavior") { Controls = { behaviorPage }, BackColor = Color.FromArgb(246, 247, 249) });
+
+        var trustPage = CreateSettingsPage();
+        trustedPublishers.Height = 260;
+        trustPage.Controls.Add(CreateSettingsSection("Trusted Publishers",
+        [
+            new Label
+            {
+                Text = "One publisher per line. Matching signed files receive a lower local risk score.",
+                Dock = DockStyle.Top,
+                Height = 34,
+                ForeColor = Color.DimGray,
+                TextAlign = ContentAlignment.MiddleLeft,
+            },
+            trustedPublishers,
+        ]));
+        tabs.TabPages.Add(new TabPage("Trust") { Controls = { trustPage }, BackColor = Color.FromArgb(246, 247, 249) });
 
         var buttons = new FlowLayoutPanel
         {
@@ -895,6 +932,7 @@ public sealed class MainForm : Form
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
         root.Controls.Add(buttons, 0, 1);
+        root.SetRow(buttons, 2);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
 
@@ -935,6 +973,83 @@ public sealed class MainForm : Form
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();
         SaveCurrentAppSettings();
+    }
+
+    private static FlowLayoutPanel CreateSettingsPage()
+    {
+        return new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoScroll = true,
+            Padding = new Padding(12),
+            BackColor = Color.FromArgb(246, 247, 249),
+        };
+    }
+
+    private static Panel CreateSettingsSection(string title, IEnumerable<Control> controls)
+    {
+        var section = new Panel
+        {
+            Width = 780,
+            AutoSize = true,
+            BackColor = Color.White,
+            Padding = new Padding(16),
+            Margin = new Padding(0, 0, 0, 14),
+        };
+
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            ColumnCount = 1,
+            RowCount = 1,
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        layout.Controls.Add(new Label
+        {
+            Text = title,
+            Dock = DockStyle.Top,
+            Height = 28,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            ForeColor = Color.FromArgb(35, 35, 35),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0, 0, 0, 8),
+        });
+
+        foreach (var control in controls)
+        {
+            control.Margin = new Padding(0, 4, 0, 6);
+            control.Width = 730;
+            layout.Controls.Add(control);
+        }
+
+        section.Controls.Add(layout);
+        return section;
+    }
+
+    private static Control CreateSettingRow(string labelText, Control editor)
+    {
+        var row = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            Height = 34,
+            Margin = new Padding(0, 4, 0, 6),
+        };
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.Controls.Add(new Label
+        {
+            Text = labelText,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = Color.FromArgb(35, 35, 35),
+        }, 0, 0);
+        editor.Dock = DockStyle.Fill;
+        row.Controls.Add(editor, 1, 0);
+        return row;
     }
 
     private static Label SectionLabel(string text)
