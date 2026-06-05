@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.0.32 - 2026-06-05
+
+- Replaced the tray artwork with large status-only icons for clean, scanning, and action-needed states.
+- Added explicit color modes in Settings: Use Windows setting, Light, and Dark.
+- Applied app theming to Settings, Activity Log, and Quarantine dialogs.
+- Renamed the tray icon factory to match the status-icon implementation.
+
 ## v1.0.31 - 2026-06-05
 
 - Added a first-run setup prompt explaining local-only protection, cloud API keys, and optional uploads.

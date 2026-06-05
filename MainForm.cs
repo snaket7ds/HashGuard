@@ -68,6 +68,9 @@ public sealed class MainForm : Form
     private const int ColSha256 = 7;
     private const int ColPath = 8;
     private const int ColNotes = 9;
+    private const string ColorModeSystem = "system";
+    private const string ColorModeLight = "light";
+    private const string ColorModeDark = "dark";
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
@@ -81,6 +84,7 @@ public sealed class MainForm : Form
     private readonly CheckBox autoProcessScanBox = new() { Text = "Scan automatically at startup", AutoSize = true, Checked = true };
     private readonly CheckBox runElevatedBox = new() { Text = "Run Elevated (Windows UAC permissions)", AutoSize = true };
     private readonly CheckBox scanAllFilesBox = new() { Text = "Scan files I open or select", AutoSize = true };
+    private readonly ComboBox colorModeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
     private readonly CheckBox uploadUnknownBox = new() { Text = "Upload files missing from VirusTotal", AutoSize = true };
     private readonly CheckBox virusTotalEnabledBox = new() { Text = "Use VirusTotal", AutoSize = true, Checked = true };
     private readonly CheckBox metaDefenderEnabledBox = new() { Text = "Use MetaDefender Cloud", AutoSize = true, Checked = true };
@@ -214,14 +218,15 @@ public sealed class MainForm : Form
 
     public MainForm(string[] args)
     {
-        cleanTrayIcon = CreateBugMagnifierIcon(TrayState.Clean);
-        scanningTrayIcon = CreateBugMagnifierIcon(TrayState.Scanning);
-        actionTrayIcon = CreateBugMagnifierIcon(TrayState.ActionNeeded);
+        cleanTrayIcon = CreateTrayStatusIcon(TrayState.Clean);
+        scanningTrayIcon = CreateTrayStatusIcon(TrayState.Scanning);
+        actionTrayIcon = CreateTrayStatusIcon(TrayState.ActionNeeded);
         startupScanFile = ParseStartupScanFile(args);
         startupMinimized = args.Any(arg => string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase));
         closedOlderInstances = CloseOtherInstances();
         appSettings = LoadAppSettings();
         LoadIgnoredHashes();
+        colorModeBox.Items.AddRange(["Use Windows setting", "Light", "Dark"]);
         ApplyAppSettings();
         Text = "HashGuard";
         Icon = cleanTrayIcon;
@@ -248,6 +253,11 @@ public sealed class MainForm : Form
         startWithWindowsBox.CheckedChanged += (_, _) => StartWithWindowsPreferenceChanged();
         startMinimizedBox.CheckedChanged += (_, _) => SaveCurrentAppSettings();
         autoProcessScanBox.CheckedChanged += (_, _) => SaveCurrentAppSettings();
+        colorModeBox.SelectedIndexChanged += (_, _) =>
+        {
+            SaveCurrentAppSettings();
+            ApplyAppTheme(this);
+        };
         scanAllFilesBox.CheckedChanged += (_, _) => ScanAllFilesPreferenceChanged();
         autoUpdateChecksBox.CheckedChanged += (_, _) =>
         {
@@ -325,6 +335,7 @@ public sealed class MainForm : Form
         Controls.Add(root);
 
         var header = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 76, BackColor = Color.FromArgb(28, 28, 28), Padding = new Padding(22, 12, 22, 10) };
+        header.Tag = "header";
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var titleBlock = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
@@ -393,9 +404,9 @@ public sealed class MainForm : Form
             Margin = new Padding(0, 0, 12, 0),
         };
         statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "clean");
-        statusDot.Width = 78;
-        statusDot.Height = 78;
-        statusDot.Margin = new Padding(0, 0, 16, 0);
+        statusDot.Width = 96;
+        statusDot.Height = 96;
+        statusDot.Margin = new Padding(0, 0, 18, 0);
         statusTitle.AutoSize = false;
         statusTitle.Dock = DockStyle.Fill;
         statusTitle.Font = new Font("Segoe UI", 17, FontStyle.Bold);
@@ -406,9 +417,9 @@ public sealed class MainForm : Form
         statusSubtitle.MaximumSize = new Size(0, 0);
 
         var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
-        statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
+        statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116));
         statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
+        statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
         statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         statusLayout.Controls.Add(statusDot, 0, 0);
@@ -518,6 +529,7 @@ public sealed class MainForm : Form
         UpdateResultsEmptyState();
         UpdateReputationTile();
         UpdateHashCacheTile();
+        ApplyAppTheme(this);
     }
 
     private static Panel CreateFeatureTile(string title, string subtitle, string state, Action? onClick = null)
@@ -750,38 +762,14 @@ public sealed class MainForm : Form
         }
     }
 
-    private static Icon CreateBugMagnifierIcon(TrayState state)
+    private static Icon CreateTrayStatusIcon(TrayState state)
     {
-        using var bitmap = new Bitmap(32, 32);
+        using var bitmap = new Bitmap(64, 64);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         graphics.Clear(Color.Transparent);
 
-        var bugFillColor = state == TrayState.ActionNeeded
-            ? Color.FromArgb(218, 45, 45)
-            : Color.FromArgb(255, 205, 0);
-        using var bugFill = new SolidBrush(bugFillColor);
-        using var darkPen = new Pen(Color.FromArgb(28, 28, 28), 2.0f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
-        using var glassPen = new Pen(Color.FromArgb(28, 28, 28), 2.6f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
-        using var highlightPen = new Pen(Color.White, 1.2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
-
-        graphics.FillEllipse(bugFill, 7, 11, 12, 14);
-        graphics.DrawEllipse(darkPen, 7, 11, 12, 14);
-        graphics.FillEllipse(bugFill, 9, 7, 8, 7);
-        graphics.DrawEllipse(darkPen, 9, 7, 8, 7);
-        graphics.DrawLine(darkPen, 13, 12, 13, 24);
-        graphics.DrawLine(darkPen, 8, 15, 3, 13);
-        graphics.DrawLine(darkPen, 8, 20, 3, 23);
-        graphics.DrawLine(darkPen, 18, 15, 22, 13);
-        graphics.DrawLine(darkPen, 18, 20, 22, 22);
-        graphics.DrawLine(darkPen, 10, 7, 7, 4);
-        graphics.DrawLine(darkPen, 16, 7, 19, 4);
-
-        graphics.DrawEllipse(glassPen, 13, 5, 13, 13);
-        graphics.DrawLine(glassPen, 23, 16, 30, 24);
-        graphics.DrawLine(highlightPen, 16, 8, 20, 6);
-
-        PaintStatusOverlay(graphics, state);
+        PaintTrayStatusIcon(graphics, state);
 
         var handle = bitmap.GetHicon();
         try
@@ -794,7 +782,7 @@ public sealed class MainForm : Form
         }
     }
 
-    private static void PaintStatusOverlay(Graphics graphics, TrayState state)
+    private static void PaintTrayStatusIcon(Graphics graphics, TrayState state)
     {
         var badgeColor = state switch
         {
@@ -804,23 +792,25 @@ public sealed class MainForm : Form
         };
 
         using var badgeFill = new SolidBrush(badgeColor);
-        using var badgeRing = new Pen(Color.White, 2.2f);
-        using var badgePen = new Pen(Color.White, 1.8f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
-        graphics.FillEllipse(badgeFill, 18, 18, 13, 13);
-        graphics.DrawEllipse(badgeRing, 18, 18, 13, 13);
+        using var badgeRing = new Pen(Color.FromArgb(24, 24, 24), 5.0f);
+        using var badgeHighlight = new Pen(Color.White, 2.4f);
+        using var badgePen = new Pen(Color.White, 8.0f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+        graphics.FillEllipse(badgeFill, 4, 4, 56, 56);
+        graphics.DrawEllipse(badgeRing, 4, 4, 56, 56);
+        graphics.DrawArc(badgeHighlight, 12, 10, 38, 34, 205, 105);
 
         if (state == TrayState.Clean)
         {
-            graphics.DrawLines(badgePen, new[] { new Point(21, 25), new Point(24, 28), new Point(29, 21) });
+            graphics.DrawLines(badgePen, new[] { new Point(17, 34), new Point(27, 45), new Point(47, 22) });
         }
         else if (state == TrayState.ActionNeeded)
         {
-            graphics.DrawLine(badgePen, 24.5f, 21, 24.5f, 25.5f);
-            graphics.FillEllipse(Brushes.White, 23.5f, 27, 2.4f, 2.4f);
+            graphics.DrawLine(badgePen, 32, 16, 32, 39);
+            graphics.FillEllipse(Brushes.White, 27, 46, 10, 10);
         }
         else if (state == TrayState.Scanning)
         {
-            graphics.FillEllipse(Brushes.White, 22, 22, 5, 5);
+            graphics.FillEllipse(Brushes.White, 22, 22, 20, 20);
         }
     }
 
@@ -850,6 +840,9 @@ public sealed class MainForm : Form
         var rightClickScan = new CheckBox { Text = "Add Explorer right-click scan", Checked = rightClickScanBox.Checked, AutoSize = true };
         var startWithWindows = new CheckBox { Text = "Start with Windows", Checked = startWithWindowsBox.Checked, AutoSize = true };
         var startMinimized = new CheckBox { Text = "Start minimized to tray", Checked = startMinimizedBox.Checked, AutoSize = true };
+        var colorMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
+        colorMode.Items.AddRange(["Use Windows setting", "Light", "Dark"]);
+        colorMode.SelectedIndex = Math.Clamp(colorModeBox.SelectedIndex, 0, colorMode.Items.Count - 1);
         var autoProcessScan = new CheckBox { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
         var runElevated = new CheckBox { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
         var scanAllFiles = new CheckBox { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
@@ -921,7 +914,7 @@ public sealed class MainForm : Form
 
         var behaviorPage = CreateSettingsPage(
             ("Scanning", [hashCache, autoProcessScan, scanAllFiles, runElevated]),
-            ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, autoUpdates]),
+            ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, CreateSettingRow("Colors", colorMode), autoUpdates]),
             ("Version and Updates", [updateInfo]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
 
@@ -953,6 +946,7 @@ public sealed class MainForm : Form
         root.Controls.Add(buttons, 0, 2);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
+        ApplyAppTheme(dialog);
 
         void RefreshValidation()
         {
@@ -999,6 +993,7 @@ public sealed class MainForm : Form
         rightClickScanBox.Checked = rightClickScan.Checked;
         startWithWindowsBox.Checked = startWithWindows.Checked;
         startMinimizedBox.Checked = startMinimized.Checked;
+        colorModeBox.SelectedIndex = colorMode.SelectedIndex;
         autoProcessScanBox.Checked = autoProcessScan.Checked;
         runElevatedBox.Checked = runElevated.Checked;
         scanAllFilesBox.Checked = scanAllFiles.Checked && EnableAllFileScanningWithWarning();
@@ -1018,6 +1013,7 @@ public sealed class MainForm : Form
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();
         SaveCurrentAppSettings();
+        ApplyAppTheme(this);
     }
 
     private static string BuildSettingsValidationText(
@@ -1218,6 +1214,129 @@ public sealed class MainForm : Form
         editor.Dock = DockStyle.Fill;
         row.Controls.Add(editor, 1, 0);
         return row;
+    }
+
+    private void ApplyAppTheme(Control root)
+    {
+        var palette = GetCurrentPalette();
+        ApplyTheme(root, palette, inHeader: false);
+        resultsView.BackColor = palette.Surface;
+        resultsView.ForeColor = palette.Text;
+        resultsEmptyLabel.ForeColor = palette.MutedText;
+        summaryLabel.BackColor = palette.PillBack;
+        actionLabel.BackColor = palette.PillBack;
+        statusSubtitle.ForeColor = palette.MutedText;
+        reputationStateLabel.ForeColor = palette.Text;
+        UpdateReputationTile();
+        UpdateHashCacheTile();
+        statusDot.Invalidate();
+    }
+
+    private ThemePalette GetCurrentPalette()
+    {
+        return appSettings.ColorMode switch
+        {
+            ColorModeDark => ThemePalette.Dark,
+            ColorModeLight => ThemePalette.Light,
+            _ => IsWindowsDarkAppTheme() ? ThemePalette.Dark : ThemePalette.Light,
+        };
+    }
+
+    private static int ColorModeToIndex(string colorMode, bool legacyUseSystemDefaultColors)
+    {
+        return colorMode switch
+        {
+            ColorModeLight => 1,
+            ColorModeDark => 2,
+            ColorModeSystem => 0,
+            _ => legacyUseSystemDefaultColors ? 0 : 1,
+        };
+    }
+
+    private static string IndexToColorMode(int index)
+    {
+        return index switch
+        {
+            1 => ColorModeLight,
+            2 => ColorModeDark,
+            _ => ColorModeSystem,
+        };
+    }
+
+    private static bool IsWindowsDarkAppTheme()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("AppsUseLightTheme") is int value && value == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ApplyTheme(Control control, ThemePalette palette, bool inHeader)
+    {
+        var header = inHeader || control.Tag as string == "header";
+        switch (control)
+        {
+            case Form:
+                control.BackColor = palette.AppBack;
+                control.ForeColor = palette.Text;
+                break;
+            case ListView listView:
+                listView.BackColor = palette.Surface;
+                listView.ForeColor = palette.Text;
+                break;
+            case TextBox textBox:
+                textBox.BackColor = palette.InputBack;
+                textBox.ForeColor = palette.Text;
+                break;
+            case NumericUpDown numeric:
+                numeric.BackColor = palette.InputBack;
+                numeric.ForeColor = palette.Text;
+                break;
+            case ComboBox comboBox:
+                comboBox.BackColor = palette.InputBack;
+                comboBox.ForeColor = palette.Text;
+                break;
+            case Button button when button.Text is "Run Process Scan" or "Stop Scan":
+                break;
+            case Button button:
+                button.BackColor = header ? palette.HeaderButtonBack : palette.ButtonBack;
+                button.ForeColor = header ? Color.White : palette.Text;
+                break;
+            case CheckBox:
+            case Label:
+                if (!header && control.ForeColor != Color.Firebrick && control.ForeColor != Color.SeaGreen)
+                {
+                    control.ForeColor = control.ForeColor == Color.DimGray ? palette.MutedText : palette.Text;
+                }
+                control.BackColor = Color.Transparent;
+                break;
+            case TabControl:
+            case TabPage:
+                control.BackColor = palette.Surface;
+                control.ForeColor = palette.Text;
+                break;
+            case TableLayoutPanel:
+            case FlowLayoutPanel:
+            case Panel:
+                control.BackColor = header ? palette.HeaderBack : (control.BackColor == ThemePalette.Light.AppBack ? palette.AppBack : palette.Surface);
+                control.ForeColor = header ? Color.White : palette.Text;
+                break;
+        }
+
+        foreach (Control child in control.Controls)
+        {
+            ApplyTheme(child, palette, header);
+        }
     }
 
     private static Label SectionLabel(string text)
@@ -3716,6 +3835,7 @@ public sealed class MainForm : Form
 
         void ApplyFilter(ActivityFilter filter)
         {
+            var palette = GetCurrentPalette();
             detailView.BeginUpdate();
             detailView.Items.Clear();
             foreach (var item in allItems.Where(item => MatchesActivityFilter(filter, item)))
@@ -3728,8 +3848,8 @@ public sealed class MainForm : Form
             foreach (var button in filterButtons)
             {
                 var selected = button.Tag is ActivityFilter current && current == filter;
-                button.BackColor = selected ? Color.FromArgb(35, 35, 35) : Color.White;
-                button.ForeColor = selected ? Color.White : Color.FromArgb(35, 35, 35);
+                button.BackColor = selected ? palette.Text : palette.ButtonBack;
+                button.ForeColor = selected ? palette.Surface : palette.Text;
             }
 
             reasonLabel.Text = detailView.Items.Count == 0
@@ -3750,7 +3870,6 @@ public sealed class MainForm : Form
 
         detailView.SelectedIndexChanged += (_, _) => RefreshSelectionUi();
         UpdateIgnoreButtonText(detailView, ignoreSelected);
-        ApplyFilter(ActivityFilter.All);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(12) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -3777,6 +3896,8 @@ public sealed class MainForm : Form
 
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
+        ApplyAppTheme(dialog);
+        ApplyFilter(ActivityFilter.All);
         dialog.ShowDialog(this);
     }
 
@@ -4255,6 +4376,7 @@ public sealed class MainForm : Form
         }
 
         autoUpdateChecksBox.Checked = appSettings.AutoUpdateChecks;
+        colorModeBox.SelectedIndex = ColorModeToIndex(appSettings.ColorMode, appSettings.UseSystemDefaultColors);
         delayBox.Value = Math.Clamp(appSettings.DelaySeconds, (int)delayBox.Minimum, (int)delayBox.Maximum);
         timeoutBox.Value = Math.Clamp(appSettings.TimeoutSeconds, (int)timeoutBox.Minimum, (int)timeoutBox.Maximum);
     }
@@ -4277,6 +4399,8 @@ public sealed class MainForm : Form
         appSettings.RunElevated = runElevatedBox.Checked;
         appSettings.ScanAllFiles = scanAllFilesBox.Checked;
         appSettings.AutoUpdateChecks = autoUpdateChecksBox.Checked;
+        appSettings.ColorMode = IndexToColorMode(colorModeBox.SelectedIndex);
+        appSettings.UseSystemDefaultColors = appSettings.ColorMode == ColorModeSystem;
         appSettings.DelaySeconds = (int)delayBox.Value;
         appSettings.TimeoutSeconds = (int)timeoutBox.Value;
 
@@ -4884,6 +5008,7 @@ public sealed class MainForm : Form
         layout.Controls.Add(buttons, 0, 2);
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
+        ApplyAppTheme(dialog);
         dialog.ShowDialog(this);
     }
 
@@ -6208,6 +6333,8 @@ public sealed class MainForm : Form
         public bool RunElevated { get; set; }
         public bool ScanAllFiles { get; set; }
         public bool AutoUpdateChecks { get; set; }
+        public bool UseSystemDefaultColors { get; set; }
+        public string ColorMode { get; set; } = ColorModeLight;
         public bool FirstRunSetupShown { get; set; }
         public int DelaySeconds { get; set; } = 16;
         public int TimeoutSeconds { get; set; } = 60;
@@ -6226,6 +6353,40 @@ public sealed class MainForm : Form
             "HP Inc.",
             "Lenovo",
         ];
+    }
+
+    private readonly record struct ThemePalette(
+        Color AppBack,
+        Color Surface,
+        Color PillBack,
+        Color InputBack,
+        Color Text,
+        Color MutedText,
+        Color ButtonBack,
+        Color HeaderBack,
+        Color HeaderButtonBack)
+    {
+        public static ThemePalette Light { get; } = new(
+            Color.FromArgb(246, 247, 249),
+            Color.White,
+            Color.FromArgb(246, 247, 249),
+            Color.White,
+            Color.FromArgb(35, 35, 35),
+            Color.DimGray,
+            SystemColors.Control,
+            Color.FromArgb(28, 28, 28),
+            Color.FromArgb(52, 52, 52));
+
+        public static ThemePalette Dark { get; } = new(
+            Color.FromArgb(24, 26, 30),
+            Color.FromArgb(34, 37, 43),
+            Color.FromArgb(44, 48, 55),
+            Color.FromArgb(25, 28, 33),
+            Color.FromArgb(235, 238, 242),
+            Color.FromArgb(170, 176, 186),
+            Color.FromArgb(50, 55, 64),
+            Color.FromArgb(18, 20, 24),
+            Color.FromArgb(44, 48, 56));
     }
 
     private sealed class QuarantineEntry
