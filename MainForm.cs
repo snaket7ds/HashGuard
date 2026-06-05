@@ -307,11 +307,12 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
+            RowCount = 3,
             Padding = new Padding(0),
         };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
         Controls.Add(root);
 
         var header = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 76, BackColor = Color.FromArgb(28, 28, 28), Padding = new Padding(22, 12, 22, 10) };
@@ -353,76 +354,119 @@ public sealed class MainForm : Form
         header.Controls.Add(headerButtons, 1, 0);
         root.Controls.Add(header, 0, 0);
 
-        var dashboard = new TableLayoutPanel
+        var main = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
-            Padding = new Padding(22, 22, 22, 18),
+            RowCount = 2,
+            Padding = new Padding(18, 18, 18, 10),
         };
-        dashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 68));
-        dashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 21));
-        dashboard.RowStyles.Add(new RowStyle(SizeType.Percent, 11));
-        root.Controls.Add(dashboard, 0, 1);
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.Controls.Add(main, 0, 1);
+
+        var overview = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Margin = new Padding(0, 0, 0, 12),
+        };
+        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        main.Controls.Add(overview, 0, 0);
 
         var statusCard = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Padding = new Padding(18),
-            Margin = new Padding(0, 0, 0, 12),
+            Padding = new Padding(16),
+            Margin = new Padding(0, 0, 12, 0),
         };
-        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.Tag as string ?? "clean");
-        var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4 };
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var statusText = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Anchor = AnchorStyles.None };
-        statusDot.Anchor = AnchorStyles.None;
-        statusTitle.Anchor = AnchorStyles.None;
-        statusSubtitle.Anchor = AnchorStyles.None;
-        statusText.Controls.Add(statusDot);
-        statusText.Controls.Add(statusTitle);
-        statusText.Controls.Add(statusSubtitle);
-        statusLayout.Controls.Add(statusText, 0, 0);
-        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 14, 0, 0), AutoSize = true };
+        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "clean");
+        statusDot.Width = 72;
+        statusDot.Height = 72;
+        statusDot.Margin = new Padding(0, 0, 16, 0);
+        statusTitle.AutoSize = false;
+        statusTitle.Dock = DockStyle.Fill;
+        statusTitle.Font = new Font("Segoe UI", 17, FontStyle.Bold);
+        statusTitle.TextAlign = ContentAlignment.BottomLeft;
+        statusSubtitle.AutoSize = false;
+        statusSubtitle.Dock = DockStyle.Fill;
+        statusSubtitle.TextAlign = ContentAlignment.TopLeft;
+        statusSubtitle.MaximumSize = new Size(0, 0);
+
+        var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+        statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
+        statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+        statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        statusLayout.Controls.Add(statusDot, 0, 0);
+        statusLayout.SetRowSpan(statusDot, 2);
+
+        var statusText = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+        statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        statusText.Controls.Add(statusTitle, 0, 0);
+        statusText.Controls.Add(statusSubtitle, 0, 1);
+        statusLayout.Controls.Add(statusText, 1, 0);
+
+        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 6, 0, 0) };
         stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        stats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        stats.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        stats.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
+        stats.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
         summaryLabel.Dock = DockStyle.Fill;
-        summaryLabel.MaximumSize = new Size(680, 0);
-        summaryLabel.Height = 42;
+        summaryLabel.MaximumSize = new Size(0, 0);
+        summaryLabel.TextAlign = ContentAlignment.BottomLeft;
         actionLabel.Dock = DockStyle.Fill;
-        actionLabel.Height = 24;
+        actionLabel.TextAlign = ContentAlignment.TopLeft;
         stats.Controls.Add(summaryLabel);
         stats.Controls.Add(actionLabel);
-        statusLayout.Controls.Add(stats, 0, 1);
+        statusLayout.Controls.Add(stats, 1, 1);
         statusCard.Controls.Add(statusLayout);
-        dashboard.Controls.Add(statusCard, 0, 0);
+        overview.Controls.Add(statusCard, 0, 0);
 
-        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 7, Padding = new Padding(0), Margin = new Padding(0, 0, 0, 12) };
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, Padding = new Padding(0), Margin = new Padding(0) };
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 10));
         tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
 
         tiles.Controls.Add(CreateFeatureTile("Process Security", "Running apps", "Protected"), 0, 0);
-        tiles.Controls.Add(CreateReputationTile(), 2, 0);
-        tiles.Controls.Add(CreateHashCacheTile(), 4, 0);
-        tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "Open", ShowScanDetailsDialogSafe), 6, 0);
-        dashboard.Controls.Add(tiles, 0, 1);
+        tiles.Controls.Add(CreateReputationTile(), 1, 0);
+        tiles.Controls.Add(CreateHashCacheTile(), 2, 0);
+        tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "Open", ShowScanDetailsDialogSafe), 3, 0);
+        overview.Controls.Add(tiles, 1, 0);
 
         ConfigureResultsView(resultsView);
+        var resultsPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.White,
+            Padding = new Padding(12),
+            Margin = new Padding(0),
+        };
+        var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        resultsLayout.Controls.Add(new Label
+        {
+            Text = "Scan Results",
+            Dock = DockStyle.Fill,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = Color.FromArgb(35, 35, 35),
+        }, 0, 0);
+        resultsLayout.Controls.Add(resultsView, 0, 1);
+        resultsPanel.Controls.Add(resultsLayout);
+        main.Controls.Add(resultsPanel, 0, 1);
+
         var bottomCard = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Margin = new Padding(0),
-            Padding = new Padding(14, 10, 14, 10),
+            Margin = new Padding(18, 0, 18, 18),
+            Padding = new Padding(14, 8, 14, 8),
         };
         var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -449,7 +493,7 @@ public sealed class MainForm : Form
         bottom.Controls.Add(statusLabel, 0, 1);
         bottom.SetColumnSpan(statusLabel, 3);
         bottomCard.Controls.Add(bottom);
-        dashboard.Controls.Add(bottomCard, 0, 2);
+        root.Controls.Add(bottomCard, 0, 2);
 
         statusLabel.Text = "Ready";
         UpdateReputationTile();
@@ -654,10 +698,11 @@ public sealed class MainForm : Form
         view.BackColor = Color.White;
     }
 
-    private static void PaintStatusBadge(Graphics graphics, string state)
+    private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state)
     {
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var rect = new Rectangle(4, 4, 82, 82);
+        var size = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
+        var rect = new Rectangle((bounds.Width - size) / 2, (bounds.Height - size) / 2, size, size);
         var actionNeeded = state == "action";
         var scanning = state is "scanning" or "stopped";
         var fillColor = actionNeeded
@@ -666,16 +711,22 @@ public sealed class MainForm : Form
                 ? Color.FromArgb(255, 205, 0)
                 : Color.FromArgb(35, 168, 92);
         using var fill = new SolidBrush(fillColor);
-        using var pen = new Pen(actionNeeded ? Color.FromArgb(150, 0, 0) : Color.FromArgb(36, 36, 36), 5);
+        using var pen = new Pen(actionNeeded ? Color.FromArgb(150, 0, 0) : Color.FromArgb(36, 36, 36), Math.Max(3, size / 16));
         graphics.FillEllipse(fill, rect);
         if (actionNeeded)
         {
-            graphics.DrawLine(pen, 45, 24, 45, 54);
-            graphics.FillEllipse(Brushes.White, 41, 62, 8, 8);
+            var centerX = rect.Left + rect.Width / 2;
+            graphics.DrawLine(pen, centerX, rect.Top + rect.Height * 0.25f, centerX, rect.Top + rect.Height * 0.62f);
+            graphics.FillEllipse(Brushes.White, centerX - size * 0.055f, rect.Top + rect.Height * 0.74f, size * 0.11f, size * 0.11f);
         }
         else
         {
-            graphics.DrawLines(pen, new[] { new Point(25, 45), new Point(39, 59), new Point(66, 30) });
+            graphics.DrawLines(pen, new[]
+            {
+                new PointF(rect.Left + rect.Width * 0.26f, rect.Top + rect.Height * 0.50f),
+                new PointF(rect.Left + rect.Width * 0.43f, rect.Top + rect.Height * 0.67f),
+                new PointF(rect.Left + rect.Width * 0.76f, rect.Top + rect.Height * 0.32f),
+            });
         }
     }
 

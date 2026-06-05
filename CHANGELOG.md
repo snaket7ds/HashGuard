@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Redesigned the main window layout with a compact overview, visible scan results table, and dedicated scan-status footer.
 - Improved scan-status layout so long file paths do not cut off live scan text.
 - Added structured per-provider reputation state tracking.
 - Improved no-API local scanning so VirusTotal can be skipped without aborting scans.
