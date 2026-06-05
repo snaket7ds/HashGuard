@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fixed quarantine restore so verification does not lock up the UI and skipped/failed entries remain visible.
 - Redesigned Settings into Reputation, Behavior, and Trust tabs with wider sectioned controls.
 - Redesigned the main window layout with a compact overview, visible scan results table, and dedicated scan-status footer.
 - Improved scan-status layout so long file paths do not cut off live scan text.

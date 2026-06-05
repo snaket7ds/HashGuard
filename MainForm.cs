@@ -887,7 +887,7 @@ public sealed class MainForm : Form
             CreateSettingRow("VirusTotal delay per request", delay),
             CreateSettingRow("Request timeout", timeout),
         ]));
-        tabs.TabPages.Add(new TabPage("Reputation") { Controls = { reputationPage }, BackColor = Color.FromArgb(246, 247, 249) });
+        AddSettingsTab(tabs, "Reputation", reputationPage);
 
         var behaviorPage = CreateSettingsPage();
         behaviorPage.Controls.Add(CreateSettingsSection("Scanning",
@@ -904,7 +904,7 @@ public sealed class MainForm : Form
             startMinimized,
             autoUpdates,
         ]));
-        tabs.TabPages.Add(new TabPage("Behavior") { Controls = { behaviorPage }, BackColor = Color.FromArgb(246, 247, 249) });
+        AddSettingsTab(tabs, "Behavior", behaviorPage);
 
         var trustPage = CreateSettingsPage();
         trustedPublishers.Height = 260;
@@ -920,7 +920,7 @@ public sealed class MainForm : Form
             },
             trustedPublishers,
         ]));
-        tabs.TabPages.Add(new TabPage("Trust") { Controls = { trustPage }, BackColor = Color.FromArgb(246, 247, 249) });
+        AddSettingsTab(tabs, "Trust", trustPage);
 
         var buttons = new FlowLayoutPanel
         {
@@ -931,8 +931,7 @@ public sealed class MainForm : Form
         };
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
-        root.Controls.Add(buttons, 0, 1);
-        root.SetRow(buttons, 2);
+        root.Controls.Add(buttons, 0, 2);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
 
@@ -975,9 +974,17 @@ public sealed class MainForm : Form
         SaveCurrentAppSettings();
     }
 
+    private static void AddSettingsTab(TabControl tabs, string title, Control content)
+    {
+        var page = new TabPage(title) { BackColor = Color.FromArgb(246, 247, 249), Padding = new Padding(0) };
+        content.Dock = DockStyle.Fill;
+        page.Controls.Add(content);
+        tabs.TabPages.Add(page);
+    }
+
     private static FlowLayoutPanel CreateSettingsPage()
     {
-        return new FlowLayoutPanel
+        var page = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
@@ -986,14 +993,29 @@ public sealed class MainForm : Form
             Padding = new Padding(12),
             BackColor = Color.FromArgb(246, 247, 249),
         };
+        page.ControlAdded += (_, e) =>
+        {
+            if (e.Control is not null)
+            {
+                ResizeSettingsSection(page, e.Control);
+            }
+        };
+        page.SizeChanged += (_, _) =>
+        {
+            foreach (Control child in page.Controls)
+            {
+                ResizeSettingsSection(page, child);
+            }
+        };
+        return page;
     }
 
     private static Panel CreateSettingsSection(string title, IEnumerable<Control> controls)
     {
         var section = new Panel
         {
-            Width = 780,
-            AutoSize = true,
+            Width = 720,
+            Height = 10,
             BackColor = Color.White,
             Padding = new Padding(16),
             Margin = new Padding(0, 0, 0, 14),
@@ -1021,12 +1043,19 @@ public sealed class MainForm : Form
         foreach (var control in controls)
         {
             control.Margin = new Padding(0, 4, 0, 6);
-            control.Width = 730;
+            control.Dock = DockStyle.Top;
             layout.Controls.Add(control);
         }
 
+        section.Height = Math.Max(70, layout.PreferredSize.Height + section.Padding.Vertical);
         section.Controls.Add(layout);
         return section;
+    }
+
+    private static void ResizeSettingsSection(FlowLayoutPanel page, Control section)
+    {
+        var width = page.ClientSize.Width - page.Padding.Horizontal - section.Margin.Horizontal - SystemInformation.VerticalScrollBarWidth;
+        section.Width = Math.Max(420, width);
     }
 
     private static Control CreateSettingRow(string labelText, Control editor)
@@ -4381,7 +4410,20 @@ public sealed class MainForm : Form
         var openFolder = new Button { Text = "Open Quarantine", AutoSize = true };
         var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
 
-        restore.Click += (_, _) => RestoreSelectedQuarantineEntries(view);
+        restore.Click += async (_, _) =>
+        {
+            restore.Enabled = false;
+            delete.Enabled = false;
+            try
+            {
+                await RestoreSelectedQuarantineEntriesAsync(view);
+            }
+            finally
+            {
+                restore.Enabled = true;
+                delete.Enabled = true;
+            }
+        };
         delete.Click += (_, _) => DeleteSelectedQuarantineEntries(view);
         openFolder.Click += (_, _) =>
         {
@@ -4405,7 +4447,7 @@ public sealed class MainForm : Form
         dialog.ShowDialog(this);
     }
 
-    private void RestoreSelectedQuarantineEntries(ListView view)
+    private async Task RestoreSelectedQuarantineEntriesAsync(ListView view)
     {
         var entries = GetSelectedQuarantineEntries(view);
         if (entries.Count == 0)
@@ -4422,41 +4464,49 @@ public sealed class MainForm : Form
 
         var manifest = LoadQuarantineManifest();
         var restored = 0;
+        var restoredEntries = new List<QuarantineEntry>();
         var failures = new List<string>();
         foreach (var entry in entries)
         {
             try
             {
-                if (File.Exists(entry.OriginalPath))
+                if (!File.Exists(entry.QuarantinePath))
+                {
+                    throw new FileNotFoundException("Quarantined file no longer exists.", entry.QuarantinePath);
+                }
+
+                var restorePath = entry.OriginalPath;
+                if (File.Exists(restorePath))
                 {
                     using var saveDialog = new SaveFileDialog
                     {
                         Title = "Restore quarantined file as",
-                        FileName = Path.GetFileName(entry.OriginalPath),
-                        InitialDirectory = Directory.Exists(Path.GetDirectoryName(entry.OriginalPath)) ? Path.GetDirectoryName(entry.OriginalPath) : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                        FileName = Path.GetFileName(restorePath),
+                        InitialDirectory = Directory.Exists(Path.GetDirectoryName(restorePath)) ? Path.GetDirectoryName(restorePath) : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
                     };
                     if (saveDialog.ShowDialog(this) != DialogResult.OK)
                     {
                         continue;
                     }
 
-                    entry.OriginalPath = saveDialog.FileName;
+                    restorePath = saveDialog.FileName;
                 }
 
                 if (!string.IsNullOrWhiteSpace(entry.Sha256))
                 {
-                    var quarantinedHash = Sha256FileAsync(entry.QuarantinePath).GetAwaiter().GetResult();
+                    statusLabel.Text = $"Verifying quarantined file: {Path.GetFileName(entry.QuarantinePath)}";
+                    var quarantinedHash = await Sha256FileAsync(entry.QuarantinePath);
                     if (!string.Equals(quarantinedHash, entry.Sha256, StringComparison.OrdinalIgnoreCase))
                     {
                         throw new InvalidOperationException("Quarantined file hash no longer matches the manifest.");
                     }
                 }
 
-                if (IsWindowsOrProgramFilesPath(entry.OriginalPath))
+                if (IsWindowsOrProgramFilesPath(restorePath))
                 {
                     var sensitiveAccepted = MessageBox.Show(
                         this,
-                        $"Restore into a protected system or Program Files location?{Environment.NewLine}{entry.OriginalPath}",
+                        $"Restore into a protected system or Program Files location?{Environment.NewLine}{restorePath}",
                         "Confirm protected restore",
                         MessageBoxButtons.YesNo,
                         MessageBoxIcon.Warning);
@@ -4466,10 +4516,16 @@ public sealed class MainForm : Form
                     }
                 }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(entry.OriginalPath)!);
-                File.Move(entry.QuarantinePath, entry.OriginalPath);
+                var restoreDirectory = Path.GetDirectoryName(restorePath);
+                if (!string.IsNullOrWhiteSpace(restoreDirectory))
+                {
+                    Directory.CreateDirectory(restoreDirectory);
+                }
+
+                File.Move(entry.QuarantinePath, restorePath);
                 manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
                 restored++;
+                restoredEntries.Add(entry);
             }
             catch (Exception ex)
             {
@@ -4483,7 +4539,7 @@ public sealed class MainForm : Form
         {
             MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be restored", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
-        RemoveQuarantineRows(view, entries);
+        RemoveQuarantineRows(view, restoredEntries);
     }
 
     private void DeleteSelectedQuarantineEntries(ListView view)
@@ -4502,6 +4558,7 @@ public sealed class MainForm : Form
         }
 
         var manifest = LoadQuarantineManifest();
+        var deletedEntries = new List<QuarantineEntry>();
         foreach (var entry in entries)
         {
             try
@@ -4512,6 +4569,7 @@ public sealed class MainForm : Form
                 }
 
                 manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
+                deletedEntries.Add(entry);
             }
             catch (Exception ex)
             {
@@ -4521,7 +4579,7 @@ public sealed class MainForm : Form
 
         SaveQuarantineManifest(manifest);
         statusLabel.Text = "Selected quarantine entries deleted.";
-        RemoveQuarantineRows(view, entries);
+        RemoveQuarantineRows(view, deletedEntries);
     }
 
     private static void RemoveQuarantineRows(ListView view, List<QuarantineEntry> entries)
