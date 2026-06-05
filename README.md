@@ -14,6 +14,7 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 - Adds local triage context such as signer/publisher status, risky paths, startup persistence, and risk scoring.
 - Can review selected results by opening reports, copying hashes, killing selected processes, and quarantining selected files.
 - Tracks per-provider reputation state, supports local triage without API keys, and can restore/delete quarantined files from a manifest.
+- Provides Activity Log filters, selected-row reason summaries, and quarantine repair/restore-to-Desktop recovery controls.
 - Supports startup scanning, tray minimization, Windows startup registration, and update checks from GitHub Releases.
 
 ## How Scanning Works
@@ -64,6 +65,14 @@ dotnet publish HashGuardScanner.csproj -c Release -r win-x64 --self-contained tr
 The published executable is named `HashGuard.exe`.
 
 An Inno Setup installer scaffold is available at `installer/HashGuard.iss`. Build the release executable first, then compile the installer script on Windows with Inno Setup.
+
+To create a local release package with checksums, release notes, and a Windows QA checklist:
+
+```bash
+scripts/package-release.sh
+```
+
+The generated files are written to `release/`. If Inno Setup's `iscc` compiler is not available, the package includes `INSTALLER_NOT_BUILT.txt` with the Windows installer command to run.
 
 ## Releases And Updates
 

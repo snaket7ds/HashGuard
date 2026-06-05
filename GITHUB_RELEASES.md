@@ -19,10 +19,12 @@ HashGuard.exe
 HashGuard.exe.sha256
 ```
 
-Generate the checksum file after publishing:
+Generate a complete local release package after publishing:
 
 ```bash
-sha256sum bin/Release/net8.0-windows/win-x64/publish/HashGuard.exe > HashGuard.exe.sha256
+scripts/package-release.sh
 ```
+
+The package is written to `release/` and includes `HashGuard.exe`, `HashGuard.exe.sha256`, `RELEASE_NOTES.md`, and `WINDOWS_QA_CHECKLIST.md`. If Inno Setup is available, it also includes the setup executable and checksum.
 
 The updater downloads `HashGuard.exe`, verifies it against `HashGuard.exe.sha256`, then replaces the local executable.

@@ -263,6 +263,7 @@ public sealed class MainForm : Form
         };
         Shown += async (_, _) =>
         {
+            ShowFirstRunSetupIfNeeded();
             if (startupScanFile is not null)
             {
                 await RunStartupFileScanAsync();
@@ -1097,6 +1098,29 @@ public sealed class MainForm : Form
             $"Running elevated: {elevated}",
             "Use Update to check GitHub release notes and install a verified HashGuard.exe asset.",
         });
+    }
+
+    private void ShowFirstRunSetupIfNeeded()
+    {
+        if (appSettings.FirstRunSetupShown || startupMinimized || startupScanFile is not null)
+        {
+            return;
+        }
+
+        appSettings.FirstRunSetupShown = true;
+        SaveCurrentAppSettings();
+        var message = string.Join($"{Environment.NewLine}{Environment.NewLine}", new[]
+        {
+            "HashGuard can start with local-only protection. It will score unsigned files, risky paths, persistence entries, recent changes, and cached reputation without API keys.",
+            "Cloud reputation is stronger when you add VirusTotal and MetaDefender API keys in Settings.",
+            "Uploading unknown files is optional and privacy-sensitive. Leave uploads off for private, personal, proprietary, or sensitive files.",
+            "Open Settings now?",
+        });
+        var openSettings = MessageBox.Show(this, message, "HashGuard first-run setup", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+        if (openSettings == DialogResult.Yes)
+        {
+            ShowSettingsDialog();
+        }
     }
 
     private static void AddSettingsTab(TabControl tabs, string title, Control content)
@@ -4772,7 +4796,11 @@ public sealed class MainForm : Form
 
     private void ShowQuarantineDialog()
     {
-        var manifest = LoadQuarantineManifest()
+        var allManifestEntries = LoadQuarantineManifest();
+        var staleEntries = allManifestEntries
+            .Where(entry => !File.Exists(entry.QuarantinePath))
+            .ToList();
+        var manifest = allManifestEntries
             .Where(entry => File.Exists(entry.QuarantinePath))
             .OrderByDescending(entry => entry.QuarantinedAtUtc)
             .ToList();
@@ -4804,8 +4832,11 @@ public sealed class MainForm : Form
         var heading = new Label
         {
             Text = manifest.Count == 0
-                ? "No quarantined files"
-                : $"{manifest.Count} quarantined file(s). Select entries to restore or delete.",
+                ? staleEntries.Count == 0
+                    ? "No quarantined files"
+                    : $"No restorable files. {staleEntries.Count} stale manifest entr{(staleEntries.Count == 1 ? "y" : "ies")} can be repaired."
+                : $"{manifest.Count} quarantined file(s). Select entries to restore or delete."
+                    + (staleEntries.Count == 0 ? "" : $" {staleEntries.Count} stale manifest entr{(staleEntries.Count == 1 ? "y" : "ies")} found."),
             Dock = DockStyle.Fill,
             Height = 32,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
@@ -4813,37 +4844,69 @@ public sealed class MainForm : Form
             ForeColor = Color.FromArgb(35, 35, 35),
         };
         var restore = new Button { Text = "Restore Selected", AutoSize = true };
+        var restoreDesktop = new Button { Text = "Restore to Desktop", AutoSize = true };
         var delete = new Button { Text = "Delete Selected", AutoSize = true };
+        var repairMissing = new Button { Text = "Repair Missing", AutoSize = true };
         var openFolder = new Button { Text = "Open Quarantine", AutoSize = true };
         var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
         restore.Enabled = manifest.Count > 0;
+        restoreDesktop.Enabled = manifest.Count > 0;
         delete.Enabled = manifest.Count > 0;
+        repairMissing.Enabled = staleEntries.Count > 0;
+
+        void RefreshQuarantineUi()
+        {
+            var remainingManifest = LoadQuarantineManifest();
+            var staleCount = remainingManifest.Count(entry => !File.Exists(entry.QuarantinePath));
+            restore.Enabled = view.Items.Count > 0;
+            restoreDesktop.Enabled = view.Items.Count > 0;
+            delete.Enabled = view.Items.Count > 0;
+            repairMissing.Enabled = staleCount > 0;
+            heading.Text = view.Items.Count == 0
+                ? staleCount == 0
+                    ? "No quarantined files"
+                    : $"No restorable files. {staleCount} stale manifest entr{(staleCount == 1 ? "y" : "ies")} can be repaired."
+                : $"{view.Items.Count} quarantined file(s). Select entries to restore or delete."
+                    + (staleCount == 0 ? "" : $" {staleCount} stale manifest entr{(staleCount == 1 ? "y" : "ies")} found.");
+        }
 
         restore.Click += async (_, _) =>
         {
             restore.Enabled = false;
+            restoreDesktop.Enabled = false;
             delete.Enabled = false;
             try
             {
-                await RestoreSelectedQuarantineEntriesAsync(view);
+                await RestoreSelectedQuarantineEntriesAsync(view, restoreToDesktop: false);
             }
             finally
             {
-                restore.Enabled = view.Items.Count > 0;
-                delete.Enabled = view.Items.Count > 0;
-                heading.Text = view.Items.Count == 0
-                    ? "No quarantined files"
-                    : $"{view.Items.Count} quarantined file(s). Select entries to restore or delete.";
+                RefreshQuarantineUi();
+            }
+        };
+        restoreDesktop.Click += async (_, _) =>
+        {
+            restore.Enabled = false;
+            restoreDesktop.Enabled = false;
+            delete.Enabled = false;
+            try
+            {
+                await RestoreSelectedQuarantineEntriesAsync(view, restoreToDesktop: true);
+            }
+            finally
+            {
+                RefreshQuarantineUi();
             }
         };
         delete.Click += (_, _) =>
         {
             DeleteSelectedQuarantineEntries(view);
-            restore.Enabled = view.Items.Count > 0;
-            delete.Enabled = view.Items.Count > 0;
-            heading.Text = view.Items.Count == 0
-                ? "No quarantined files"
-                : $"{view.Items.Count} quarantined file(s). Select entries to restore or delete.";
+            RefreshQuarantineUi();
+        };
+        repairMissing.Click += (_, _) =>
+        {
+            RepairMissingQuarantineEntries();
+            RefreshQuarantineUi();
         };
         openFolder.Click += (_, _) =>
         {
@@ -4854,7 +4917,9 @@ public sealed class MainForm : Form
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         buttons.Controls.Add(close);
         buttons.Controls.Add(openFolder);
+        buttons.Controls.Add(repairMissing);
         buttons.Controls.Add(delete);
+        buttons.Controls.Add(restoreDesktop);
         buttons.Controls.Add(restore);
 
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(12) };
@@ -4869,7 +4934,7 @@ public sealed class MainForm : Form
         dialog.ShowDialog(this);
     }
 
-    private async Task RestoreSelectedQuarantineEntriesAsync(ListView view)
+    private async Task RestoreSelectedQuarantineEntriesAsync(ListView view, bool restoreToDesktop)
     {
         var entries = GetSelectedQuarantineEntries(view);
         if (entries.Count == 0)
@@ -4878,7 +4943,8 @@ public sealed class MainForm : Form
             return;
         }
 
-        var accepted = MessageBox.Show(this, $"Restore {entries.Count} quarantined file(s) to their original paths?", "Restore quarantine", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        var restoreTargetText = restoreToDesktop ? "to your Desktop" : "to their original paths";
+        var accepted = MessageBox.Show(this, $"Restore {entries.Count} quarantined file(s) {restoreTargetText}?", "Restore quarantine", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         if (accepted != DialogResult.Yes)
         {
             return;
@@ -4897,8 +4963,10 @@ public sealed class MainForm : Form
                     throw new FileNotFoundException("Quarantined file no longer exists.", entry.QuarantinePath);
                 }
 
-                var restorePath = entry.OriginalPath;
-                if (File.Exists(restorePath))
+                var restorePath = restoreToDesktop
+                    ? GetDesktopRestorePath(entry)
+                    : entry.OriginalPath;
+                if (!restoreToDesktop && File.Exists(restorePath))
                 {
                     var replaceExisting = MessageBox.Show(
                         this,
@@ -4967,7 +5035,7 @@ public sealed class MainForm : Form
                 manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
                 restored++;
                 restoredEntries.Add(entry);
-                AppendQuarantineLog("restore", entry.QuarantinePath, restorePath, "restored from quarantine");
+                AppendQuarantineLog(restoreToDesktop ? "restore-desktop" : "restore", entry.QuarantinePath, restorePath, "restored from quarantine");
             }
             catch (Exception ex)
             {
@@ -4983,6 +5051,83 @@ public sealed class MainForm : Form
             MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be restored", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         RemoveQuarantineRows(view, restoredEntries);
+    }
+
+    private static string GetDesktopRestorePath(QuarantineEntry entry)
+    {
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (string.IsNullOrWhiteSpace(desktop))
+        {
+            desktop = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        var originalName = Path.GetFileName(entry.OriginalPath);
+        if (string.IsNullOrWhiteSpace(originalName))
+        {
+            originalName = Path.GetFileNameWithoutExtension(entry.QuarantinePath);
+        }
+
+        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        {
+            originalName = originalName.Replace(invalidChar, '_');
+        }
+
+        if (string.IsNullOrWhiteSpace(originalName))
+        {
+            originalName = "HashGuard-Restored-File";
+        }
+
+        var candidate = Path.Combine(desktop, originalName);
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(originalName);
+        var extension = Path.GetExtension(originalName);
+        for (var index = 1; index < 1000; index++)
+        {
+            candidate = Path.Combine(desktop, $"{name} ({index}){extension}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return Path.Combine(desktop, $"{name}-{DateTime.Now:yyyyMMddHHmmss}{extension}");
+    }
+
+    private void RepairMissingQuarantineEntries()
+    {
+        var manifest = LoadQuarantineManifest();
+        var staleEntries = manifest
+            .Where(entry => !File.Exists(entry.QuarantinePath))
+            .ToList();
+        if (staleEntries.Count == 0)
+        {
+            MessageBox.Show(this, "No missing quarantine entries were found.", "Repair quarantine", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var accepted = MessageBox.Show(
+            this,
+            $"Remove {staleEntries.Count} stale manifest entr{(staleEntries.Count == 1 ? "y" : "ies")} for quarantined files that no longer exist?",
+            "Repair quarantine",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        manifest.RemoveAll(entry => !File.Exists(entry.QuarantinePath));
+        SaveQuarantineManifest(manifest);
+        foreach (var entry in staleEntries)
+        {
+            AppendQuarantineLog("repair-missing", entry.QuarantinePath, entry.OriginalPath, "removed stale manifest entry");
+        }
+
+        statusLabel.Text = $"Removed {staleEntries.Count} stale quarantine entr{(staleEntries.Count == 1 ? "y" : "ies")}.";
     }
 
     private void DeleteSelectedQuarantineEntries(ListView view)
@@ -6076,6 +6221,7 @@ public sealed class MainForm : Form
         public bool RunElevated { get; set; }
         public bool ScanAllFiles { get; set; }
         public bool AutoUpdateChecks { get; set; }
+        public bool FirstRunSetupShown { get; set; }
         public int DelaySeconds { get; set; } = 16;
         public int TimeoutSeconds { get; set; } = 60;
         public string ApiKeyEncrypted { get; set; } = "";

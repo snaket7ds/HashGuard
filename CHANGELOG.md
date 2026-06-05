@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added a first-run setup prompt explaining local-only protection, cloud API keys, and optional uploads.
+- Added quarantine restore-to-Desktop and stale-manifest repair controls.
+- Added local release packaging with EXE/checksum, release notes, and a Windows QA checklist.
+- Added Activity Log filters, selected-row explanations, copyable summaries, and improved remediation confirmations.
 - Fixed quarantine restore so verification does not lock up the UI and skipped/failed entries remain visible.
 - Redesigned Settings into Reputation, Behavior, and Trust tabs with wider sectioned controls.
 - Redesigned the main window layout with a compact overview, visible scan results table, and dedicated scan-status footer.
