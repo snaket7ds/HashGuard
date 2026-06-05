@@ -506,7 +506,7 @@ public sealed class MainForm : Form
         countLabel.Dock = DockStyle.Fill;
         countLabel.TextAlign = ContentAlignment.MiddleRight;
         countLabel.Margin = new Padding(0, 0, 0, 0);
-        countLabel.Width = 120;
+        countLabel.Width = 76;
         bottom.Controls.Add(progressBar, 0, 0);
         bottom.Controls.Add(countLabel, 1, 0);
         bottom.Controls.Add(statusLabel, 0, 1);
@@ -836,8 +836,8 @@ public sealed class MainForm : Form
             FormBorderStyle = FormBorderStyle.Sizable,
             MaximizeBox = true,
             MinimizeBox = false,
-            ClientSize = new Size(940, 700),
-            MinimumSize = new Size(820, 580),
+            ClientSize = new Size(1120, 820),
+            MinimumSize = new Size(1040, 760),
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
@@ -912,57 +912,24 @@ public sealed class MainForm : Form
         };
         root.Controls.Add(tabs, 0, 1);
 
-        var reputationPage = CreateSettingsPage();
-        reputationPage.Controls.Add(CreateSettingsSection("Reputation Providers",
-        [
-            vtEnabled,
-            mdEnabled,
-            mhrEnabled,
-            freeLimit,
-            uploadUnknown,
-        ]));
-        reputationPage.Controls.Add(CreateSettingsSection("API Keys",
-        [
-            CreateSettingRow("VirusTotal API key", apiKey),
-            CreateSettingRow("MetaDefender API key", metaDefenderApiKey),
-        ]));
-        reputationPage.Controls.Add(CreateSettingsSection("Request Timing",
-        [
-            CreateSettingRow("VirusTotal delay per request", delay),
-            CreateSettingRow("Request timeout", timeout),
-        ]));
-        reputationPage.Controls.Add(CreateSettingsSection("Provider Status",
-        [
-            reputationValidation,
-        ]));
+        var reputationPage = CreateSettingsPage(
+            ("Reputation Providers", [vtEnabled, mdEnabled, mhrEnabled, freeLimit, uploadUnknown]),
+            ("API Keys", [CreateSettingRow("VirusTotal API key", apiKey), CreateSettingRow("MetaDefender API key", metaDefenderApiKey)]),
+            ("Request Timing", [CreateSettingRow("VirusTotal delay per request", delay), CreateSettingRow("Request timeout", timeout)]),
+            ("Provider Status", [reputationValidation]));
         AddSettingsTab(tabs, "Reputation", reputationPage);
 
-        var behaviorPage = CreateSettingsPage();
-        behaviorPage.Controls.Add(CreateSettingsSection("Scanning",
-        [
-            hashCache,
-            autoProcessScan,
-            scanAllFiles,
-            runElevated,
-        ]));
-        behaviorPage.Controls.Add(CreateSettingsSection("Windows Integration",
-        [
-            rightClickScan,
-            startWithWindows,
-            startMinimized,
-            autoUpdates,
-        ]));
-        behaviorPage.Controls.Add(CreateSettingsSection("Version and Updates",
-        [
-            updateInfo,
-        ]));
+        var behaviorPage = CreateSettingsPage(
+            ("Scanning", [hashCache, autoProcessScan, scanAllFiles, runElevated]),
+            ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, autoUpdates]),
+            ("Version and Updates", [updateInfo]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
 
-        var trustPage = CreateSettingsPage();
         trustedPublishers.Height = 260;
-        trustPage.Controls.Add(CreateSettingsSection("Trusted Publishers",
-        [
-            new Label
+        var trustPage = CreateSettingsPage(
+            ("Trusted Publishers",
+            [
+                new Label
             {
                 Text = "One publisher per line. Matching signed files receive a lower local risk score.",
                 Dock = DockStyle.Top,
@@ -970,8 +937,8 @@ public sealed class MainForm : Form
                 ForeColor = Color.DimGray,
                 TextAlign = ContentAlignment.MiddleLeft,
             },
-            trustedPublishers,
-        ]));
+                trustedPublishers,
+            ]));
         AddSettingsTab(tabs, "Trust", trustPage);
 
         var buttons = new FlowLayoutPanel
@@ -1125,22 +1092,22 @@ public sealed class MainForm : Form
 
     private static void AddSettingsTab(TabControl tabs, string title, Control content)
     {
-        var page = new TabPage(title) { BackColor = Color.FromArgb(246, 247, 249), Padding = new Padding(0) };
+        var page = new TabPage(title) { BackColor = Color.White, Padding = new Padding(0) };
         content.Dock = DockStyle.Fill;
         page.Controls.Add(content);
         tabs.TabPages.Add(page);
     }
 
-    private static FlowLayoutPanel CreateSettingsPage()
+    private static FlowLayoutPanel CreateSettingsPage(params (string Title, Control[] Controls)[] sections)
     {
         var page = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            AutoScroll = true,
-            Padding = new Padding(12),
-            BackColor = Color.FromArgb(246, 247, 249),
+            AutoScroll = false,
+            Padding = new Padding(22, 18, 22, 12),
+            BackColor = Color.White,
         };
         page.ControlAdded += (_, e) =>
         {
@@ -1156,6 +1123,11 @@ public sealed class MainForm : Form
                 ResizeSettingsSection(page, child);
             }
         };
+        foreach (var section in sections)
+        {
+            page.Controls.Add(CreateSettingsSection(section.Title, section.Controls));
+        }
+
         return page;
     }
 
@@ -1166,8 +1138,8 @@ public sealed class MainForm : Form
             Width = 720,
             Height = 10,
             BackColor = Color.White,
-            Padding = new Padding(16),
-            Margin = new Padding(0, 0, 0, 14),
+            Padding = new Padding(0, 0, 0, 8),
+            Margin = new Padding(0, 0, 0, 6),
         };
 
         var layout = new TableLayoutPanel
@@ -1182,22 +1154,22 @@ public sealed class MainForm : Form
         {
             Text = title,
             Dock = DockStyle.Top,
-            Height = 28,
+            Height = 26,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
             ForeColor = Color.FromArgb(35, 35, 35),
             TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0, 0, 0, 8),
+            Margin = new Padding(0, 0, 0, 4),
         });
 
         foreach (var control in controls)
         {
-            control.Margin = new Padding(0, 4, 0, 6);
+            control.Margin = new Padding(0, 2, 0, 4);
             control.Dock = DockStyle.Top;
             NormalizeSettingsControl(control);
             layout.Controls.Add(control);
         }
 
-        section.Height = Math.Max(70, layout.PreferredSize.Height + section.Padding.Vertical);
+        section.Height = Math.Max(54, layout.PreferredSize.Height + section.Padding.Vertical);
         section.Controls.Add(layout);
         return section;
     }
@@ -1207,7 +1179,7 @@ public sealed class MainForm : Form
         if (control is CheckBox checkBox)
         {
             checkBox.AutoSize = false;
-            checkBox.Height = 30;
+            checkBox.Height = 26;
             checkBox.TextAlign = ContentAlignment.MiddleLeft;
             checkBox.UseMnemonic = false;
         }
@@ -1221,8 +1193,8 @@ public sealed class MainForm : Form
 
     private static void ResizeSettingsSection(FlowLayoutPanel page, Control section)
     {
-        var width = page.ClientSize.Width - page.Padding.Horizontal - section.Margin.Horizontal - SystemInformation.VerticalScrollBarWidth;
-        section.Width = Math.Max(420, width);
+        var availableWidth = page.ClientSize.Width - page.Padding.Horizontal;
+        section.Width = Math.Max(560, availableWidth - section.Margin.Horizontal);
     }
 
     private static Control CreateSettingRow(string labelText, Control editor)
@@ -1231,8 +1203,8 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             ColumnCount = 2,
-            Height = 34,
-            Margin = new Padding(0, 4, 0, 6),
+            Height = 30,
+            Margin = new Padding(0, 2, 0, 4),
         };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -4831,12 +4803,7 @@ public sealed class MainForm : Form
 
         var heading = new Label
         {
-            Text = manifest.Count == 0
-                ? staleEntries.Count == 0
-                    ? "No quarantined files"
-                    : $"No restorable files. {staleEntries.Count} stale manifest entr{(staleEntries.Count == 1 ? "y" : "ies")} can be repaired."
-                : $"{manifest.Count} quarantined file(s). Select entries to restore or delete."
-                    + (staleEntries.Count == 0 ? "" : $" {staleEntries.Count} stale manifest entr{(staleEntries.Count == 1 ? "y" : "ies")} found."),
+            Text = BuildQuarantineHeading(manifest.Count, staleEntries.Count),
             Dock = DockStyle.Fill,
             Height = 32,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
@@ -4849,32 +4816,20 @@ public sealed class MainForm : Form
         var repairMissing = new Button { Text = "Repair Missing", AutoSize = true };
         var openFolder = new Button { Text = "Open Quarantine", AutoSize = true };
         var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
-        restore.Enabled = manifest.Count > 0;
-        restoreDesktop.Enabled = manifest.Count > 0;
-        delete.Enabled = manifest.Count > 0;
-        repairMissing.Enabled = staleEntries.Count > 0;
 
         void RefreshQuarantineUi()
         {
             var remainingManifest = LoadQuarantineManifest();
             var staleCount = remainingManifest.Count(entry => !File.Exists(entry.QuarantinePath));
-            restore.Enabled = view.Items.Count > 0;
-            restoreDesktop.Enabled = view.Items.Count > 0;
-            delete.Enabled = view.Items.Count > 0;
-            repairMissing.Enabled = staleCount > 0;
-            heading.Text = view.Items.Count == 0
-                ? staleCount == 0
-                    ? "No quarantined files"
-                    : $"No restorable files. {staleCount} stale manifest entr{(staleCount == 1 ? "y" : "ies")} can be repaired."
-                : $"{view.Items.Count} quarantined file(s). Select entries to restore or delete."
-                    + (staleCount == 0 ? "" : $" {staleCount} stale manifest entr{(staleCount == 1 ? "y" : "ies")} found.");
+            SetQuarantineButtonsEnabled(view.Items.Count > 0, staleCount > 0, restore, restoreDesktop, delete, repairMissing);
+            heading.Text = BuildQuarantineHeading(view.Items.Count, staleCount);
         }
+
+        RefreshQuarantineUi();
 
         restore.Click += async (_, _) =>
         {
-            restore.Enabled = false;
-            restoreDesktop.Enabled = false;
-            delete.Enabled = false;
+            SetQuarantineButtonsEnabled(false, repairMissing.Enabled, restore, restoreDesktop, delete, repairMissing);
             try
             {
                 await RestoreSelectedQuarantineEntriesAsync(view, restoreToDesktop: false);
@@ -4886,9 +4841,7 @@ public sealed class MainForm : Form
         };
         restoreDesktop.Click += async (_, _) =>
         {
-            restore.Enabled = false;
-            restoreDesktop.Enabled = false;
-            delete.Enabled = false;
+            SetQuarantineButtonsEnabled(false, repairMissing.Enabled, restore, restoreDesktop, delete, repairMissing);
             try
             {
                 await RestoreSelectedQuarantineEntriesAsync(view, restoreToDesktop: true);
@@ -4932,6 +4885,40 @@ public sealed class MainForm : Form
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
         dialog.ShowDialog(this);
+    }
+
+    private static string BuildQuarantineHeading(int restorableCount, int staleCount)
+    {
+        if (restorableCount == 0)
+        {
+            return staleCount == 0
+                ? "No quarantined files"
+                : $"No restorable files. {staleCount} stale manifest {PluralizeEntry(staleCount)} can be repaired.";
+        }
+
+        var staleText = staleCount == 0
+            ? ""
+            : $" {staleCount} stale manifest {PluralizeEntry(staleCount)} found.";
+        return $"{restorableCount} quarantined file(s). Select entries to restore or delete.{staleText}";
+    }
+
+    private static string PluralizeEntry(int count)
+    {
+        return count == 1 ? "entry" : "entries";
+    }
+
+    private static void SetQuarantineButtonsEnabled(
+        bool hasRestorableRows,
+        bool hasStaleRows,
+        Button restore,
+        Button restoreDesktop,
+        Button delete,
+        Button repairMissing)
+    {
+        restore.Enabled = hasRestorableRows;
+        restoreDesktop.Enabled = hasRestorableRows;
+        delete.Enabled = hasRestorableRows;
+        repairMissing.Enabled = hasStaleRows;
     }
 
     private async Task RestoreSelectedQuarantineEntriesAsync(ListView view, bool restoreToDesktop)
