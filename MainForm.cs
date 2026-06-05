@@ -90,14 +90,22 @@ public sealed class MainForm : Form
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
     private readonly NumericUpDown timeoutBox = new() { Minimum = 10, Maximum = 300, Value = 60, Width = 64 };
     private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = true };
+    private readonly Label resultsEmptyLabel = new()
+    {
+        Text = "Run a scan to review process reputation, trust, and remediation options.",
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleCenter,
+        ForeColor = Color.DimGray,
+        Font = new Font("Segoe UI", 10, FontStyle.Regular),
+    };
     private readonly ProgressBar progressBar = new();
     private readonly Label statusLabel = new() { AutoEllipsis = false };
     private readonly Label countLabel = new() { AutoSize = true };
     private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "action" };
     private readonly Label statusTitle = new() { Text = "You are not protected", AutoSize = true, Font = new Font("Segoe UI", 24, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label statusSubtitle = new() { Text = "Run a process scan to verify protection.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label summaryLabel = new() { Text = "0 files scanned", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label actionLabel = new() { Text = "0 action needed", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label summaryLabel = new() { Text = "Files scanned: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label actionLabel = new() { Text = "Actions needed: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label reputationStateLabel = new();
     private readonly Label reputationProtectionLabel = new();
     private readonly Label hashCacheStateLabel = new();
@@ -361,7 +369,7 @@ public sealed class MainForm : Form
             RowCount = 2,
             Padding = new Padding(18, 18, 18, 10),
         };
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 196));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.Controls.Add(main, 0, 1);
 
@@ -372,8 +380,8 @@ public sealed class MainForm : Form
             RowCount = 1,
             Margin = new Padding(0, 0, 0, 12),
         };
-        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
-        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
+        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
         main.Controls.Add(overview, 0, 0);
 
         var statusCard = new Panel
@@ -384,8 +392,8 @@ public sealed class MainForm : Form
             Margin = new Padding(0, 0, 12, 0),
         };
         statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "clean");
-        statusDot.Width = 72;
-        statusDot.Height = 72;
+        statusDot.Width = 78;
+        statusDot.Height = 78;
         statusDot.Margin = new Padding(0, 0, 16, 0);
         statusTitle.AutoSize = false;
         statusTitle.Dock = DockStyle.Fill;
@@ -396,46 +404,54 @@ public sealed class MainForm : Form
         statusSubtitle.TextAlign = ContentAlignment.TopLeft;
         statusSubtitle.MaximumSize = new Size(0, 0);
 
-        var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
-        statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 88));
+        var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
+        statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 94));
         statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
-        statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
+        statusLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         statusLayout.Controls.Add(statusDot, 0, 0);
         statusLayout.SetRowSpan(statusDot, 2);
 
         var statusText = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
-        statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        statusText.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         statusText.Controls.Add(statusTitle, 0, 0);
         statusText.Controls.Add(statusSubtitle, 0, 1);
         statusLayout.Controls.Add(statusText, 1, 0);
 
-        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 6, 0, 0) };
-        stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        stats.RowStyles.Add(new RowStyle(SizeType.Percent, 58));
-        stats.RowStyles.Add(new RowStyle(SizeType.Percent, 42));
+        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 8, 0, 0) };
+        stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        stats.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         summaryLabel.Dock = DockStyle.Fill;
         summaryLabel.MaximumSize = new Size(0, 0);
-        summaryLabel.TextAlign = ContentAlignment.BottomLeft;
+        summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
+        summaryLabel.BackColor = Color.FromArgb(246, 247, 249);
+        summaryLabel.Padding = new Padding(10, 0, 10, 0);
+        summaryLabel.Margin = new Padding(0, 0, 8, 0);
         actionLabel.Dock = DockStyle.Fill;
-        actionLabel.TextAlign = ContentAlignment.TopLeft;
-        stats.Controls.Add(summaryLabel);
-        stats.Controls.Add(actionLabel);
-        statusLayout.Controls.Add(stats, 1, 1);
+        actionLabel.TextAlign = ContentAlignment.MiddleLeft;
+        actionLabel.BackColor = Color.FromArgb(246, 247, 249);
+        actionLabel.Padding = new Padding(10, 0, 10, 0);
+        actionLabel.Margin = new Padding(0);
+        stats.Controls.Add(summaryLabel, 0, 0);
+        stats.Controls.Add(actionLabel, 1, 0);
+        statusLayout.Controls.Add(stats, 0, 2);
+        statusLayout.SetColumnSpan(stats, 2);
         statusCard.Controls.Add(statusLayout);
         overview.Controls.Add(statusCard, 0, 0);
 
-        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, Padding = new Padding(0), Margin = new Padding(0) };
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        var tiles = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(0), Margin = new Padding(0) };
+        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
         tiles.Controls.Add(CreateFeatureTile("Process Security", "Running apps", "Protected"), 0, 0);
         tiles.Controls.Add(CreateReputationTile(), 1, 0);
-        tiles.Controls.Add(CreateHashCacheTile(), 2, 0);
-        tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "Open", ShowScanDetailsDialogSafe), 3, 0);
+        tiles.Controls.Add(CreateHashCacheTile(), 0, 1);
+        tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "Open", ShowScanDetailsDialogSafe), 1, 1);
         overview.Controls.Add(tiles, 1, 0);
 
         ConfigureResultsView(resultsView);
@@ -457,7 +473,11 @@ public sealed class MainForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Color.FromArgb(35, 35, 35),
         }, 0, 0);
-        resultsLayout.Controls.Add(resultsView, 0, 1);
+        var resultsHost = new Panel { Dock = DockStyle.Fill };
+        resultsHost.Controls.Add(resultsEmptyLabel);
+        resultsHost.Controls.Add(resultsView);
+        resultsEmptyLabel.BringToFront();
+        resultsLayout.Controls.Add(resultsHost, 0, 1);
         resultsPanel.Controls.Add(resultsLayout);
         main.Controls.Add(resultsPanel, 0, 1);
 
@@ -468,9 +488,8 @@ public sealed class MainForm : Form
             Margin = new Padding(18, 0, 18, 18),
             Padding = new Padding(14, 8, 14, 8),
         };
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
+        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 12));
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
         bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -488,14 +507,14 @@ public sealed class MainForm : Form
         countLabel.Margin = new Padding(0, 0, 0, 0);
         countLabel.Width = 120;
         bottom.Controls.Add(progressBar, 0, 0);
-        bottom.SetColumnSpan(progressBar, 2);
-        bottom.Controls.Add(countLabel, 2, 0);
+        bottom.Controls.Add(countLabel, 1, 0);
         bottom.Controls.Add(statusLabel, 0, 1);
-        bottom.SetColumnSpan(statusLabel, 3);
+        bottom.SetColumnSpan(statusLabel, 2);
         bottomCard.Controls.Add(bottom);
         root.Controls.Add(bottomCard, 0, 2);
 
         statusLabel.Text = "Ready";
+        UpdateResultsEmptyState();
         UpdateReputationTile();
         UpdateHashCacheTile();
     }
@@ -582,9 +601,9 @@ public sealed class MainForm : Form
             Padding = new Padding(0),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.Controls.Add(title, 0, 0);
         layout.Controls.Add(detail, 0, 1);
         layout.Controls.Add(state, 0, 2);
@@ -598,7 +617,7 @@ public sealed class MainForm : Form
             Text = text,
             AutoSize = false,
             Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
             ForeColor = Color.FromArgb(35, 35, 35),
             Margin = new Padding(0),
             TextAlign = ContentAlignment.MiddleLeft,
@@ -625,7 +644,7 @@ public sealed class MainForm : Form
     {
         label.AutoSize = false;
         label.Dock = DockStyle.Fill;
-        label.Font = new Font("Segoe UI", 8, FontStyle.Regular);
+        label.Font = new Font("Segoe UI", 8.5f, FontStyle.Regular);
         label.ForeColor = Color.FromArgb(35, 35, 35);
         label.Margin = new Padding(0);
         label.TextAlign = ContentAlignment.MiddleLeft;
@@ -636,7 +655,7 @@ public sealed class MainForm : Form
     {
         label.AutoSize = false;
         label.Dock = DockStyle.Fill;
-        label.Font = new Font("Segoe UI", 8, FontStyle.Bold);
+        label.Font = new Font("Segoe UI", 8.5f, FontStyle.Bold);
         label.ForeColor = color;
         label.Margin = new Padding(0);
         label.TextAlign = ContentAlignment.MiddleLeft;
@@ -816,8 +835,8 @@ public sealed class MainForm : Form
             FormBorderStyle = FormBorderStyle.Sizable,
             MaximizeBox = true,
             MinimizeBox = false,
-            ClientSize = new Size(860, 680),
-            MinimumSize = new Size(760, 560),
+            ClientSize = new Size(940, 700),
+            MinimumSize = new Size(820, 580),
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
@@ -848,6 +867,25 @@ public sealed class MainForm : Form
         var timeout = new NumericUpDown { Minimum = 10, Maximum = 300, Value = timeoutBox.Value, Width = 70 };
         var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true };
         var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var reputationValidation = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 76,
+            Padding = new Padding(10),
+            BackColor = Color.FromArgb(255, 250, 220),
+            ForeColor = Color.FromArgb(80, 60, 0),
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+        var updateInfo = new Label
+        {
+            Text = BuildVersionAndUpdateInfo(),
+            Dock = DockStyle.Top,
+            Height = 92,
+            Padding = new Padding(10),
+            BackColor = Color.White,
+            ForeColor = Color.FromArgb(35, 35, 35),
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(16) };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -865,7 +903,12 @@ public sealed class MainForm : Form
             TextAlign = ContentAlignment.MiddleLeft,
         }, 0, 0);
 
-        var tabs = new TabControl { Dock = DockStyle.Fill, Margin = new Padding(0, 8, 0, 12) };
+        var tabs = new TabControl
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 8, 0, 12),
+            Font = new Font("Segoe UI", 9, FontStyle.Regular),
+        };
         root.Controls.Add(tabs, 0, 1);
 
         var reputationPage = CreateSettingsPage();
@@ -887,6 +930,10 @@ public sealed class MainForm : Form
             CreateSettingRow("VirusTotal delay per request", delay),
             CreateSettingRow("Request timeout", timeout),
         ]));
+        reputationPage.Controls.Add(CreateSettingsSection("Provider Status",
+        [
+            reputationValidation,
+        ]));
         AddSettingsTab(tabs, "Reputation", reputationPage);
 
         var behaviorPage = CreateSettingsPage();
@@ -904,6 +951,10 @@ public sealed class MainForm : Form
             startMinimized,
             autoUpdates,
         ]));
+        behaviorPage.Controls.Add(CreateSettingsSection("Version and Updates",
+        [
+            updateInfo,
+        ]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
 
         var trustPage = CreateSettingsPage();
@@ -914,7 +965,7 @@ public sealed class MainForm : Form
             {
                 Text = "One publisher per line. Matching signed files receive a lower local risk score.",
                 Dock = DockStyle.Top,
-                Height = 34,
+                Height = 42,
                 ForeColor = Color.DimGray,
                 TextAlign = ContentAlignment.MiddleLeft,
             },
@@ -934,6 +985,33 @@ public sealed class MainForm : Form
         root.Controls.Add(buttons, 0, 2);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
+
+        void RefreshValidation()
+        {
+            reputationValidation.Text = BuildSettingsValidationText(
+                vtEnabled.Checked,
+                mdEnabled.Checked,
+                mhrEnabled.Checked,
+                apiKey.Text,
+                metaDefenderApiKey.Text,
+                uploadUnknown.Checked,
+                scanAllFiles.Checked);
+            reputationValidation.BackColor = reputationValidation.Text.StartsWith("Ready", StringComparison.OrdinalIgnoreCase)
+                ? Color.FromArgb(230, 246, 236)
+                : Color.FromArgb(255, 250, 220);
+            reputationValidation.ForeColor = reputationValidation.Text.StartsWith("Ready", StringComparison.OrdinalIgnoreCase)
+                ? Color.FromArgb(25, 100, 50)
+                : Color.FromArgb(80, 60, 0);
+        }
+
+        foreach (var checkBox in new[] { vtEnabled, mdEnabled, mhrEnabled, uploadUnknown, scanAllFiles })
+        {
+            checkBox.CheckedChanged += (_, _) => RefreshValidation();
+        }
+
+        apiKey.TextChanged += (_, _) => RefreshValidation();
+        metaDefenderApiKey.TextChanged += (_, _) => RefreshValidation();
+        RefreshValidation();
 
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
@@ -972,6 +1050,53 @@ public sealed class MainForm : Form
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();
         SaveCurrentAppSettings();
+    }
+
+    private static string BuildSettingsValidationText(
+        bool virusTotalEnabled,
+        bool metaDefenderEnabled,
+        bool mhrEnabled,
+        string virusTotalApiKey,
+        string metaDefenderApiKey,
+        bool uploadUnknown,
+        bool scanAllFiles)
+    {
+        var notes = new List<string>();
+        if (!virusTotalEnabled && !metaDefenderEnabled && !mhrEnabled)
+        {
+            notes.Add("No cloud or hash reputation providers are enabled.");
+        }
+
+        if (virusTotalEnabled && string.IsNullOrWhiteSpace(virusTotalApiKey))
+        {
+            notes.Add("VirusTotal is enabled without an API key; HashGuard will rely on local signals, cache, and other providers.");
+        }
+
+        if (metaDefenderEnabled && string.IsNullOrWhiteSpace(metaDefenderApiKey))
+        {
+            notes.Add("MetaDefender Cloud is enabled without an API key; checks will be skipped until a key is saved.");
+        }
+
+        if (uploadUnknown && scanAllFiles)
+        {
+            notes.Add("Uploads cannot be enabled while open/selected file scanning is enabled.");
+        }
+
+        return notes.Count == 0
+            ? "Ready: enabled providers and scan options are consistent."
+            : string.Join(Environment.NewLine, notes);
+    }
+
+    private static string BuildVersionAndUpdateInfo()
+    {
+        var elevated = IsRunningElevated() ? "Yes" : "No";
+        return string.Join(Environment.NewLine, new[]
+        {
+            $"Installed version: {CurrentVersion}",
+            $"Executable: {Application.ExecutablePath}",
+            $"Running elevated: {elevated}",
+            "Use Update to check GitHub release notes and install a verified HashGuard.exe asset.",
+        });
     }
 
     private static void AddSettingsTab(TabControl tabs, string title, Control content)
@@ -1044,12 +1169,30 @@ public sealed class MainForm : Form
         {
             control.Margin = new Padding(0, 4, 0, 6);
             control.Dock = DockStyle.Top;
+            NormalizeSettingsControl(control);
             layout.Controls.Add(control);
         }
 
         section.Height = Math.Max(70, layout.PreferredSize.Height + section.Padding.Vertical);
         section.Controls.Add(layout);
         return section;
+    }
+
+    private static void NormalizeSettingsControl(Control control)
+    {
+        if (control is CheckBox checkBox)
+        {
+            checkBox.AutoSize = false;
+            checkBox.Height = 30;
+            checkBox.TextAlign = ContentAlignment.MiddleLeft;
+            checkBox.UseMnemonic = false;
+        }
+
+        if (control is Label label)
+        {
+            label.AutoSize = false;
+            label.UseMnemonic = false;
+        }
     }
 
     private static void ResizeSettingsSection(FlowLayoutPanel page, Control section)
@@ -1067,7 +1210,7 @@ public sealed class MainForm : Form
             Height = 34,
             Margin = new Padding(0, 4, 0, 6),
         };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 210));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.Controls.Add(new Label
         {
@@ -1151,11 +1294,12 @@ public sealed class MainForm : Form
         scanButton.Enabled = true;
         results.Clear();
         resultsView.Items.Clear();
+        UpdateResultsEmptyState();
         progressBar.Value = 0;
         countLabel.Text = "";
         statusLabel.Text = "Collecting running processes...";
         summaryLabel.Text = "Preparing scan";
-        actionLabel.Text = "0 action needed";
+        actionLabel.Text = "Actions needed: 0";
         SetDashboardState("Scanning", "Checking running process files with enabled reputation services.", false);
 
         try
@@ -1870,12 +2014,13 @@ public sealed class MainForm : Form
         scanButton.Enabled = false;
         results.Clear();
         resultsView.Items.Clear();
+        UpdateResultsEmptyState();
         progressBar.Value = 0;
         progressBar.Maximum = 1;
         countLabel.Text = "1 / 1";
         statusLabel.Text = $"Scanning selected file: {FormatDisplayPath(path)}";
         summaryLabel.Text = "Preparing scan";
-        actionLabel.Text = "0 action needed";
+        actionLabel.Text = "Actions needed: 0";
         SetDashboardState("Scanning", "Checking the selected file with enabled reputation services.", false);
 
         try
@@ -2318,7 +2463,12 @@ public sealed class MainForm : Form
                 if (!automatic)
                 {
                     statusLabel.Text = $"HashGuard is up to date ({CurrentVersion}).";
-                    MessageBox.Show(this, $"HashGuard is up to date.{Environment.NewLine}Current version: {CurrentVersion}", "Update", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show(
+                        this,
+                        $"HashGuard is up to date.{Environment.NewLine}Current version: {CurrentVersion}{Environment.NewLine}Latest GitHub version: {latestVersion}",
+                        "Update",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
                 }
                 return;
             }
@@ -3335,7 +3485,37 @@ public sealed class MainForm : Form
         }
 
         resultsView.Items.Add(item);
+        UpdateResultsEmptyState();
+        FitResultColumns(resultsView);
         AppendScanLog(result);
+    }
+
+    private void UpdateResultsEmptyState()
+    {
+        resultsEmptyLabel.Visible = resultsView.Items.Count == 0;
+        if (resultsEmptyLabel.Visible)
+        {
+            resultsEmptyLabel.BringToFront();
+        }
+    }
+
+    private static void FitResultColumns(ListView view)
+    {
+        if (view.Columns.Count <= ColNotes)
+        {
+            return;
+        }
+
+        view.Columns[ColStatus].Width = 104;
+        view.Columns[ColRisk].Width = 96;
+        view.Columns[ColMalicious].Width = 52;
+        view.Columns[ColSuspicious].Width = 52;
+        view.Columns[ColPids].Width = 95;
+        view.Columns[ColProcess].Width = Math.Min(220, Math.Max(150, view.Columns[ColProcess].Width));
+        view.Columns[ColTrust].Width = Math.Min(320, Math.Max(220, view.Columns[ColTrust].Width));
+        view.Columns[ColSha256].Width = Math.Min(360, Math.Max(280, view.Columns[ColSha256].Width));
+        view.Columns[ColPath].Width = Math.Min(520, Math.Max(360, view.Columns[ColPath].Width));
+        view.Columns[ColNotes].Width = Math.Min(420, Math.Max(300, view.Columns[ColNotes].Width));
     }
 
     private static void ApplyResultRowColor(ListViewItem item)
@@ -3372,8 +3552,10 @@ public sealed class MainForm : Form
         var highRisk = results.Count(result => result.RiskScore >= 70);
         var persistent = results.Count(result => result.PersistenceSources.Count > 0);
         var unsigned = results.Count(result => result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase));
-        summaryLabel.Text = $"{results.Count} files scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown";
-        actionLabel.Text = $"{alerts + highRisk + errors} action needed";
+        summaryLabel.Text = $"Files scanned: {results.Count}";
+        actionLabel.Text = $"Actions needed: {alerts + highRisk + errors}";
+        toolTip.SetToolTip(summaryLabel, $"{results.Count} scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown");
+        toolTip.SetToolTip(actionLabel, $"{alerts} detections | {highRisk} high risk | {errors} errors");
         if (scanCancellation is not null || processMonitorScanRunning)
         {
             return;
@@ -3455,6 +3637,7 @@ public sealed class MainForm : Form
             StartPosition = FormStartPosition.CenterParent,
             Size = new Size(1320, 720),
             MinimumSize = new Size(1120, 560),
+            BackColor = Color.FromArgb(246, 247, 249),
         };
 
         var detailView = new ListView { View = View.Details, FullRowSelect = true, GridLines = true };
@@ -3463,11 +3646,20 @@ public sealed class MainForm : Form
         detailView.Columns[ColSha256].Width = 300;
         detailView.Columns[ColPath].Width = 360;
         detailView.Columns[ColNotes].Width = 300;
+        FitResultColumns(detailView);
         detailView.Dock = DockStyle.Fill;
-        foreach (var item in LoadActivityLogItems())
+        var allItems = LoadActivityLogItems();
+
+        var reasonLabel = new Label
         {
-            detailView.Items.Add(item);
-        }
+            Text = "Select a row to see why HashGuard flagged it and which action is safest.",
+            Dock = DockStyle.Fill,
+            Height = 72,
+            AutoEllipsis = true,
+            Padding = new Padding(10, 8, 10, 8),
+            BackColor = Color.White,
+            ForeColor = Color.FromArgb(35, 35, 35),
+        };
 
         var openReport = new Button { Text = "Open Report...", AutoSize = true };
         var openFileLocation = new Button { Text = "Open File Location", AutoSize = true };
@@ -3475,6 +3667,7 @@ public sealed class MainForm : Form
         var quarantineFile = new Button { Text = "Quarantine File", AutoSize = true };
         var restoreQuarantine = new Button { Text = "Restore Quarantine", AutoSize = true };
         var copyHash = new Button { Text = "Copy Hash", AutoSize = true };
+        var copySummary = new Button { Text = "Copy Summary", AutoSize = true };
         var ignoreSelected = new Button { Text = "Ignore Selected", AutoSize = true };
         var exportCsv = new Button { Text = "Export CSV", AutoSize = true };
         var openLogs = new Button { Text = "Open Logs", AutoSize = true };
@@ -3486,6 +3679,7 @@ public sealed class MainForm : Form
         quarantineFile.Click += (_, _) => QuarantineSelectedFiles(detailView);
         restoreQuarantine.Click += (_, _) => ShowQuarantineDialog();
         copyHash.Click += (_, _) => CopySelectedHash(detailView);
+        copySummary.Click += (_, _) => CopySelectedReportSummary(detailView);
         ignoreSelected.Click += (_, _) =>
         {
             ToggleSelectedIgnoreFlag(detailView);
@@ -3493,13 +3687,83 @@ public sealed class MainForm : Form
         };
         exportCsv.Click += (_, _) => ExportCsv(detailView);
         openLogs.Click += (_, _) => OpenLogFolder();
-        detailView.SelectedIndexChanged += (_, _) => UpdateIgnoreButtonText(detailView, ignoreSelected);
-        UpdateIgnoreButtonText(detailView, ignoreSelected);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(12) };
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var filters = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            BackColor = Color.FromArgb(246, 247, 249),
+            Margin = new Padding(0, 0, 0, 8),
+        };
+        var filterButtons = new List<Button>();
+        foreach (var filter in new[]
+        {
+            ActivityFilter.All,
+            ActivityFilter.ActionNeeded,
+            ActivityFilter.Unknown,
+            ActivityFilter.Clean,
+            ActivityFilter.Errors,
+        })
+        {
+            var button = CreateActivityFilterButton(filter);
+            filterButtons.Add(button);
+            filters.Controls.Add(button);
+        }
+
+        void RefreshSelectionUi()
+        {
+            UpdateIgnoreButtonText(detailView, ignoreSelected);
+            reasonLabel.Text = BuildSelectedReasonSummary(detailView);
+        }
+
+        void ApplyFilter(ActivityFilter filter)
+        {
+            detailView.BeginUpdate();
+            detailView.Items.Clear();
+            foreach (var item in allItems.Where(item => MatchesActivityFilter(filter, item)))
+            {
+                detailView.Items.Add(CloneActivityItem(item));
+            }
+
+            detailView.EndUpdate();
+            FitResultColumns(detailView);
+            foreach (var button in filterButtons)
+            {
+                var selected = button.Tag is ActivityFilter current && current == filter;
+                button.BackColor = selected ? Color.FromArgb(35, 35, 35) : Color.White;
+                button.ForeColor = selected ? Color.White : Color.FromArgb(35, 35, 35);
+            }
+
+            reasonLabel.Text = detailView.Items.Count == 0
+                ? "No scan rows match this filter."
+                : "Select a row to see why HashGuard flagged it and which action is safest.";
+        }
+
+        foreach (var button in filterButtons)
+        {
+            button.Click += (_, _) =>
+            {
+                if (button.Tag is ActivityFilter filter)
+                {
+                    ApplyFilter(filter);
+                }
+            };
+        }
+
+        detailView.SelectedIndexChanged += (_, _) => RefreshSelectionUi();
+        UpdateIgnoreButtonText(detailView, ignoreSelected);
+        ApplyFilter(ActivityFilter.All);
+
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(12) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(detailView, 0, 0);
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.Controls.Add(filters, 0, 0);
+        layout.Controls.Add(detailView, 0, 1);
+        layout.Controls.Add(reasonLabel, 0, 2);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
         buttons.Controls.Add(close);
@@ -3509,14 +3773,124 @@ public sealed class MainForm : Form
         buttons.Controls.Add(restoreQuarantine);
         buttons.Controls.Add(quarantineFile);
         buttons.Controls.Add(killProcess);
+        buttons.Controls.Add(copySummary);
         buttons.Controls.Add(copyHash);
         buttons.Controls.Add(openFileLocation);
         buttons.Controls.Add(openReport);
-        layout.Controls.Add(buttons, 0, 1);
+        layout.Controls.Add(buttons, 0, 3);
 
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
         dialog.ShowDialog(this);
+    }
+
+    private static Button CreateActivityFilterButton(ActivityFilter filter)
+    {
+        return new Button
+        {
+            Text = filter switch
+            {
+                ActivityFilter.ActionNeeded => "Action Needed",
+                ActivityFilter.Unknown => "Unknown",
+                ActivityFilter.Clean => "Clean",
+                ActivityFilter.Errors => "Errors",
+                _ => "All",
+            },
+            Tag = filter,
+            AutoSize = true,
+            Height = 32,
+            Margin = new Padding(0, 0, 8, 0),
+            FlatStyle = FlatStyle.Flat,
+        };
+    }
+
+    private static bool MatchesActivityFilter(ActivityFilter filter, ListViewItem item)
+    {
+        var malicious = int.TryParse(GetSubItemText(item, ColMalicious), out var mal) ? mal : 0;
+        var suspicious = int.TryParse(GetSubItemText(item, ColSuspicious), out var susp) ? susp : 0;
+        return HashGuardLogic.MatchesActivityFilter(filter, item.Text, GetSubItemText(item, ColRisk), malicious, suspicious);
+    }
+
+    private static ListViewItem CloneActivityItem(ListViewItem source)
+    {
+        var clone = new ListViewItem(source.Text)
+        {
+            BackColor = source.BackColor,
+            ForeColor = source.ForeColor,
+            Tag = source.Tag,
+        };
+
+        for (var index = 1; index < source.SubItems.Count; index++)
+        {
+            clone.SubItems.Add(source.SubItems[index].Text);
+        }
+
+        return clone;
+    }
+
+    private static string BuildSelectedReasonSummary(ListView sourceView)
+    {
+        if (sourceView.SelectedItems.Count == 0)
+        {
+            return "Select a row to see why HashGuard flagged it and which action is safest.";
+        }
+
+        var item = sourceView.SelectedItems[0];
+        return BuildReasonSummary(item);
+    }
+
+    private static string BuildReasonSummary(ListViewItem item)
+    {
+        var status = item.Text;
+        var risk = GetSubItemText(item, ColRisk);
+        var trust = GetSubItemText(item, ColTrust);
+        var malicious = GetSubItemText(item, ColMalicious);
+        var suspicious = GetSubItemText(item, ColSuspicious);
+        var process = GetSubItemText(item, ColProcess);
+        var path = GetSubItemText(item, ColPath);
+        var notes = GetSubItemText(item, ColNotes);
+        var reasons = new List<string>();
+
+        if (int.TryParse(malicious, out var mal) && mal > 0)
+        {
+            reasons.Add($"{mal} malicious detection(s)");
+        }
+
+        if (int.TryParse(suspicious, out var susp) && susp > 0)
+        {
+            reasons.Add($"{susp} suspicious detection(s)");
+        }
+
+        if (risk.StartsWith("High", StringComparison.OrdinalIgnoreCase))
+        {
+            reasons.Add("high local risk score");
+        }
+
+        if (string.Equals(status, "unknown", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "uploaded", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "limited access", StringComparison.OrdinalIgnoreCase))
+        {
+            reasons.Add("cloud reputation is incomplete");
+        }
+
+        if (string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
+        {
+            reasons.Add("one or more checks failed");
+        }
+
+        foreach (var note in notes.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (note.StartsWith("Risk:", StringComparison.OrdinalIgnoreCase)
+                || note.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase)
+                || note.Contains("quota", StringComparison.OrdinalIgnoreCase)
+                || note.Contains("Quarantined", StringComparison.OrdinalIgnoreCase))
+            {
+                reasons.Add(note.TrimEnd('.'));
+            }
+        }
+
+        var reasonText = reasons.Count == 0 ? "No immediate action reason." : string.Join("; ", reasons.Distinct(StringComparer.OrdinalIgnoreCase));
+        return $"Status: {status} | Risk: {risk} | Process: {process}{Environment.NewLine}Reason: {reasonText}{Environment.NewLine}Trust: {trust}{Environment.NewLine}Path: {path}";
     }
 
     private void ShowScanDetailsDialogSafe()
@@ -4209,6 +4583,22 @@ public sealed class MainForm : Form
         statusLabel.Text = "SHA-256 copied to clipboard.";
     }
 
+    private void CopySelectedReportSummary(ListView sourceView)
+    {
+        if (sourceView.SelectedIndices.Count == 0)
+        {
+            MessageBox.Show(this, "Select one or more rows first.", "No row selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var summaries = sourceView.SelectedItems
+            .Cast<ListViewItem>()
+            .Take(10)
+            .Select(BuildReasonSummary);
+        Clipboard.SetText(string.Join($"{Environment.NewLine}{Environment.NewLine}", summaries));
+        statusLabel.Text = "Selection summary copied to clipboard.";
+    }
+
     private void KillSelectedProcesses(ListView sourceView)
     {
         var selections = sourceView.SelectedItems
@@ -4335,11 +4725,13 @@ public sealed class MainForm : Form
                     QuarantinedAtUtc = DateTimeOffset.UtcNow,
                 });
                 moved++;
+                AppendQuarantineLog("quarantine", path, target, "moved to quarantine");
                 MarkRowsQuarantined(sourceView, path, target);
                 MarkRowsQuarantined(resultsView, path, target);
             }
             catch (Exception ex)
             {
+                AppendQuarantineLog("quarantine-failed", path, "", ex.Message);
                 failures.Add($"{path}: {ex.Message}");
             }
         }
@@ -4362,8 +4754,11 @@ public sealed class MainForm : Form
                 var risk = GetSubItemText(item, ColRisk);
                 var pids = GetSubItemText(item, ColPids);
                 var path = GetSubItemText(item, ColPath);
-                var trust = GetSubItemText(item, ColTrust);
-                return $"{risk} | PID {pids} | {Path.GetFileName(path)} | {trust}";
+                var process = GetSubItemText(item, ColProcess);
+                var reason = BuildReasonSummary(item)
+                    .Split(Environment.NewLine)
+                    .FirstOrDefault(line => line.StartsWith("Reason:", StringComparison.OrdinalIgnoreCase)) ?? "Reason: not available";
+                return $"{process} | PID {pids} | {risk}{Environment.NewLine}{path}{Environment.NewLine}{reason}";
             })
             .ToList();
         var remaining = sourceView.SelectedItems.Count - lines.Count;
@@ -4388,6 +4783,7 @@ public sealed class MainForm : Form
             StartPosition = FormStartPosition.CenterParent,
             Size = new Size(980, 520),
             MinimumSize = new Size(760, 420),
+            BackColor = Color.FromArgb(246, 247, 249),
         };
 
         var view = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = true };
@@ -4405,10 +4801,23 @@ public sealed class MainForm : Form
             view.Items.Add(item);
         }
 
+        var heading = new Label
+        {
+            Text = manifest.Count == 0
+                ? "No quarantined files"
+                : $"{manifest.Count} quarantined file(s). Select entries to restore or delete.",
+            Dock = DockStyle.Fill,
+            Height = 32,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = Color.FromArgb(35, 35, 35),
+        };
         var restore = new Button { Text = "Restore Selected", AutoSize = true };
         var delete = new Button { Text = "Delete Selected", AutoSize = true };
         var openFolder = new Button { Text = "Open Quarantine", AutoSize = true };
         var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
+        restore.Enabled = manifest.Count > 0;
+        delete.Enabled = manifest.Count > 0;
 
         restore.Click += async (_, _) =>
         {
@@ -4420,11 +4829,22 @@ public sealed class MainForm : Form
             }
             finally
             {
-                restore.Enabled = true;
-                delete.Enabled = true;
+                restore.Enabled = view.Items.Count > 0;
+                delete.Enabled = view.Items.Count > 0;
+                heading.Text = view.Items.Count == 0
+                    ? "No quarantined files"
+                    : $"{view.Items.Count} quarantined file(s). Select entries to restore or delete.";
             }
         };
-        delete.Click += (_, _) => DeleteSelectedQuarantineEntries(view);
+        delete.Click += (_, _) =>
+        {
+            DeleteSelectedQuarantineEntries(view);
+            restore.Enabled = view.Items.Count > 0;
+            delete.Enabled = view.Items.Count > 0;
+            heading.Text = view.Items.Count == 0
+                ? "No quarantined files"
+                : $"{view.Items.Count} quarantined file(s). Select entries to restore or delete.";
+        };
         openFolder.Click += (_, _) =>
         {
             Directory.CreateDirectory(GetQuarantineDirectory());
@@ -4437,11 +4857,13 @@ public sealed class MainForm : Form
         buttons.Controls.Add(delete);
         buttons.Controls.Add(restore);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, Padding = new Padding(12) };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(12) };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(view, 0, 0);
-        layout.Controls.Add(buttons, 0, 1);
+        layout.Controls.Add(heading, 0, 0);
+        layout.Controls.Add(view, 0, 1);
+        layout.Controls.Add(buttons, 0, 2);
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
         dialog.ShowDialog(this);
@@ -4478,18 +4900,32 @@ public sealed class MainForm : Form
                 var restorePath = entry.OriginalPath;
                 if (File.Exists(restorePath))
                 {
-                    using var saveDialog = new SaveFileDialog
-                    {
-                        Title = "Restore quarantined file as",
-                        FileName = Path.GetFileName(restorePath),
-                        InitialDirectory = Directory.Exists(Path.GetDirectoryName(restorePath)) ? Path.GetDirectoryName(restorePath) : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                    };
-                    if (saveDialog.ShowDialog(this) != DialogResult.OK)
+                    var replaceExisting = MessageBox.Show(
+                        this,
+                        $"A file already exists at the original path. Replace it with the quarantined copy?{Environment.NewLine}{restorePath}",
+                        "Restore quarantine",
+                        MessageBoxButtons.YesNoCancel,
+                        MessageBoxIcon.Warning);
+                    if (replaceExisting == DialogResult.Cancel)
                     {
                         continue;
                     }
 
-                    restorePath = saveDialog.FileName;
+                    if (replaceExisting == DialogResult.No)
+                    {
+                        using var saveDialog = new SaveFileDialog
+                        {
+                            Title = "Restore quarantined file as",
+                            FileName = Path.GetFileName(restorePath),
+                            InitialDirectory = Directory.Exists(Path.GetDirectoryName(restorePath)) ? Path.GetDirectoryName(restorePath) : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+                        };
+                        if (saveDialog.ShowDialog(this) != DialogResult.OK)
+                        {
+                            continue;
+                        }
+
+                        restorePath = saveDialog.FileName;
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(entry.Sha256))
@@ -4522,13 +4958,20 @@ public sealed class MainForm : Form
                     Directory.CreateDirectory(restoreDirectory);
                 }
 
+                if (File.Exists(restorePath))
+                {
+                    File.Delete(restorePath);
+                }
+
                 File.Move(entry.QuarantinePath, restorePath);
                 manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
                 restored++;
                 restoredEntries.Add(entry);
+                AppendQuarantineLog("restore", entry.QuarantinePath, restorePath, "restored from quarantine");
             }
             catch (Exception ex)
             {
+                AppendQuarantineLog("restore-failed", entry.QuarantinePath, entry.OriginalPath, ex.Message);
                 failures.Add($"{entry.OriginalPath}: {ex.Message}");
             }
         }
@@ -4570,9 +5013,11 @@ public sealed class MainForm : Form
 
                 manifest.RemoveAll(item => string.Equals(item.QuarantinePath, entry.QuarantinePath, StringComparison.OrdinalIgnoreCase));
                 deletedEntries.Add(entry);
+                AppendQuarantineLog("delete", entry.QuarantinePath, entry.OriginalPath, "deleted from quarantine");
             }
             catch (Exception ex)
             {
+                AppendQuarantineLog("delete-failed", entry.QuarantinePath, entry.OriginalPath, ex.Message);
                 MessageBox.Show(this, ex.Message, "Delete quarantine failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
@@ -4629,6 +5074,35 @@ public sealed class MainForm : Form
             GetQuarantineManifestPath(),
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
             Encoding.UTF8);
+    }
+
+    private static void AppendQuarantineLog(string action, string sourcePath, string targetPath, string details)
+    {
+        try
+        {
+            var logDir = GetLogDirectory();
+            Directory.CreateDirectory(logDir);
+            var logPath = Path.Combine(logDir, $"quarantine-log-{DateTime.Now:yyyyMMdd}.csv");
+            var writeHeader = !File.Exists(logPath);
+            using var writer = new StreamWriter(logPath, append: true, Encoding.UTF8);
+            if (writeHeader)
+            {
+                writer.WriteLine("timestamp,action,source_path,target_path,details");
+            }
+
+            writer.WriteLine(string.Join(",", new[]
+            {
+                Csv(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")),
+                Csv(action),
+                Csv(sourcePath),
+                Csv(targetPath),
+                Csv(details),
+            }));
+        }
+        catch
+        {
+            // Quarantine logging must never block the quarantine action itself.
+        }
     }
 
     private static void MarkRowsQuarantined(ListView view, string originalPath, string quarantinePath)
@@ -4903,7 +5377,7 @@ public sealed class MainForm : Form
         };
 
         var virusTotal = new Button { Text = "VirusTotal", Width = 128, Height = 34 };
-        var metaDefender = new Button { Text = "MalwareDefender", Width = 150, Height = 34 };
+        var metaDefender = new Button { Text = "MetaDefender", Width = 150, Height = 34 };
         var mhr = new Button { Text = "Cymru", Width = 108, Height = 34 };
         var cancel = new Button { Text = "Cancel", Width = 92, Height = 34, DialogResult = DialogResult.Cancel };
 
@@ -4912,7 +5386,7 @@ public sealed class MainForm : Form
         mhr.Click += (_, _) => OpenReportAndClose(dialog, string.Format(CymruDnsQueryUrl, Uri.EscapeDataString(BuildCymruQueryName(sha256))));
 
         toolTip.SetToolTip(virusTotal, "Open VirusTotal report");
-        toolTip.SetToolTip(metaDefender, "Open MalwareDefender report");
+        toolTip.SetToolTip(metaDefender, "Open MetaDefender report");
         toolTip.SetToolTip(mhr, "Open Cymru Malware Hash Registry DNS report");
 
         var buttons = new FlowLayoutPanel

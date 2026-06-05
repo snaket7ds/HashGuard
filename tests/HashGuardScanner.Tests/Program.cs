@@ -38,6 +38,14 @@ var tests = new (string Name, Action Test)[]
         AssertTrue(HashGuardLogic.CanReuseProviderCache("clean", true, now.AddMinutes(-20), now));
         AssertFalse(HashGuardLogic.CanReuseProviderCache("clean", true, now.AddMinutes(-45), now));
     }),
+    ("matches activity filters", () =>
+    {
+        AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.ActionNeeded, "detected", "High 90", 1, 0));
+        AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.Unknown, "unknown", "Medium 45", 0, 0));
+        AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.Clean, "clean/seen", "Low 5", 0, 0));
+        AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.Errors, "error", "Medium 35", 0, 0));
+        AssertFalse(HashGuardLogic.MatchesActivityFilter(ActivityFilter.ActionNeeded, "clean", "Low 5", 0, 0));
+    }),
 };
 
 var failures = new List<string>();

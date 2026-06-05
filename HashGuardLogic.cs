@@ -12,6 +12,15 @@ internal enum ProviderState
     Detected,
 }
 
+internal enum ActivityFilter
+{
+    All,
+    ActionNeeded,
+    Unknown,
+    Clean,
+    Errors,
+}
+
 internal static class HashGuardLogic
 {
     public static string? TryExtractExecutablePath(string? command)
@@ -114,6 +123,24 @@ internal static class HashGuardLogic
                 && age <= TimeSpan.FromHours(1)
             || virusTotalDeferred
                 && age <= TimeSpan.FromMinutes(30);
+    }
+
+    public static bool MatchesActivityFilter(ActivityFilter filter, string status, string riskText, int malicious, int suspicious)
+    {
+        return filter switch
+        {
+            ActivityFilter.ActionNeeded => malicious + suspicious > 0
+                || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
+                || riskText.StartsWith("High", StringComparison.OrdinalIgnoreCase),
+            ActivityFilter.Unknown => string.Equals(status, "unknown", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "uploaded", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "limited access", StringComparison.OrdinalIgnoreCase),
+            ActivityFilter.Clean => string.Equals(status, "clean", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "clean/seen", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, "ignored", StringComparison.OrdinalIgnoreCase),
+            ActivityFilter.Errors => string.Equals(status, "error", StringComparison.OrdinalIgnoreCase),
+            _ => true,
+        };
     }
 
     private static string? NormalizeExecutablePath(string? path)
