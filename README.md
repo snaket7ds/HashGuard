@@ -76,7 +76,7 @@ The generated files are written to `release/`. If Inno Setup's `iscc` compiler i
 
 ## Releases And Updates
 
-The built-in updater reads GitHub Releases from `snaket7ds/HashGuard`. Release tags should match the app version, such as `v1.0.28`.
+The built-in updater reads GitHub Releases from `snaket7ds/HashGuard`. Release tags should match the app version, such as `v1.0.33`.
 
 Attach both files to each release:
 

@@ -9,7 +9,7 @@ owner/repo
 Each release tag should match the app version, for example:
 
 ```text
-v1.0.2
+v1.0.33
 ```
 
 Attach both files to the release:
