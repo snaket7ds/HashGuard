@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
@@ -18,6 +19,8 @@ internal static class Program
         {
             return;
         }
+
+        FirstRunSetup.EnsureCodeSigningCertificateTrusted();
 
         if (FirstRunSetup.RelaunchElevatedIfInstalled())
         {
@@ -72,6 +75,48 @@ internal static class FirstRunSetup
 {
     private const string InstallDirectory = @"C:\Program Files\HashGuard";
 
+    public static void EnsureCodeSigningCertificateTrusted()
+    {
+        X509Certificate2? certificate = null;
+        try
+        {
+            certificate = GetCurrentExecutableCertificate();
+            if (certificate is null || IsCertificateTrustedForCurrentUser(certificate))
+            {
+                return;
+            }
+
+            var choice = ShowTopMostMessageBox(
+                "HashGuard is signed with a local code-signing certificate that is not trusted by this Windows account yet.\n\nHashGuard can install this certificate into your Current User Trusted Root and Trusted Publishers stores so Windows can identify this build as signed by HashGuard on this PC.\n\nInstall the HashGuard local signing certificate now?",
+                "HashGuard Code Signing",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (choice != DialogResult.Yes)
+            {
+                return;
+            }
+
+            InstallCertificateForCurrentUser(certificate);
+            ShowTopMostMessageBox(
+                "The HashGuard local signing certificate was installed for the current Windows user.",
+                "HashGuard Code Signing",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            ShowTopMostMessageBox(
+                $"HashGuard could not check or install its signing certificate:\n{ex.Message}",
+                "HashGuard Code Signing",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+        finally
+        {
+            certificate?.Dispose();
+        }
+    }
+
     public static bool EnsureConfigured()
     {
         var args = Environment.GetCommandLineArgs();
@@ -109,6 +154,49 @@ internal static class FirstRunSetup
         }
 
         return ConfigurePortable();
+    }
+
+    private static X509Certificate2? GetCurrentExecutableCertificate()
+    {
+        try
+        {
+            return new X509Certificate2(X509Certificate.CreateFromSignedFile(Application.ExecutablePath));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsCertificateTrustedForCurrentUser(X509Certificate2 certificate)
+    {
+        return CertificateExists(StoreName.Root, certificate.Thumbprint)
+            && CertificateExists(StoreName.TrustedPublisher, certificate.Thumbprint);
+    }
+
+    private static bool CertificateExists(StoreName storeName, string thumbprint)
+    {
+        using var store = new X509Store(storeName, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadOnly);
+        return store.Certificates
+            .Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false)
+            .Count > 0;
+    }
+
+    private static void InstallCertificateForCurrentUser(X509Certificate2 certificate)
+    {
+        AddCertificate(StoreName.Root, certificate);
+        AddCertificate(StoreName.TrustedPublisher, certificate);
+    }
+
+    private static void AddCertificate(StoreName storeName, X509Certificate2 certificate)
+    {
+        using var store = new X509Store(storeName, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        if (store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, validOnly: false).Count == 0)
+        {
+            store.Add(certificate);
+        }
     }
 
     public static bool RelaunchElevatedIfInstalled()

@@ -68,15 +68,19 @@ public sealed class MainForm : Form
     private const int ColSha256 = 7;
     private const int ColPath = 8;
     private const int ColNotes = 9;
+    private const string MainResultsViewName = "mainResultsView";
     private const string ColorModeSystem = "system";
     private const string ColorModeLight = "light";
     private const string ColorModeDark = "dark";
+    private static readonly Color AccentGold = Color.FromArgb(255, 199, 44);
+    private static readonly Color SuccessGreen = Color.FromArgb(21, 128, 61);
+    private static readonly Color DangerRed = Color.FromArgb(185, 28, 28);
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
-    private readonly Button scanButton = new() { Text = "Run Process Scan", Width = 164, Height = 40, BackColor = Color.FromArgb(255, 205, 0), FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
+    private readonly Button scanButton = new() { Text = "Run Scan", Width = 172, Height = 42, BackColor = AccentGold, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
     private readonly Button updateButton = new() { Text = "Update", Width = 86, Height = 40, Font = new Font("Segoe UI", 9, FontStyle.Bold) };
-    private readonly Button settingsButton = new() { Text = "⚙", Width = 44, Height = 40, Font = new Font("Segoe UI Symbol", 14, FontStyle.Bold) };
+    private readonly Button settingsButton = new() { Text = "\uE713", Width = 44, Height = 40, Font = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
     private readonly CheckBox rightClickScanBox = new() { Text = "Add Explorer right-click scan", AutoSize = true };
     private readonly CheckBox startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };
@@ -93,10 +97,10 @@ public sealed class MainForm : Form
     private readonly CheckBox autoUpdateChecksBox = new() { Text = "Check updates automatically", AutoSize = true };
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
     private readonly NumericUpDown timeoutBox = new() { Minimum = 10, Maximum = 300, Value = 60, Width = 64 };
-    private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = true };
+    private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
     private readonly Label resultsEmptyLabel = new()
     {
-        Text = "Run a scan to review process reputation, trust, and remediation options.",
+        Text = "No items need review. Run a scan or open Activity Log for full scan history.",
         Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleCenter,
         ForeColor = Color.DimGray,
@@ -108,8 +112,8 @@ public sealed class MainForm : Form
     private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "action" };
     private readonly Label statusTitle = new() { Text = "You are not protected", AutoSize = true, Font = new Font("Segoe UI", 24, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label statusSubtitle = new() { Text = "Run a process scan to verify protection.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label summaryLabel = new() { Text = "Files scanned: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label actionLabel = new() { Text = "Actions needed: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label summaryLabel = new() { Text = "Items scanned: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label actionLabel = new() { Text = "Needs review: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label reputationStateLabel = new();
     private readonly Label reputationProtectionLabel = new();
     private readonly Label hashCacheStateLabel = new();
@@ -230,8 +234,8 @@ public sealed class MainForm : Form
         ApplyAppSettings();
         Text = "HashGuard";
         Icon = cleanTrayIcon;
-        MinimumSize = new Size(760, 620);
-        Size = new Size(900, 680);
+        MinimumSize = new Size(900, 660);
+        Size = new Size(1080, 760);
         StartPosition = FormStartPosition.CenterScreen;
 
         BuildLayout();
@@ -334,13 +338,13 @@ public sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
         Controls.Add(root);
 
-        var header = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 76, BackColor = Color.FromArgb(28, 28, 28), Padding = new Padding(22, 12, 22, 10) };
+        var header = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 86, BackColor = Color.FromArgb(28, 28, 28), Padding = new Padding(24, 14, 24, 12) };
         header.Tag = "header";
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var titleBlock = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        titleBlock.Controls.Add(new Label { Text = "HashGuard", AutoSize = true, Font = new Font("Segoe UI", 18, FontStyle.Bold), ForeColor = Color.White });
-        titleBlock.Controls.Add(new Label { Text = "Process reputation powered by cloud and hash intelligence", AutoSize = true, ForeColor = Color.FromArgb(205, 205, 205) });
+        var titleBlock = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0) };
+        titleBlock.Controls.Add(new Label { Text = "HashGuard", AutoSize = true, Font = new Font("Segoe UI", 20, FontStyle.Bold), ForeColor = Color.White, Margin = new Padding(0) });
+        titleBlock.Controls.Add(new Label { Text = "Process reputation, local trust scoring, and quarantine", AutoSize = true, ForeColor = Color.FromArgb(205, 205, 205), Margin = new Padding(1, 2, 0, 0) });
         header.Controls.Add(titleBlock, 0, 0);
         var headerButtons = new FlowLayoutPanel
         {
@@ -350,24 +354,18 @@ public sealed class MainForm : Form
             Margin = new Padding(0),
             Padding = new Padding(0),
         };
-        settingsButton.BackColor = Color.FromArgb(52, 52, 52);
-        settingsButton.ForeColor = Color.White;
-        settingsButton.FlatStyle = FlatStyle.Flat;
-        settingsButton.Margin = new Padding(0, 0, 8, 0);
+        ConfigureHeaderButton(settingsButton);
+        settingsButton.Margin = new Padding(0, 0, 10, 0);
         settingsButton.TextAlign = ContentAlignment.MiddleCenter;
         settingsButton.AccessibleName = "Settings";
         toolTip.SetToolTip(settingsButton, "Settings");
-        updateButton.BackColor = Color.FromArgb(52, 52, 52);
-        updateButton.ForeColor = Color.White;
-        updateButton.FlatStyle = FlatStyle.Flat;
-        updateButton.Margin = new Padding(0, 0, 8, 0);
+        ConfigureHeaderButton(updateButton);
+        updateButton.Margin = new Padding(0, 0, 10, 0);
         updateButton.TextAlign = ContentAlignment.MiddleCenter;
-        updateButton.FlatAppearance.BorderSize = 1;
-        updateButton.FlatAppearance.BorderColor = Color.FromArgb(85, 85, 85);
         toolTip.SetToolTip(updateButton, "Check for HashGuard updates");
         scanButton.Margin = new Padding(0);
         scanButton.TextAlign = ContentAlignment.MiddleCenter;
-        scanButton.FlatAppearance.BorderSize = 0;
+        SetScanButtonReadyStyle();
         headerButtons.Controls.Add(updateButton);
         headerButtons.Controls.Add(settingsButton);
         headerButtons.Controls.Add(scanButton);
@@ -379,11 +377,12 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(18, 18, 18, 10),
+            Padding = new Padding(20, 20, 20, 12),
         };
-        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 196));
+        main.RowStyles.Add(new RowStyle(SizeType.Absolute, 218));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.Controls.Add(main, 0, 1);
+        resultsView.Name = MainResultsViewName;
 
         var overview = new TableLayoutPanel
         {
@@ -392,16 +391,17 @@ public sealed class MainForm : Form
             RowCount = 1,
             Margin = new Padding(0, 0, 0, 12),
         };
-        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
-        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
+        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
+        overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
         main.Controls.Add(overview, 0, 0);
 
         var statusCard = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Padding = new Padding(16),
+            Padding = new Padding(18),
             Margin = new Padding(0, 0, 12, 0),
+            BorderStyle = BorderStyle.FixedSingle,
         };
         statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "clean");
         statusDot.Width = 96;
@@ -409,7 +409,7 @@ public sealed class MainForm : Form
         statusDot.Margin = new Padding(0, 0, 18, 0);
         statusTitle.AutoSize = false;
         statusTitle.Dock = DockStyle.Fill;
-        statusTitle.Font = new Font("Segoe UI", 17, FontStyle.Bold);
+        statusTitle.Font = new Font("Segoe UI", 18, FontStyle.Bold);
         statusTitle.TextAlign = ContentAlignment.BottomLeft;
         statusSubtitle.AutoSize = false;
         statusSubtitle.Dock = DockStyle.Fill;
@@ -426,7 +426,7 @@ public sealed class MainForm : Form
         statusLayout.SetRowSpan(statusDot, 2);
 
         var statusText = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
-        statusText.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        statusText.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         statusText.Controls.Add(statusTitle, 0, 0);
         statusText.Controls.Add(statusSubtitle, 0, 1);
@@ -440,12 +440,12 @@ public sealed class MainForm : Form
         summaryLabel.MaximumSize = new Size(0, 0);
         summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
         summaryLabel.BackColor = Color.FromArgb(246, 247, 249);
-        summaryLabel.Padding = new Padding(10, 0, 10, 0);
+        summaryLabel.Padding = new Padding(12, 0, 12, 0);
         summaryLabel.Margin = new Padding(0, 0, 8, 0);
         actionLabel.Dock = DockStyle.Fill;
         actionLabel.TextAlign = ContentAlignment.MiddleLeft;
         actionLabel.BackColor = Color.FromArgb(246, 247, 249);
-        actionLabel.Padding = new Padding(10, 0, 10, 0);
+        actionLabel.Padding = new Padding(12, 0, 12, 0);
         actionLabel.Margin = new Padding(0);
         stats.Controls.Add(summaryLabel, 0, 0);
         stats.Controls.Add(actionLabel, 1, 0);
@@ -471,17 +471,19 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Padding = new Padding(12),
+            Padding = new Padding(14),
             Margin = new Padding(0),
+            BorderStyle = BorderStyle.FixedSingle,
         };
-        var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         resultsLayout.Controls.Add(new Label
         {
-            Text = "Scan Results",
+            Text = "Review Queue",
             Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Color.FromArgb(35, 35, 35),
         }, 0, 0);
@@ -490,6 +492,42 @@ public sealed class MainForm : Form
         resultsHost.Controls.Add(resultsView);
         resultsEmptyLabel.BringToFront();
         resultsLayout.Controls.Add(resultsHost, 0, 1);
+        var queueActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 8, 0, 0) };
+        queueActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        queueActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        var rowActions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
+        var openReport = CreateQueueActionButton("Open Report");
+        var openLocation = CreateQueueActionButton("Open Location");
+        var ignoreSelected = CreateQueueActionButton("Ignore");
+        var quarantineSelected = CreateQueueActionButton("Quarantine");
+        var utilityActions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(12, 0, 0, 0) };
+        var activityLog = CreateQueueActionButton("Activity Log");
+        openReport.Click += (_, _) => OpenSelectedReport(resultsView);
+        openLocation.Click += (_, _) => OpenSelectedFileLocation(resultsView);
+        ignoreSelected.Click += (_, _) => ToggleSelectedIgnoreFlag(resultsView);
+        quarantineSelected.Click += (_, _) => QuarantineSelectedFiles(resultsView);
+        activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
+        resultsView.SelectedIndexChanged += (_, _) =>
+        {
+            var hasSelection = resultsView.SelectedItems.Count > 0;
+            openReport.Enabled = hasSelection;
+            openLocation.Enabled = hasSelection;
+            ignoreSelected.Enabled = hasSelection;
+            quarantineSelected.Enabled = hasSelection;
+            UpdateIgnoreButtonText(resultsView, ignoreSelected);
+        };
+        openReport.Enabled = false;
+        openLocation.Enabled = false;
+        ignoreSelected.Enabled = false;
+        quarantineSelected.Enabled = false;
+        rowActions.Controls.Add(openReport);
+        rowActions.Controls.Add(openLocation);
+        rowActions.Controls.Add(ignoreSelected);
+        rowActions.Controls.Add(quarantineSelected);
+        utilityActions.Controls.Add(activityLog);
+        queueActions.Controls.Add(rowActions, 0, 0);
+        queueActions.Controls.Add(utilityActions, 1, 0);
+        resultsLayout.Controls.Add(queueActions, 0, 2);
         resultsPanel.Controls.Add(resultsLayout);
         main.Controls.Add(resultsPanel, 0, 1);
 
@@ -497,8 +535,9 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Margin = new Padding(18, 0, 18, 18),
+            Margin = new Padding(20, 0, 20, 20),
             Padding = new Padding(14, 8, 14, 8),
+            BorderStyle = BorderStyle.FixedSingle,
         };
         var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -538,15 +577,16 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Margin = new Padding(0),
-            Padding = new Padding(10),
+            Margin = new Padding(4),
+            Padding = new Padding(12),
+            BorderStyle = BorderStyle.FixedSingle,
         };
 
         var cursor = onClick is null ? Cursors.Default : Cursors.Hand;
         var layout = CreateTileTextLayout(
             CreateTileTitle(title, cursor),
             CreateTileDetail(subtitle, cursor),
-            CreateTileState(state, Color.SeaGreen, cursor));
+            CreateTileState(state, SuccessGreen, cursor));
         layout.Cursor = cursor;
         tile.Controls.Add(layout);
         if (onClick is not null)
@@ -562,12 +602,13 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Margin = new Padding(0),
-            Padding = new Padding(10),
+            Margin = new Padding(4),
+            Padding = new Padding(12),
+            BorderStyle = BorderStyle.FixedSingle,
         };
 
         ConfigureTileDetailLabel(reputationStateLabel);
-        ConfigureTileStateLabel(reputationProtectionLabel, Color.SeaGreen);
+        ConfigureTileStateLabel(reputationProtectionLabel, SuccessGreen);
         tile.Controls.Add(CreateTileTextLayout(
             CreateTileTitle("Cloud Reputation"),
             reputationStateLabel,
@@ -581,7 +622,7 @@ public sealed class MainForm : Form
         reputationStateLabel.Text = $"Connected services {enabled.Count}/3";
         reputationStateLabel.ForeColor = Color.FromArgb(35, 35, 35);
         reputationProtectionLabel.Text = enabled.Count == 0 ? "Not protected" : "Protected";
-        reputationProtectionLabel.ForeColor = enabled.Count == 0 ? Color.Firebrick : Color.SeaGreen;
+        reputationProtectionLabel.ForeColor = enabled.Count == 0 ? DangerRed : SuccessGreen;
     }
 
     private Panel CreateHashCacheTile()
@@ -590,17 +631,40 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Margin = new Padding(0),
-            Padding = new Padding(10),
+            Margin = new Padding(4),
+            Padding = new Padding(12),
+            BorderStyle = BorderStyle.FixedSingle,
         };
 
-        ConfigureTileStateLabel(hashCacheStateLabel, Color.SeaGreen);
+        ConfigureTileStateLabel(hashCacheStateLabel, SuccessGreen);
         tile.Controls.Add(CreateTileTextLayout(
             CreateTileTitle("Hash Cache"),
             CreateTileDetail("Repeat lookups"),
             hashCacheStateLabel));
         WireClick(tile, OpenHashCacheFolder);
         return tile;
+    }
+
+    private static void ConfigureHeaderButton(Button button)
+    {
+        button.BackColor = Color.FromArgb(52, 52, 52);
+        button.ForeColor = Color.White;
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = 1;
+        button.FlatAppearance.BorderColor = Color.FromArgb(85, 85, 85);
+        button.UseVisualStyleBackColor = false;
+    }
+
+    private static Button CreateQueueActionButton(string text)
+    {
+        return new Button
+        {
+            Text = text,
+            Width = Math.Max(86, text.Length * 8 + 24),
+            Height = 30,
+            Margin = new Padding(0, 0, 8, 0),
+            FlatStyle = FlatStyle.Flat,
+        };
     }
 
     private static TableLayoutPanel CreateTileTextLayout(Label title, Label detail, Label state)
@@ -678,7 +742,7 @@ public sealed class MainForm : Form
     private void UpdateHashCacheTile()
     {
         hashCacheStateLabel.Text = hashCacheEnabledBox.Checked ? "Enabled" : "Disabled";
-        hashCacheStateLabel.ForeColor = hashCacheEnabledBox.Checked ? Color.SeaGreen : Color.Firebrick;
+        hashCacheStateLabel.ForeColor = hashCacheEnabledBox.Checked ? SuccessGreen : DangerRed;
     }
 
     private IEnumerable<string> GetEnabledReputationProviders()
@@ -716,18 +780,39 @@ public sealed class MainForm : Form
             return;
         }
 
-        view.Columns.Add("Status", 100);
-        view.Columns.Add("Risk", 92);
-        view.Columns.Add("Trust", 240);
-        view.Columns.Add("Mal", 52);
-        view.Columns.Add("Susp", 52);
-        view.Columns.Add("Process", 170);
-        view.Columns.Add("PID(s)", 95);
-        view.Columns.Add("SHA-256", 420);
-        view.Columns.Add("Path", 520);
-        view.Columns.Add("Notes", 360);
+        if (view.Name == MainResultsViewName)
+        {
+            view.Columns.Add("Status", 112);
+            view.Columns.Add("Risk", 92);
+            view.Columns.Add("Trust / Publisher", 240);
+            view.Columns.Add("Mal", 0);
+            view.Columns.Add("Susp", 0);
+            view.Columns.Add("Process", 190);
+            view.Columns.Add("PID(s)", 0);
+            view.Columns.Add("SHA-256", 0);
+            view.Columns.Add("Location", 440);
+            view.Columns.Add("Recommended Review", 360);
+        }
+        else
+        {
+            view.Columns.Add("Status", 100);
+            view.Columns.Add("Risk", 92);
+            view.Columns.Add("Trust", 240);
+            view.Columns.Add("Mal", 52);
+            view.Columns.Add("Susp", 52);
+            view.Columns.Add("Process", 170);
+            view.Columns.Add("PID(s)", 95);
+            view.Columns.Add("SHA-256", 420);
+            view.Columns.Add("Path", 520);
+            view.Columns.Add("Notes", 360);
+        }
+
         view.Dock = DockStyle.Fill;
         view.BackColor = Color.White;
+        view.GridLines = false;
+        view.HideSelection = false;
+        view.BorderStyle = BorderStyle.FixedSingle;
+        view.Font = new Font("Segoe UI", 9, FontStyle.Regular);
     }
 
     private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state)
@@ -738,10 +823,10 @@ public sealed class MainForm : Form
         var actionNeeded = state == "action";
         var scanning = state is "scanning" or "stopped";
         var fillColor = actionNeeded
-            ? Color.FromArgb(216, 55, 55)
+            ? DangerRed
             : scanning
                 ? Color.FromArgb(255, 205, 0)
-                : Color.FromArgb(35, 168, 92);
+                : SuccessGreen;
         using var fill = new SolidBrush(fillColor);
         using var pen = new Pen(actionNeeded ? Color.FromArgb(150, 0, 0) : Color.FromArgb(36, 36, 36), Math.Max(3, size / 16));
         graphics.FillEllipse(fill, rect);
@@ -826,8 +911,8 @@ public sealed class MainForm : Form
             FormBorderStyle = FormBorderStyle.Sizable,
             MaximizeBox = true,
             MinimizeBox = false,
-            ClientSize = new Size(1120, 820),
-            MinimumSize = new Size(1040, 760),
+            ClientSize = new Size(1180, 860),
+            MinimumSize = new Size(1080, 800),
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
@@ -859,48 +944,73 @@ public sealed class MainForm : Form
         };
         var delay = new NumericUpDown { Minimum = 0, Maximum = 120, Value = delayBox.Value, Width = 70 };
         var timeout = new NumericUpDown { Minimum = 10, Maximum = 300, Value = timeoutBox.Value, Width = 70 };
-        var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, AutoSize = true };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, AutoSize = true };
+        var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, Width = 96, Height = 34, FlatStyle = FlatStyle.Flat };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 96, Height = 34, FlatStyle = FlatStyle.Flat };
         var reputationValidation = new Label
         {
             Dock = DockStyle.Top,
-            Height = 76,
+            Height = 64,
             Padding = new Padding(10),
             BackColor = Color.FromArgb(255, 250, 220),
             ForeColor = Color.FromArgb(80, 60, 0),
             TextAlign = ContentAlignment.MiddleLeft,
+            BorderStyle = BorderStyle.FixedSingle,
+            Tag = "callout",
         };
         var updateInfo = new Label
         {
             Text = BuildVersionAndUpdateInfo(),
             Dock = DockStyle.Top,
-            Height = 92,
+            Height = 82,
             Padding = new Padding(10),
             BackColor = Color.White,
             ForeColor = Color.FromArgb(35, 35, 35),
             TextAlign = ContentAlignment.MiddleLeft,
+            BorderStyle = BorderStyle.FixedSingle,
+            Tag = "callout",
         };
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(16) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0) };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         dialog.Controls.Add(root);
 
-        root.Controls.Add(new Label
+        var settingsHeader = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 1,
+            RowCount = 2,
+            Height = 68,
+            Padding = new Padding(22, 10, 22, 8),
+            BackColor = Color.FromArgb(28, 28, 28),
+            Tag = "header",
+        };
+        settingsHeader.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        settingsHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        settingsHeader.Controls.Add(new Label
         {
             Text = $"HashGuard Settings  |  Version {CurrentVersion}",
             Dock = DockStyle.Fill,
-            Height = 34,
-            Font = new Font("Segoe UI", 13, FontStyle.Bold),
-            ForeColor = Color.FromArgb(35, 35, 35),
+            Font = new Font("Segoe UI", 14, FontStyle.Bold),
+            ForeColor = Color.White,
             TextAlign = ContentAlignment.MiddleLeft,
+            Margin = new Padding(0),
         }, 0, 0);
+        settingsHeader.Controls.Add(new Label
+        {
+            Text = "Provider keys, scan behavior, Windows integration, and trusted publishers",
+            Dock = DockStyle.Fill,
+            ForeColor = Color.FromArgb(205, 205, 205),
+            TextAlign = ContentAlignment.TopLeft,
+            Margin = new Padding(0),
+        }, 0, 1);
+        root.Controls.Add(settingsHeader, 0, 0);
 
         var tabs = new TabControl
         {
             Dock = DockStyle.Fill,
-            Margin = new Padding(0, 8, 0, 12),
+            Margin = new Padding(16, 12, 16, 10),
             Font = new Font("Segoe UI", 9, FontStyle.Regular),
         };
         root.Controls.Add(tabs, 0, 1);
@@ -918,7 +1028,7 @@ public sealed class MainForm : Form
             ("Version and Updates", [updateInfo]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
 
-        trustedPublishers.Height = 260;
+        trustedPublishers.Height = 220;
         var trustPage = CreateSettingsPage(
             ("Trusted Publishers",
             [
@@ -926,7 +1036,7 @@ public sealed class MainForm : Form
             {
                 Text = "One publisher per line. Matching signed files receive a lower local risk score.",
                 Dock = DockStyle.Top,
-                Height = 42,
+                Height = 34,
                 ForeColor = Color.DimGray,
                 TextAlign = ContentAlignment.MiddleLeft,
             },
@@ -939,8 +1049,12 @@ public sealed class MainForm : Form
             AutoSize = true,
             FlowDirection = FlowDirection.RightToLeft,
             Dock = DockStyle.Fill,
-            Padding = new Padding(18, 8, 18, 14),
+            Padding = new Padding(18, 4, 18, 12),
         };
+        ok.BackColor = AccentGold;
+        ok.ForeColor = Color.FromArgb(24, 24, 24);
+        ok.FlatAppearance.BorderColor = Color.FromArgb(218, 161, 0);
+        cancel.FlatAppearance.BorderSize = 1;
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
         root.Controls.Add(buttons, 0, 2);
@@ -1102,8 +1216,8 @@ public sealed class MainForm : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoScroll = false,
-            Padding = new Padding(22, 18, 22, 12),
-            BackColor = Color.White,
+            Padding = new Padding(14, 12, 14, 8),
+            BackColor = Color.FromArgb(246, 247, 249),
         };
         page.ControlAdded += (_, e) =>
         {
@@ -1134,16 +1248,19 @@ public sealed class MainForm : Form
             Width = 720,
             Height = 10,
             BackColor = Color.White,
-            Padding = new Padding(0, 0, 0, 8),
-            Margin = new Padding(0, 0, 0, 6),
+            Padding = new Padding(12, 8, 12, 8),
+            Margin = new Padding(0, 0, 0, 8),
+            BorderStyle = BorderStyle.FixedSingle,
         };
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Top,
+            Dock = DockStyle.Fill,
             AutoSize = true,
             ColumnCount = 1,
             RowCount = 1,
+            Padding = new Padding(0),
+            Margin = new Padding(0),
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.Controls.Add(new Label
@@ -1151,7 +1268,7 @@ public sealed class MainForm : Form
             Text = title,
             Dock = DockStyle.Top,
             Height = 26,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
             ForeColor = Color.FromArgb(35, 35, 35),
             TextAlign = ContentAlignment.MiddleLeft,
             Margin = new Padding(0, 0, 0, 4),
@@ -1159,13 +1276,13 @@ public sealed class MainForm : Form
 
         foreach (var control in controls)
         {
-            control.Margin = new Padding(0, 2, 0, 4);
+            control.Margin = new Padding(0, 1, 0, 4);
             control.Dock = DockStyle.Top;
             NormalizeSettingsControl(control);
             layout.Controls.Add(control);
         }
 
-        section.Height = Math.Max(54, layout.PreferredSize.Height + section.Padding.Vertical);
+        section.Height = Math.Max(58, layout.PreferredSize.Height + section.Padding.Vertical);
         section.Controls.Add(layout);
         return section;
     }
@@ -1175,7 +1292,7 @@ public sealed class MainForm : Form
         if (control is CheckBox checkBox)
         {
             checkBox.AutoSize = false;
-            checkBox.Height = 26;
+            checkBox.Height = 24;
             checkBox.TextAlign = ContentAlignment.MiddleLeft;
             checkBox.UseMnemonic = false;
         }
@@ -1200,9 +1317,9 @@ public sealed class MainForm : Form
             Dock = DockStyle.Top,
             ColumnCount = 2,
             Height = 30,
-            Margin = new Padding(0, 2, 0, 4),
+            Margin = new Padding(0, 1, 0, 4),
         };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 240));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.Controls.Add(new Label
         {
@@ -1210,6 +1327,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Color.FromArgb(35, 35, 35),
+            Margin = new Padding(0, 0, 12, 0),
         }, 0, 0);
         editor.Dock = DockStyle.Fill;
         row.Controls.Add(editor, 1, 0);
@@ -1220,6 +1338,14 @@ public sealed class MainForm : Form
     {
         var palette = GetCurrentPalette();
         ApplyTheme(root, palette, inHeader: false);
+        if (scanCancellation is null)
+        {
+            SetScanButtonReadyStyle();
+        }
+        else
+        {
+            SetScanButtonStopStyle();
+        }
         resultsView.BackColor = palette.Surface;
         resultsView.ForeColor = palette.Text;
         resultsEmptyLabel.ForeColor = palette.MutedText;
@@ -1306,15 +1432,25 @@ public sealed class MainForm : Form
                 comboBox.BackColor = palette.InputBack;
                 comboBox.ForeColor = palette.Text;
                 break;
-            case Button button when button.Text is "Run Process Scan" or "Stop Scan":
+            case Button button when button.Text is "Run Scan" or "Stop Scan":
                 break;
             case Button button:
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderSize = 1;
+                button.FlatAppearance.BorderColor = header ? palette.HeaderButtonBorder : palette.Border;
                 button.BackColor = header ? palette.HeaderButtonBack : palette.ButtonBack;
                 button.ForeColor = header ? Color.White : palette.Text;
                 break;
             case CheckBox:
             case Label:
-                if (!header && control.ForeColor != Color.Firebrick && control.ForeColor != Color.SeaGreen)
+                if (control.Tag as string == "callout")
+                {
+                    control.BackColor = palette.CalloutBack;
+                    control.ForeColor = palette.Text;
+                    break;
+                }
+
+                if (!header && control.ForeColor != DangerRed && control.ForeColor != SuccessGreen)
                 {
                     control.ForeColor = control.ForeColor == Color.DimGray ? palette.MutedText : palette.Text;
                 }
@@ -1351,11 +1487,29 @@ public sealed class MainForm : Form
         };
     }
 
+    private void SetScanButtonReadyStyle()
+    {
+        scanButton.Text = "Run Scan";
+        scanButton.BackColor = AccentGold;
+        scanButton.ForeColor = Color.FromArgb(24, 24, 24);
+        scanButton.FlatAppearance.BorderSize = 1;
+        scanButton.FlatAppearance.BorderColor = Color.FromArgb(218, 161, 0);
+    }
+
+    private void SetScanButtonStopStyle()
+    {
+        scanButton.Text = "Stop Scan";
+        scanButton.BackColor = DangerRed;
+        scanButton.ForeColor = Color.White;
+        scanButton.FlatAppearance.BorderSize = 1;
+        scanButton.FlatAppearance.BorderColor = DangerRed;
+    }
+
     private void SetDashboardState(string title, string subtitle, bool actionNeeded)
     {
         var scanning = title.Contains("Scanning", StringComparison.OrdinalIgnoreCase);
         var stopped = title.Contains("Stopped", StringComparison.OrdinalIgnoreCase);
-        statusTitle.Text = actionNeeded ? "Action needed" : scanning ? "Scan in progress" : stopped ? "Scan stopped" : "You are protected";
+        statusTitle.Text = actionNeeded ? "Threats need review" : scanning ? "Scanning" : stopped ? "Scan stopped" : "Protected";
         statusSubtitle.Text = subtitle;
         statusDot.Tag = actionNeeded ? "action" : scanning ? "scanning" : stopped ? "stopped" : "clean";
         statusDot.Invalidate();
@@ -1403,9 +1557,7 @@ public sealed class MainForm : Form
         var scannedCount = 0;
         var totalCount = 0;
         var completedScan = false;
-        scanButton.Text = "Stop Scan";
-        scanButton.BackColor = Color.FromArgb(220, 64, 52);
-        scanButton.ForeColor = Color.White;
+        SetScanButtonStopStyle();
         scanButton.Enabled = true;
         results.Clear();
         resultsView.Items.Clear();
@@ -1414,7 +1566,7 @@ public sealed class MainForm : Form
         countLabel.Text = "";
         statusLabel.Text = "Collecting running processes...";
         summaryLabel.Text = "Preparing scan";
-        actionLabel.Text = "Actions needed: 0";
+        actionLabel.Text = "Needs review: 0";
         SetDashboardState("Scanning", "Checking running process files with enabled reputation services.", false);
 
         try
@@ -1463,18 +1615,22 @@ public sealed class MainForm : Form
             completedScan = true;
             processMonitorTimer.Start();
 
-            var alerts = results.Where(result => result.IsAlert).ToList();
+            var unresolved = results.Where(ResultNeedsAction).ToList();
+            var alerts = unresolved.Where(result => result.IsAlert).ToList();
             var unknown = results.Count(result => result.Status is "unknown" or "uploaded");
-            var errors = results.Count(result => result.Status == "error");
-            statusLabel.Text = $"Done. {alerts.Count} suspicious, {unknown} unknown/uploaded, {errors} errors. Cache: {hashCache.Count} hashes.";
+            var errors = unresolved.Count(result => result.Status == "error");
+            var highRisk = unresolved.Count(result => result.RiskScore >= 70);
+            statusLabel.Text = $"Done. {unresolved.Count} action needed, {alerts.Count} detections, {unknown} unknown/uploaded, {errors} errors. Cache: {hashCache.Count} hashes.";
             SetDashboardState(
-                alerts.Count > 0 || errors > 0 ? "Action needed" : "Clean",
+                unresolved.Count > 0 ? "Action needed" : "Clean",
                 alerts.Count > 0
                     ? "A reputation service reported malicious or suspicious detections."
                     : errors > 0
                         ? "Some files could not be checked. Review Activity Log or Open Logs for details."
-                        : "No malicious or suspicious detections were found.",
-                alerts.Count > 0 || errors > 0);
+                        : highRisk > 0
+                            ? "Local trust signals found high-risk files that need review."
+                            : "No unresolved threats or high-risk items were found.",
+                unresolved.Count > 0);
             if (alerts.Count > 0)
             {
                 var sample = string.Join(Environment.NewLine, alerts.Take(8).Select(r => $"{r.ProcessNames}: {r.Malicious} malicious, {r.Suspicious} suspicious"));
@@ -1518,9 +1674,7 @@ public sealed class MainForm : Form
         finally
         {
             scanCancellation = null;
-            scanButton.Text = "Run Process Scan";
-            scanButton.BackColor = Color.FromArgb(255, 205, 0);
-            scanButton.ForeColor = SystemColors.ControlText;
+            SetScanButtonReadyStyle();
             scanButton.Enabled = true;
             if (completedScan)
             {
@@ -1590,17 +1744,21 @@ public sealed class MainForm : Form
                 }
             }
 
-            var alerts = results.Where(result => result.IsAlert).ToList();
-            var errors = results.Count(result => result.Status == "error");
+            var unresolved = results.Where(ResultNeedsAction).ToList();
+            var alerts = unresolved.Where(result => result.IsAlert).ToList();
+            var errors = unresolved.Count(result => result.Status == "error");
+            var highRisk = unresolved.Count(result => result.RiskScore >= 70);
             var lastScanTime = FormatCentralTime(DateTimeOffset.Now);
             SetDashboardState(
-                alerts.Count > 0 || errors > 0 ? "Action needed" : "Clean",
+                unresolved.Count > 0 ? "Action needed" : "Clean",
                 alerts.Count > 0
                     ? "A reputation service reported malicious or suspicious detections."
                     : errors > 0
                         ? "Some files could not be checked. Review Activity Log or Open Logs for details."
-                        : $"Monitoring active. Scanned {newPaths.Count} new file(s). Last scan: {lastScanTime}.",
-                alerts.Count > 0 || errors > 0);
+                        : highRisk > 0
+                            ? "Local trust signals found high-risk files that need review."
+                            : $"Monitoring active. Scanned {newPaths.Count} new file(s). Last scan: {lastScanTime}.",
+                unresolved.Count > 0);
             statusLabel.Text = $"Monitoring active. Scanned {newPaths.Count} new file(s). Last scan: {lastScanTime}.";
         }
         catch (Exception ex)
@@ -2135,7 +2293,7 @@ public sealed class MainForm : Form
         countLabel.Text = "1 / 1";
         statusLabel.Text = $"Scanning selected file: {FormatDisplayPath(path)}";
         summaryLabel.Text = "Preparing scan";
-        actionLabel.Text = "Actions needed: 0";
+        actionLabel.Text = "Needs review: 0";
         SetDashboardState("Scanning", "Checking the selected file with enabled reputation services.", false);
 
         try
@@ -2161,12 +2319,17 @@ public sealed class MainForm : Form
             AddResultRow(result);
             UpdateSummary();
             progressBar.Value = 1;
-            var alerts = results.Where(result => result.IsAlert).ToList();
+            var unresolved = results.Where(ResultNeedsAction).ToList();
+            var alerts = unresolved.Where(result => result.IsAlert).ToList();
             SetDashboardState(
-                alerts.Count > 0 ? "Action needed" : "Clean",
-                alerts.Count > 0 ? "A reputation service reported malicious or suspicious detections." : "No malicious or suspicious detections were found.",
-                alerts.Count > 0);
-            statusLabel.Text = alerts.Count > 0 ? "Selected file scan complete. Action needed." : "Selected file scan complete. No detections.";
+                unresolved.Count > 0 ? "Action needed" : "Clean",
+                alerts.Count > 0
+                    ? "A reputation service reported malicious or suspicious detections."
+                    : unresolved.Count > 0
+                        ? "Local trust signals found a file that needs review."
+                        : "No unresolved threats or high-risk items were found.",
+                unresolved.Count > 0);
+            statusLabel.Text = unresolved.Count > 0 ? "Selected file scan complete. Review needed." : "Selected file scan complete. No unresolved threats.";
         }
         catch (Exception ex)
         {
@@ -3566,6 +3729,26 @@ public sealed class MainForm : Form
 
     private void AddResultRow(ScanResult result)
     {
+        AppendScanLog(result);
+        if (!ResultNeedsAction(result))
+        {
+            UpdateResultsEmptyState();
+            return;
+        }
+
+        AddReviewQueueRow(result);
+    }
+
+    private void AddReviewQueueRow(ScanResult result)
+    {
+        if (resultsView.Items
+            .Cast<ListViewItem>()
+            .Any(item => string.Equals(GetSubItemText(item, ColSha256), result.Sha256, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(GetSubItemText(item, ColPath), result.Path, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
         var item = new ListViewItem(result.Status);
         item.SubItems.Add($"{result.RiskLevel} {result.RiskScore}");
         item.SubItems.Add(result.TrustSummary);
@@ -3575,34 +3758,65 @@ public sealed class MainForm : Form
         item.SubItems.Add(result.Pids);
         item.SubItems.Add(result.Sha256);
         item.SubItems.Add(result.Path);
-        item.SubItems.Add(result.Notes);
+        item.SubItems.Add(resultsView.Name == MainResultsViewName ? BuildReviewRecommendation(result) : result.Notes);
         item.Tag = result.Link;
 
         if (result.IsAlert)
         {
-            item.BackColor = Color.MistyRose;
+            item.BackColor = Color.FromArgb(253, 232, 232);
         }
         else if (result.Status == "ignored")
         {
-            item.BackColor = Color.Honeydew;
+            item.BackColor = Color.FromArgb(232, 245, 233);
         }
         else if (result.Status is "unknown" or "uploaded")
         {
-            item.BackColor = Color.LemonChiffon;
+            item.BackColor = Color.FromArgb(255, 247, 214);
         }
         else if (result.Status == "limited access")
         {
-            item.BackColor = Color.LemonChiffon;
+            item.BackColor = Color.FromArgb(255, 247, 214);
         }
         else if (result.Status == "error")
         {
-            item.BackColor = Color.LightCoral;
+            item.BackColor = Color.FromArgb(248, 215, 218);
         }
 
         resultsView.Items.Add(item);
         UpdateResultsEmptyState();
         FitResultColumns(resultsView);
-        AppendScanLog(result);
+    }
+
+    private static string BuildReviewRecommendation(ScanResult result)
+    {
+        if (ResultIsHandled(result))
+        {
+            return string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase)
+                ? "Handled: ignored by user"
+                : "Handled: quarantined";
+        }
+
+        if (result.IsAlert)
+        {
+            return $"Review now: {result.Malicious} malicious / {result.Suspicious} suspicious detections";
+        }
+
+        if (string.Equals(result.Status, "error", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Review scan error in Activity Log";
+        }
+
+        if (result.RiskScore >= 70)
+        {
+            return "Review high local risk signals";
+        }
+
+        if (result.Status is "unknown" or "uploaded" or "limited access")
+        {
+            return "Monitor: reputation incomplete";
+        }
+
+        return "No action needed";
     }
 
     private void UpdateResultsEmptyState()
@@ -3621,6 +3835,22 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (view.Name == MainResultsViewName)
+        {
+            var available = Math.Max(940, view.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 8);
+            view.Columns[ColStatus].Width = 112;
+            view.Columns[ColRisk].Width = 92;
+            view.Columns[ColTrust].Width = Math.Max(190, available * 21 / 100);
+            view.Columns[ColMalicious].Width = 0;
+            view.Columns[ColSuspicious].Width = 0;
+            view.Columns[ColProcess].Width = Math.Max(150, available * 18 / 100);
+            view.Columns[ColPids].Width = 0;
+            view.Columns[ColSha256].Width = 0;
+            view.Columns[ColPath].Width = Math.Max(280, available * 28 / 100);
+            view.Columns[ColNotes].Width = Math.Max(240, available - view.Columns[ColStatus].Width - view.Columns[ColRisk].Width - view.Columns[ColTrust].Width - view.Columns[ColProcess].Width - view.Columns[ColPath].Width);
+            return;
+        }
+
         view.Columns[ColStatus].Width = 104;
         view.Columns[ColRisk].Width = 96;
         view.Columns[ColMalicious].Width = 52;
@@ -3635,59 +3865,72 @@ public sealed class MainForm : Form
 
     private static void ApplyResultRowColor(ListViewItem item)
     {
+        item.BackColor = Color.Empty;
         var status = item.Text;
         var malicious = item.SubItems.Count > ColMalicious && int.TryParse(item.SubItems[ColMalicious].Text, out var mal) ? mal : 0;
         var suspicious = item.SubItems.Count > ColSuspicious && int.TryParse(item.SubItems[ColSuspicious].Text, out var susp) ? susp : 0;
         var riskText = item.SubItems.Count > ColRisk ? item.SubItems[ColRisk].Text : "";
 
-        if (status == "ignored")
+        if (IsHandledActivityItem(item))
         {
-            item.BackColor = Color.Honeydew;
+            item.BackColor = Color.FromArgb(232, 245, 233);
         }
         else if (malicious > 0 || suspicious > 0)
         {
-            item.BackColor = Color.MistyRose;
+            item.BackColor = Color.FromArgb(253, 232, 232);
         }
         else if (riskText.StartsWith("Medium", StringComparison.OrdinalIgnoreCase)
             || status is "unknown" or "uploaded" or "limited access")
         {
-            item.BackColor = Color.LemonChiffon;
+            item.BackColor = Color.FromArgb(255, 247, 214);
         }
         else if (status == "error")
         {
-            item.BackColor = Color.LightCoral;
+            item.BackColor = Color.FromArgb(248, 215, 218);
         }
     }
 
     private void UpdateSummary()
     {
-        var alerts = results.Count(result => result.IsAlert);
+        var actionsNeeded = results.Count(ResultNeedsAction);
+        var alerts = results.Count(result => ResultNeedsAction(result) && result.IsAlert);
         var unknown = results.Count(result => result.Status is "unknown" or "uploaded");
-        var errors = results.Count(result => result.Status == "error");
-        var highRisk = results.Count(result => result.RiskScore >= 70);
+        var errors = results.Count(result => ResultNeedsAction(result) && result.Status == "error");
+        var highRisk = results.Count(result => ResultNeedsAction(result) && result.RiskScore >= 70);
         var persistent = results.Count(result => result.PersistenceSources.Count > 0);
         var unsigned = results.Count(result => result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase));
-        summaryLabel.Text = $"Files scanned: {results.Count}";
-        actionLabel.Text = $"Actions needed: {alerts + highRisk + errors}";
+        summaryLabel.Text = $"Items scanned: {results.Count}";
+        actionLabel.Text = $"Needs review: {actionsNeeded}";
         toolTip.SetToolTip(summaryLabel, $"{results.Count} scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown");
-        toolTip.SetToolTip(actionLabel, $"{alerts} detections | {highRisk} high risk | {errors} errors");
+        toolTip.SetToolTip(actionLabel, $"{actionsNeeded} file(s) need action | {alerts} detections | {highRisk} high risk | {errors} errors");
         if (scanCancellation is not null || processMonitorScanRunning)
         {
             return;
         }
 
-        if (alerts > 0)
+        if (actionsNeeded > 0)
         {
-            SetDashboardState("Action needed", $"{alerts} detection(s), {unknown} unknown/uploaded, {errors} errors.", true);
-        }
-        else if (errors > 0)
-        {
-            SetDashboardState("Action needed", $"{errors} error(s). Check Activity Log or Open Logs.", true);
+            SetDashboardState("Action needed", $"{actionsNeeded} file(s) still need review. {alerts} detection(s), {highRisk} high risk, {errors} errors.", true);
         }
         else if (results.Count > 0)
         {
             SetDashboardState("Clean", "No action needed.", false);
         }
+    }
+
+    private static bool ResultNeedsAction(ScanResult result)
+    {
+        return !ResultIsHandled(result)
+            && (result.IsAlert
+                || result.RiskScore >= 70
+                || string.Equals(result.Status, "error", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ResultIsHandled(ScanResult result)
+    {
+        return string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase)
+            || result.Notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || result.Notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
     }
 
     private void AppendScanLog(ScanResult result)
@@ -3748,14 +3991,14 @@ public sealed class MainForm : Form
     {
         using var dialog = new Form
         {
-            Text = "Scan Details",
+            Text = "Activity Log",
             StartPosition = FormStartPosition.CenterParent,
-            Size = new Size(1320, 720),
-            MinimumSize = new Size(1120, 560),
+            Size = new Size(1360, 760),
+            MinimumSize = new Size(1160, 620),
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
-        var detailView = new ListView { View = View.Details, FullRowSelect = true, GridLines = true };
+        var detailView = new ListView { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
         ConfigureResultsView(detailView);
         detailView.Columns[ColProcess].Width = 150;
         detailView.Columns[ColSha256].Width = 300;
@@ -3765,28 +4008,45 @@ public sealed class MainForm : Form
         detailView.Dock = DockStyle.Fill;
         var allItems = LoadActivityLogItems();
 
+        var summaryLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Height = 28,
+            Font = new Font("Segoe UI", 9, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true,
+        };
+        var searchBox = new TextBox
+        {
+            Width = 280,
+            PlaceholderText = "Search process, hash, path, notes",
+            Margin = new Padding(0, 0, 0, 0),
+        };
         var reasonLabel = new Label
         {
-            Text = "Select a row to see why HashGuard flagged it and which action is safest.",
+            Text = "No row selected.",
             Dock = DockStyle.Fill,
-            Height = 72,
+            Height = 96,
             AutoEllipsis = true,
-            Padding = new Padding(10, 8, 10, 8),
+            Padding = new Padding(12, 10, 12, 10),
             BackColor = Color.White,
             ForeColor = Color.FromArgb(35, 35, 35),
+            BorderStyle = BorderStyle.FixedSingle,
+            Tag = "callout",
         };
 
-        var openReport = new Button { Text = "Open Report...", AutoSize = true };
-        var openFileLocation = new Button { Text = "Open File Location", AutoSize = true };
-        var killProcess = new Button { Text = "Kill Process", AutoSize = true };
-        var quarantineFile = new Button { Text = "Quarantine File", AutoSize = true };
-        var restoreQuarantine = new Button { Text = "Restore Quarantine", AutoSize = true };
-        var copyHash = new Button { Text = "Copy Hash", AutoSize = true };
-        var copySummary = new Button { Text = "Copy Summary", AutoSize = true };
-        var ignoreSelected = new Button { Text = "Ignore Selected", AutoSize = true };
-        var exportCsv = new Button { Text = "Export CSV", AutoSize = true };
-        var openLogs = new Button { Text = "Open Logs", AutoSize = true };
-        var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
+        var openReport = CreateActivityActionButton("Open Report");
+        var openFileLocation = CreateActivityActionButton("Open Location");
+        var killProcess = CreateActivityActionButton("Kill Process");
+        var quarantineFile = CreateActivityActionButton("Quarantine");
+        var restoreQuarantine = CreateActivityActionButton("Quarantine Manager");
+        var copyHash = CreateActivityActionButton("Copy Hash");
+        var copySummary = CreateActivityActionButton("Copy Summary");
+        var ignoreSelected = CreateActivityActionButton("Ignore Selected");
+        var exportCsv = CreateActivityActionButton("Export CSV");
+        var openLogs = CreateActivityActionButton("Open Logs");
+        var close = CreateActivityActionButton("Close");
+        close.DialogResult = DialogResult.OK;
 
         openReport.Click += (_, _) => OpenSelectedReport(detailView);
         openFileLocation.Click += (_, _) => OpenSelectedFileLocation(detailView);
@@ -3803,6 +4063,21 @@ public sealed class MainForm : Form
         exportCsv.Click += (_, _) => ExportCsv(detailView);
         openLogs.Click += (_, _) => OpenLogFolder();
 
+        var topPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Margin = new Padding(0, 0, 0, 10),
+            Padding = new Padding(0),
+        };
+        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        topPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        topPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        topPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        topPanel.Controls.Add(summaryLabel, 0, 0);
+        topPanel.SetColumnSpan(summaryLabel, 2);
+
         var filters = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -3810,9 +4085,10 @@ public sealed class MainForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             BackColor = Color.FromArgb(246, 247, 249),
-            Margin = new Padding(0, 0, 0, 8),
+            Margin = new Padding(0),
         };
         var filterButtons = new List<Button>();
+        var activeFilter = ActivityFilter.All;
         foreach (var filter in new[]
         {
             ActivityFilter.All,
@@ -3826,19 +4102,54 @@ public sealed class MainForm : Form
             filterButtons.Add(button);
             filters.Controls.Add(button);
         }
+        topPanel.Controls.Add(filters, 0, 1);
+
+        var searchPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(10, 0, 0, 0) };
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        searchPanel.Controls.Add(new Label
+        {
+            Text = "Search",
+            AutoSize = false,
+            Width = 54,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = Color.DimGray,
+        }, 0, 0);
+        searchPanel.Controls.Add(searchBox, 1, 0);
+        topPanel.Controls.Add(searchPanel, 1, 1);
 
         void RefreshSelectionUi()
         {
             UpdateIgnoreButtonText(detailView, ignoreSelected);
-            reasonLabel.Text = BuildSelectedReasonSummary(detailView);
+            reasonLabel.Text = detailView.SelectedItems.Count > 0
+                ? BuildSelectedReasonSummary(detailView)
+                : detailView.Items.Count == 0
+                    ? "No scan rows match the current filter."
+                    : "Select a row to review the reason, trust signal, file path, and available actions.";
+            var hasSelection = detailView.SelectedItems.Count > 0;
+            openReport.Enabled = hasSelection;
+            openFileLocation.Enabled = hasSelection;
+            killProcess.Enabled = hasSelection;
+            quarantineFile.Enabled = hasSelection;
+            copyHash.Enabled = hasSelection;
+            copySummary.Enabled = hasSelection;
+            ignoreSelected.Enabled = hasSelection;
         }
 
         void ApplyFilter(ActivityFilter filter)
         {
             var palette = GetCurrentPalette();
+            activeFilter = filter;
+            var searchText = searchBox.Text.Trim();
+            var visibleItems = allItems
+                .Where(item => MatchesActivityFilter(filter, item))
+                .Where(item => MatchesActivitySearch(item, searchText))
+                .ToList();
+
             detailView.BeginUpdate();
             detailView.Items.Clear();
-            foreach (var item in allItems.Where(item => MatchesActivityFilter(filter, item)))
+            foreach (var item in visibleItems)
             {
                 detailView.Items.Add(CloneActivityItem(item));
             }
@@ -3852,9 +4163,8 @@ public sealed class MainForm : Form
                 button.ForeColor = selected ? palette.Surface : palette.Text;
             }
 
-            reasonLabel.Text = detailView.Items.Count == 0
-                ? "No scan rows match this filter."
-                : "Select a row to see why HashGuard flagged it and which action is safest.";
+            summaryLabel.Text = BuildActivityLogSummary(visibleItems, allItems, searchText);
+            RefreshSelectionUi();
         }
 
         foreach (var button in filterButtons)
@@ -3868,31 +4178,44 @@ public sealed class MainForm : Form
             };
         }
 
+        searchBox.TextChanged += (_, _) => ApplyFilter(activeFilter);
         detailView.SelectedIndexChanged += (_, _) => RefreshSelectionUi();
+        detailView.DoubleClick += (_, _) => OpenSelectedReport(detailView);
         UpdateIgnoreButtonText(detailView, ignoreSelected);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(12) };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(14) };
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(filters, 0, 0);
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84));
+        layout.Controls.Add(topPanel, 0, 0);
         layout.Controls.Add(detailView, 0, 1);
         layout.Controls.Add(reasonLabel, 0, 2);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
-        buttons.Controls.Add(close);
-        buttons.Controls.Add(openLogs);
-        buttons.Controls.Add(exportCsv);
-        buttons.Controls.Add(ignoreSelected);
-        buttons.Controls.Add(restoreQuarantine);
-        buttons.Controls.Add(quarantineFile);
-        buttons.Controls.Add(killProcess);
-        buttons.Controls.Add(copySummary);
-        buttons.Controls.Add(copyHash);
-        buttons.Controls.Add(openFileLocation);
-        buttons.Controls.Add(openReport);
-        layout.Controls.Add(buttons, 0, 3);
+        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(0, 8, 0, 0) };
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        var rowActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
+        rowActions.Controls.Add(openReport);
+        rowActions.Controls.Add(openFileLocation);
+        rowActions.Controls.Add(copyHash);
+        rowActions.Controls.Add(copySummary);
+        rowActions.Controls.Add(ignoreSelected);
+        var remediationActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
+        remediationActions.Controls.Add(killProcess);
+        remediationActions.Controls.Add(quarantineFile);
+        remediationActions.Controls.Add(restoreQuarantine);
+        var logActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(12, 0, 0, 0) };
+        logActions.Controls.Add(close);
+        logActions.Controls.Add(openLogs);
+        logActions.Controls.Add(exportCsv);
+        actions.Controls.Add(rowActions, 0, 0);
+        actions.Controls.Add(remediationActions, 0, 1);
+        actions.Controls.Add(logActions, 1, 0);
+        actions.SetRowSpan(logActions, 2);
+        layout.Controls.Add(actions, 0, 3);
 
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
@@ -3921,11 +4244,59 @@ public sealed class MainForm : Form
         };
     }
 
+    private static Button CreateActivityActionButton(string text)
+    {
+        return new Button
+        {
+            Text = text,
+            Width = Math.Max(96, text.Length * 8 + 24),
+            Height = 32,
+            Margin = new Padding(0, 0, 8, 6),
+            FlatStyle = FlatStyle.Flat,
+        };
+    }
+
     private static bool MatchesActivityFilter(ActivityFilter filter, ListViewItem item)
     {
+        if (filter == ActivityFilter.ActionNeeded && IsHandledActivityItem(item))
+        {
+            return false;
+        }
+
         var malicious = int.TryParse(GetSubItemText(item, ColMalicious), out var mal) ? mal : 0;
         var suspicious = int.TryParse(GetSubItemText(item, ColSuspicious), out var susp) ? susp : 0;
         return HashGuardLogic.MatchesActivityFilter(filter, item.Text, GetSubItemText(item, ColRisk), malicious, suspicious);
+    }
+
+    private static bool IsHandledActivityItem(ListViewItem item)
+    {
+        return string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase)
+            || GetSubItemText(item, ColNotes).Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || GetSubItemText(item, ColNotes).Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesActivitySearch(ListViewItem item, string searchText)
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        return item.SubItems
+            .Cast<ListViewItem.ListViewSubItem>()
+            .Any(subItem => subItem.Text.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string BuildActivityLogSummary(IReadOnlyCollection<ListViewItem> visibleItems, IReadOnlyCollection<ListViewItem> allItems, string searchText)
+    {
+        var actionNeeded = allItems.Count(item => MatchesActivityFilter(ActivityFilter.ActionNeeded, item));
+        var unknown = allItems.Count(item => MatchesActivityFilter(ActivityFilter.Unknown, item));
+        var errors = allItems.Count(item => MatchesActivityFilter(ActivityFilter.Errors, item));
+        var filtered = visibleItems.Count == allItems.Count && string.IsNullOrWhiteSpace(searchText)
+            ? $"{visibleItems.Count} rows"
+            : $"{visibleItems.Count} of {allItems.Count} rows";
+        var searchSuffix = string.IsNullOrWhiteSpace(searchText) ? "" : $" | Search: {searchText}";
+        return $"{filtered} | Action needed: {actionNeeded} | Unknown: {unknown} | Errors: {errors}{searchSuffix}";
     }
 
     private static ListViewItem CloneActivityItem(ListViewItem source)
@@ -4848,6 +5219,7 @@ public sealed class MainForm : Form
                 AppendQuarantineLog("quarantine", path, target, "moved to quarantine");
                 MarkRowsQuarantined(sourceView, path, target);
                 MarkRowsQuarantined(resultsView, path, target);
+                MarkResultsQuarantined(path, target);
             }
             catch (Exception ex)
             {
@@ -4858,9 +5230,23 @@ public sealed class MainForm : Form
 
         SaveQuarantineManifest(manifest);
         statusLabel.Text = $"Quarantined {moved} file(s).";
+        UpdateResultsEmptyState();
+        UpdateSummary();
         if (failures.Count > 0)
         {
             MessageBox.Show(this, string.Join(Environment.NewLine, failures.Take(8)), "Some files could not be quarantined", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private void MarkResultsQuarantined(string originalPath, string quarantinePath)
+    {
+        foreach (var result in results.Where(result => string.Equals(result.Path, originalPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            result.Notes = result.Notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase)
+                ? result.Notes
+                : string.IsNullOrWhiteSpace(result.Notes)
+                    ? $"Quarantined to {quarantinePath}"
+                    : $"{result.Notes}; Quarantined to {quarantinePath}";
         }
     }
 
@@ -4910,7 +5296,7 @@ public sealed class MainForm : Form
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
-        var view = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = true };
+        var view = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
         view.Columns.Add("Quarantined", 150);
         view.Columns.Add("SHA-256", 300);
         view.Columns.Add("Original Path", 420);
@@ -5364,10 +5750,16 @@ public sealed class MainForm : Form
 
     private static void MarkRowsQuarantined(ListView view, string originalPath, string quarantinePath)
     {
-        foreach (ListViewItem item in view.Items)
+        foreach (var item in view.Items.Cast<ListViewItem>().ToList())
         {
             if (!string.Equals(GetSubItemText(item, ColPath), originalPath, StringComparison.OrdinalIgnoreCase))
             {
+                continue;
+            }
+
+            if (view.Name == MainResultsViewName)
+            {
+                view.Items.Remove(item);
                 continue;
             }
 
@@ -5375,6 +5767,7 @@ public sealed class MainForm : Form
             item.SubItems[ColNotes].Text = string.IsNullOrWhiteSpace(notes)
                 ? $"Quarantined to {quarantinePath}"
                 : $"{notes}; Quarantined to {quarantinePath}";
+            ApplyResultRowColor(item);
         }
     }
 
@@ -5508,6 +5901,7 @@ public sealed class MainForm : Form
         }
 
         SaveIgnoredHashes();
+        UpdateResultsEmptyState();
         UpdateSummary();
         statusLabel.Text = $"{hashes.Count} detection(s) ignored. Future scans will mark those hashes as ignored.";
     }
@@ -5534,20 +5928,31 @@ public sealed class MainForm : Form
             {
                 result.Status = result.IsDetection ? "detected" : "clean";
                 result.Notes = RemoveIgnoreNote(result.Notes);
+                if (ResultNeedsAction(result))
+                {
+                    AddReviewQueueRow(result);
+                }
             }
         }
 
         SaveIgnoredHashes();
+        UpdateResultsEmptyState();
         UpdateSummary();
         statusLabel.Text = $"{hashes.Count} ignore flag(s) cleared.";
     }
 
     private static void MarkIgnoredRows(ListView view, string sha256)
     {
-        foreach (ListViewItem row in view.Items)
+        foreach (var row in view.Items.Cast<ListViewItem>().ToList())
         {
             if (!string.Equals(GetSubItemText(row, ColSha256), sha256, StringComparison.OrdinalIgnoreCase))
             {
+                continue;
+            }
+
+            if (view.Name == MainResultsViewName)
+            {
+                view.Items.Remove(row);
                 continue;
             }
 
@@ -5574,7 +5979,11 @@ public sealed class MainForm : Form
             var malicious = int.TryParse(GetSubItemText(row, ColMalicious), out var mal) ? mal : 0;
             var suspicious = int.TryParse(GetSubItemText(row, ColSuspicious), out var susp) ? susp : 0;
             row.Text = malicious + suspicious > 0 ? "detected" : "clean";
-            row.SubItems[ColNotes].Text = RemoveIgnoreNote(GetSubItemText(row, ColNotes));
+            row.SubItems[ColNotes].Text = view.Name == MainResultsViewName
+                ? malicious + suspicious > 0
+                    ? $"Review now: {malicious} malicious / {suspicious} suspicious detections"
+                    : "No action needed"
+                : RemoveIgnoreNote(GetSubItemText(row, ColNotes));
             ApplyResultRowColor(row);
         }
     }
@@ -6363,8 +6772,11 @@ public sealed class MainForm : Form
         Color Text,
         Color MutedText,
         Color ButtonBack,
+        Color Border,
+        Color CalloutBack,
         Color HeaderBack,
-        Color HeaderButtonBack)
+        Color HeaderButtonBack,
+        Color HeaderButtonBorder)
     {
         public static ThemePalette Light { get; } = new(
             Color.FromArgb(246, 247, 249),
@@ -6374,8 +6786,11 @@ public sealed class MainForm : Form
             Color.FromArgb(35, 35, 35),
             Color.DimGray,
             SystemColors.Control,
+            Color.FromArgb(218, 222, 228),
+            Color.FromArgb(250, 251, 253),
             Color.FromArgb(28, 28, 28),
-            Color.FromArgb(52, 52, 52));
+            Color.FromArgb(52, 52, 52),
+            Color.FromArgb(85, 85, 85));
 
         public static ThemePalette Dark { get; } = new(
             Color.FromArgb(24, 26, 30),
@@ -6385,8 +6800,11 @@ public sealed class MainForm : Form
             Color.FromArgb(235, 238, 242),
             Color.FromArgb(170, 176, 186),
             Color.FromArgb(50, 55, 64),
+            Color.FromArgb(72, 78, 88),
+            Color.FromArgb(40, 44, 52),
             Color.FromArgb(18, 20, 24),
-            Color.FromArgb(44, 48, 56));
+            Color.FromArgb(44, 48, 56),
+            Color.FromArgb(76, 82, 92));
     }
 
     private sealed class QuarantineEntry

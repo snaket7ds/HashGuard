@@ -46,6 +46,11 @@ var tests = new (string Name, Action Test)[]
         AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.Errors, "error", "Medium 35", 0, 0));
         AssertFalse(HashGuardLogic.MatchesActivityFilter(ActivityFilter.ActionNeeded, "clean", "Low 5", 0, 0));
     }),
+    ("ignored detections are handled, not action needed", () =>
+    {
+        AssertFalse(HashGuardLogic.MatchesActivityFilter(ActivityFilter.ActionNeeded, "ignored", "High 90", 3, 1));
+        AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.Clean, "ignored", "High 90", 3, 1));
+    }),
 };
 
 var failures = new List<string>();

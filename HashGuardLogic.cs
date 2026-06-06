@@ -127,6 +127,11 @@ internal static class HashGuardLogic
 
     public static bool MatchesActivityFilter(ActivityFilter filter, string status, string riskText, int malicious, int suspicious)
     {
+        if (string.Equals(status, "ignored", StringComparison.OrdinalIgnoreCase))
+        {
+            return filter is ActivityFilter.All or ActivityFilter.Clean;
+        }
+
         return filter switch
         {
             ActivityFilter.ActionNeeded => malicious + suspicious > 0
