@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.36 - 2026-06-06
+
+- Fixed scans failing at startup when local free API quota state was stale or malformed.
+
 ## v1.0.35 - 2026-06-06
 
 - Changed first-run setup so Desktop shortcut creation is unchecked by default.
