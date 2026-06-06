@@ -1,4 +1,4 @@
-const ALLOWED_EVENTS = new Set(["app_start", "scan_complete"]);
+const ALLOWED_EVENTS = new Set(["app_install", "app_start", "scan_complete"]);
 
 export default {
   async fetch(request, env) {
@@ -86,33 +86,36 @@ async function buildSummary(env) {
   const since7Days = isoHoursAgo(24 * 7);
   const since30Days = isoHoursAgo(24 * 30);
 
-  const [active1, active7, active30, eventCounts, versions, scanTotals, daily] = await Promise.all([
-    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE received_at >= ?", since1Day),
-    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE received_at >= ?", since7Days),
-    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE received_at >= ?", since30Days),
-    all(env, "SELECT event_type, COUNT(*) AS count FROM events WHERE received_at >= ? GROUP BY event_type ORDER BY count DESC", since30Days),
-    all(env, "SELECT app_version, COUNT(DISTINCT install_id) AS installs FROM events WHERE received_at >= ? GROUP BY app_version ORDER BY installs DESC", since30Days),
-    first(
+  const [totalInstalls, running1, running7, running30, versions, daily] = await Promise.all([
+    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_install'"),
+    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_start' AND received_at >= ?", since1Day),
+    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_start' AND received_at >= ?", since7Days),
+    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_start' AND received_at >= ?", since30Days),
+    all(
       env,
       `SELECT
-        COALESCE(SUM(items_scanned), 0) AS items_scanned,
-        COALESCE(SUM(action_needed), 0) AS action_needed,
-        COALESCE(SUM(detections), 0) AS detections,
-        COALESCE(SUM(unknown_count), 0) AS unknown,
-        COALESCE(SUM(errors), 0) AS errors,
-        COALESCE(SUM(high_risk), 0) AS high_risk
-      FROM events
-      WHERE event_type = 'scan_complete' AND received_at >= ?`,
-      since30Days
+        latest.app_version,
+        COUNT(*) AS installs
+      FROM events latest
+      INNER JOIN (
+        SELECT install_id, MAX(received_at) AS latest_received_at
+        FROM events
+        WHERE event_type = 'app_install'
+        GROUP BY install_id
+      ) grouped
+        ON latest.install_id = grouped.install_id
+        AND latest.received_at = grouped.latest_received_at
+      WHERE latest.event_type = 'app_install'
+      GROUP BY latest.app_version
+      ORDER BY installs DESC, latest.app_version DESC`
     ),
     all(
       env,
       `SELECT
         substr(received_at, 1, 10) AS day,
-        COUNT(DISTINCT install_id) AS active_installs,
-        COUNT(*) AS events
+        COUNT(DISTINCT install_id) AS running_apps
       FROM events
-      WHERE received_at >= ?
+      WHERE event_type = 'app_start' AND received_at >= ?
       GROUP BY day
       ORDER BY day DESC`,
       since30Days
@@ -121,14 +124,13 @@ async function buildSummary(env) {
 
   return {
     generatedAt: new Date().toISOString(),
-    activeInstalls: {
-      oneDay: active1,
-      sevenDays: active7,
-      thirtyDays: active30,
+    totalInstalls,
+    runningApps: {
+      oneDay: running1,
+      sevenDays: running7,
+      thirtyDays: running30,
     },
-    eventCounts,
     versions,
-    scanTotals,
     daily,
   };
 }
@@ -164,18 +166,15 @@ function renderDashboard() {
   </header>
   <main>
     <div class="grid">
-      <div class="card"><h2>Active Installs 24h</h2><div class="metric" id="active1">-</div></div>
-      <div class="card"><h2>Active Installs 7d</h2><div class="metric" id="active7">-</div></div>
-      <div class="card"><h2>Active Installs 30d</h2><div class="metric" id="active30">-</div></div>
+      <div class="card"><h2>App Installs</h2><div class="metric" id="totalInstalls">-</div></div>
+      <div class="card"><h2>Apps Running 24h</h2><div class="metric" id="running1">-</div></div>
+      <div class="card"><h2>Apps Running 7d</h2><div class="metric" id="running7">-</div></div>
     </div>
     <div class="grid">
-      <div class="card"><h2>Items Scanned 30d</h2><div class="metric" id="items">-</div></div>
-      <div class="card"><h2>Needs Review 30d</h2><div class="metric" id="actions">-</div></div>
-      <div class="card"><h2>Errors 30d</h2><div class="metric" id="errors">-</div></div>
+      <div class="card"><h2>Apps Running 30d</h2><div class="metric" id="running30">-</div></div>
     </div>
-    <section><h2>Versions</h2><table><thead><tr><th>Version</th><th>Active Installs</th></tr></thead><tbody id="versions"></tbody></table></section>
-    <section><h2>Events</h2><table><thead><tr><th>Event</th><th>Count</th></tr></thead><tbody id="events"></tbody></table></section>
-    <section><h2>Daily</h2><table><thead><tr><th>Day</th><th>Active Installs</th><th>Events</th></tr></thead><tbody id="daily"></tbody></table></section>
+    <section><h2>Installed Versions</h2><table><thead><tr><th>Version</th><th>Unique Installs</th></tr></thead><tbody id="versions"></tbody></table></section>
+    <section><h2>Daily Running Apps</h2><table><thead><tr><th>Day</th><th>Unique Apps Running</th></tr></thead><tbody id="daily"></tbody></table></section>
   </main>
   <script>
     const token = new URLSearchParams(location.search).get("token") || "";
@@ -183,15 +182,12 @@ function renderDashboard() {
       .then(r => r.json())
       .then(data => {
         document.getElementById("generated").textContent = "Generated " + data.generatedAt;
-        document.getElementById("active1").textContent = data.activeInstalls.oneDay;
-        document.getElementById("active7").textContent = data.activeInstalls.sevenDays;
-        document.getElementById("active30").textContent = data.activeInstalls.thirtyDays;
-        document.getElementById("items").textContent = data.scanTotals.items_scanned;
-        document.getElementById("actions").textContent = data.scanTotals.action_needed;
-        document.getElementById("errors").textContent = data.scanTotals.errors;
+        document.getElementById("totalInstalls").textContent = data.totalInstalls;
+        document.getElementById("running1").textContent = data.runningApps.oneDay;
+        document.getElementById("running7").textContent = data.runningApps.sevenDays;
+        document.getElementById("running30").textContent = data.runningApps.thirtyDays;
         renderRows("versions", data.versions, row => [row.app_version, row.installs]);
-        renderRows("events", data.eventCounts, row => [row.event_type, row.count]);
-        renderRows("daily", data.daily, row => [row.day, row.active_installs, row.events]);
+        renderRows("daily", data.daily, row => [row.day, row.running_apps]);
       });
     function renderRows(id, rows, values) {
       document.getElementById(id).innerHTML = rows.map(row => "<tr>" + values(row).map(value => "<td>" + escapeHtml(String(value)) + "</td>").join("") + "</tr>").join("");

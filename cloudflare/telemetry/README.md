@@ -8,9 +8,13 @@ The app should only send anonymous, aggregate-safe data:
 - app version
 - OS version
 - event type
-- scan summary counts
 
 It must not send file paths, hashes, process names, usernames, machine names, API keys, or provider report links.
+
+The dashboard uses these events:
+
+- `app_install`: sent once per anonymous install ID; used for total installs.
+- `app_start`: sent when the app starts; used for running apps in 24h, 7d, and 30d windows.
 
 ## Deploy
 

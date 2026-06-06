@@ -280,7 +280,7 @@ public sealed class MainForm : Form
         };
         Shown += async (_, _) =>
         {
-            _ = SendTelemetryEventAsync("app_start");
+            _ = InitializeTelemetryAsync();
             ShowFirstRunSetupIfNeeded();
             if (startupScanFile is not null)
             {
@@ -1187,11 +1187,36 @@ public sealed class MainForm : Form
         });
     }
 
-    private async Task SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)
+    private async Task InitializeTelemetryAsync()
     {
         if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(TelemetryEndpointUrl))
         {
             return;
+        }
+
+        if (string.IsNullOrWhiteSpace(appSettings.AnonymousInstallId))
+        {
+            appSettings.AnonymousInstallId = Guid.NewGuid().ToString("N");
+            SaveCurrentAppSettings();
+        }
+
+        if (!appSettings.AppInstallReported)
+        {
+            if (await SendTelemetryEventAsync("app_install"))
+            {
+                appSettings.AppInstallReported = true;
+                SaveCurrentAppSettings();
+            }
+        }
+
+        _ = SendTelemetryEventAsync("app_start");
+    }
+
+    private async Task<bool> SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)
+    {
+        if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(TelemetryEndpointUrl))
+        {
+            return false;
         }
 
         if (string.IsNullOrWhiteSpace(appSettings.AnonymousInstallId))
@@ -1215,10 +1240,12 @@ public sealed class MainForm : Form
             };
             using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
             using var response = await http.PostAsync(TelemetryEndpointUrl, content);
+            return response.IsSuccessStatusCode;
         }
         catch
         {
             // Anonymous telemetry is best-effort and must never interrupt protection.
+            return false;
         }
     }
 
@@ -6889,6 +6916,7 @@ public sealed class MainForm : Form
         public bool AutoUpdateChecks { get; set; }
         public bool TelemetryEnabled { get; set; } = true;
         public string AnonymousInstallId { get; set; } = "";
+        public bool AppInstallReported { get; set; }
         public bool UseSystemDefaultColors { get; set; }
         public string ColorMode { get; set; } = ColorModeLight;
         public bool FirstRunSetupShown { get; set; }

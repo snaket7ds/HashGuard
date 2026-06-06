@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.41 - 2026-06-06
+
+- Added a one-time anonymous `app_install` telemetry event per install ID so install counts are based on unique installed app IDs.
+- Changed the Cloudflare usage dashboard to focus on app installs, installed versions, and apps running by unique install ID; scan totals are no longer shown.
+
 ## v1.0.40 - 2026-06-06
 
 - Wired anonymous usage reporting to the Cloudflare Worker endpoint so updated clients can report active app usage when reporting is enabled.
