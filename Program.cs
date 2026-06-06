@@ -302,7 +302,7 @@ internal static class FirstRunSetup
         var shortcut = new CheckBox
         {
             Text = "Create a Desktop shortcut",
-            Checked = true,
+            Checked = false,
             AutoSize = false,
             Height = 28,
             Dock = DockStyle.Top,

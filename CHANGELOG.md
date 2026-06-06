@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.35 - 2026-06-06
+
+- Changed first-run setup so Desktop shortcut creation is unchecked by default.
+- Updated GitHub release automation to publish only updater assets and avoid re-adding installer files to updater releases.
+
 ## v1.0.34 - 2026-06-06
 
 - Fixed Review Queue ignore actions so any selected file row with a SHA-256 hash can be ignored and removed from needs-review immediately.
