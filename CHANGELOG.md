@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.34 - 2026-06-06
+
+- Fixed Review Queue ignore actions so any selected file row with a SHA-256 hash can be ignored and removed from needs-review immediately.
+
 ## v1.0.33 - 2026-06-06
 
 - Consolidated first-run setup into one options dialog for certificate trust, Program Files install, Desktop shortcut creation, and original-file cleanup.

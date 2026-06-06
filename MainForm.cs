@@ -5894,12 +5894,7 @@ public sealed class MainForm : Form
 
         return sourceView.SelectedItems
             .Cast<ListViewItem>()
-            .Where(item =>
-            {
-                var malicious = int.TryParse(GetSubItemText(item, ColMalicious), out var mal) ? mal : 0;
-                var suspicious = int.TryParse(GetSubItemText(item, ColSuspicious), out var susp) ? susp : 0;
-                return malicious + suspicious > 0 && !string.IsNullOrWhiteSpace(GetSubItemText(item, ColSha256));
-            })
+            .Where(item => !string.IsNullOrWhiteSpace(GetSubItemText(item, ColSha256)))
             .Select(item => GetSubItemText(item, ColSha256))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -5924,14 +5919,14 @@ public sealed class MainForm : Form
 
         if (hashes.Count == 0)
         {
-            MessageBox.Show(this, "Select one or more detected items with SHA-256 hashes.", "No detection selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "Select one or more file items with SHA-256 hashes.", "No file selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         var accepted = MessageBox.Show(
             this,
-            $"Ignore {hashes.Count} detection(s) in future scans?",
-            "Ignore detections",
+            $"Ignore {hashes.Count} file hash(es) in future scans?",
+            "Ignore files",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
         if (accepted != DialogResult.Yes)
@@ -5959,7 +5954,7 @@ public sealed class MainForm : Form
         SaveIgnoredHashes();
         ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
-        statusLabel.Text = $"{hashes.Count} detection(s) ignored. Future scans will mark those hashes as ignored.";
+        statusLabel.Text = $"{hashes.Count} file hash(es) ignored. Future scans will mark those hashes as ignored.";
     }
 
     private void ClearSelectedIgnoreFlags(ListView sourceView, List<string> hashes)
