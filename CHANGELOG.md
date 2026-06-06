@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.43 - 2026-06-06
+
+- Added an anonymous `app_ping` heartbeat so the Cloudflare dashboard can show App Running Live from unique install IDs seen in the last 10 minutes.
+
 ## v1.0.42 - 2026-06-06
 
 - Fixed Ignore so selected Review Queue rows without SHA-256 hashes, such as scan-error rows, can be ignored by file path instead of showing "No file selected."

@@ -1,5 +1,5 @@
 #define MyAppName "HashGuard"
-#define MyAppVersion "1.0.42"
+#define MyAppVersion "1.0.43"
 #define MyAppPublisher "snaket7ds"
 #define MyAppExeName "HashGuard.exe"
 

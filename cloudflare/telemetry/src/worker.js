@@ -1,4 +1,4 @@
-const ALLOWED_EVENTS = new Set(["app_install", "app_start", "scan_complete"]);
+const ALLOWED_EVENTS = new Set(["app_install", "app_start", "app_ping", "scan_complete"]);
 
 export default {
   async fetch(request, env) {
@@ -82,12 +82,14 @@ async function recordEvent(request, env) {
 }
 
 async function buildSummary(env) {
+  const sinceLive = isoMinutesAgo(10);
   const since1Day = isoHoursAgo(24);
   const since7Days = isoHoursAgo(24 * 7);
   const since30Days = isoHoursAgo(24 * 30);
 
-  const [totalInstalls, running1, running7, running30, versions, daily] = await Promise.all([
+  const [totalInstalls, liveRunning, running1, running7, running30, versions, daily] = await Promise.all([
     scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_install'"),
+    scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type IN ('app_start', 'app_ping') AND received_at >= ?", sinceLive),
     scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_start' AND received_at >= ?", since1Day),
     scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_start' AND received_at >= ?", since7Days),
     scalar(env, "SELECT COUNT(DISTINCT install_id) AS value FROM events WHERE event_type = 'app_start' AND received_at >= ?", since30Days),
@@ -126,6 +128,7 @@ async function buildSummary(env) {
     generatedAt: new Date().toISOString(),
     totalInstalls,
     runningApps: {
+      live: liveRunning,
       oneDay: running1,
       sevenDays: running7,
       thirtyDays: running30,
@@ -167,10 +170,11 @@ function renderDashboard() {
   <main>
     <div class="grid">
       <div class="card"><h2>App Installs</h2><div class="metric" id="totalInstalls">-</div></div>
+      <div class="card"><h2>App Running Live</h2><div class="metric" id="runningLive">-</div></div>
       <div class="card"><h2>Apps Running 24h</h2><div class="metric" id="running1">-</div></div>
-      <div class="card"><h2>Apps Running 7d</h2><div class="metric" id="running7">-</div></div>
     </div>
     <div class="grid">
+      <div class="card"><h2>Apps Running 7d</h2><div class="metric" id="running7">-</div></div>
       <div class="card"><h2>Apps Running 30d</h2><div class="metric" id="running30">-</div></div>
     </div>
     <section><h2>Installed Versions</h2><table><thead><tr><th>Version</th><th>Unique Installs</th></tr></thead><tbody id="versions"></tbody></table></section>
@@ -183,6 +187,7 @@ function renderDashboard() {
       .then(data => {
         document.getElementById("generated").textContent = "Generated " + data.generatedAt;
         document.getElementById("totalInstalls").textContent = data.totalInstalls;
+        document.getElementById("runningLive").textContent = data.runningApps.live;
         document.getElementById("running1").textContent = data.runningApps.oneDay;
         document.getElementById("running7").textContent = data.runningApps.sevenDays;
         document.getElementById("running30").textContent = data.runningApps.thirtyDays;
@@ -241,4 +246,8 @@ function numberValue(value) {
 
 function isoHoursAgo(hours) {
   return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+}
+
+function isoMinutesAgo(minutes) {
+  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
 }

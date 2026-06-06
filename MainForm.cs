@@ -139,6 +139,7 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer processMonitorTimer = new() { Interval = 5000 };
     private readonly System.Windows.Forms.Timer updateCheckTimer = new() { Interval = 60000 };
     private readonly System.Windows.Forms.Timer allFileScanTimer = new() { Interval = 15000 };
+    private readonly System.Windows.Forms.Timer telemetryHeartbeatTimer = new() { Interval = 300000 };
     private readonly string? startupScanFile;
     private readonly bool startupMinimized;
     private readonly int closedOlderInstances;
@@ -255,6 +256,7 @@ public sealed class MainForm : Form
         processMonitorTimer.Tick += async (_, _) => await ScanNewProcessFilesAsync();
         allFileScanTimer.Tick += async (_, _) => await ScanQueuedAllFileAsync();
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
+        telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
         settingsButton.Click += (_, _) => ShowSettingsDialog();
         uploadUnknownBox.CheckedChanged += (_, _) => ConfirmUploads();
@@ -279,6 +281,7 @@ public sealed class MainForm : Form
         FormClosed += (_, _) =>
         {
             scanPipeCancellation.Cancel();
+            telemetryHeartbeatTimer.Stop();
             StopAllFileWatchers();
         };
         Shown += async (_, _) =>
@@ -1213,6 +1216,7 @@ public sealed class MainForm : Form
         }
 
         _ = SendTelemetryEventAsync("app_start");
+        telemetryHeartbeatTimer.Start();
     }
 
     private async Task<bool> SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)

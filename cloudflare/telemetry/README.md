@@ -15,6 +15,7 @@ The dashboard uses these events:
 
 - `app_install`: sent once per anonymous install ID; used for total installs.
 - `app_start`: sent when the app starts; used for running apps in 24h, 7d, and 30d windows.
+- `app_ping`: sent every five minutes while the app is open; used for the live running count.
 
 ## Deploy
 
