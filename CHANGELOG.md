@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.37 - 2026-06-06
+
+- Fixed ignored file hashes so high-risk unknown items stay out of the Review Queue on future scans.
+- Kept ignored status out of the scan cache so clearing an ignore flag restores the original scan status.
+
 ## v1.0.36 - 2026-06-06
 
 - Fixed scans failing at startup when local free API quota state was stale or malformed.

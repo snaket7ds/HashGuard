@@ -3619,12 +3619,13 @@ public sealed class MainForm : Form
 
     private void ApplyIgnoredHash(ScanResult result)
     {
-        if (!string.IsNullOrWhiteSpace(result.Sha256) && ignoredHashes.Contains(result.Sha256) && result.IsDetection)
+        if (!string.IsNullOrWhiteSpace(result.Sha256) && ignoredHashes.Contains(result.Sha256))
         {
+            result.StatusBeforeIgnore = result.Status;
             result.Status = "ignored";
             result.Notes = string.IsNullOrWhiteSpace(result.Notes)
-                ? "Detection ignored by user."
-                : $"{result.Notes}; Detection ignored by user.";
+                ? "File hash ignored by user."
+                : $"{result.Notes}; File hash ignored by user.";
         }
     }
 
@@ -3984,7 +3985,7 @@ public sealed class MainForm : Form
     private static bool ResultIsHandled(ScanResult result)
     {
         return string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase)
-            || result.Notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || HasIgnoreNote(result.Notes)
             || result.Notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -4327,7 +4328,7 @@ public sealed class MainForm : Form
     {
         return string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase)
             || GetSubItemText(item, ColNotes).StartsWith("Handled:", StringComparison.OrdinalIgnoreCase)
-            || GetSubItemText(item, ColNotes).Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || HasIgnoreNote(GetSubItemText(item, ColNotes))
             || GetSubItemText(item, ColNotes).Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -5913,7 +5914,7 @@ public sealed class MainForm : Form
     {
         if (sourceView.SelectedIndices.Count == 0)
         {
-            MessageBox.Show(this, "Select a detected row to ignore.", "No detection selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "Select a file row to ignore.", "No file selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -5941,12 +5942,13 @@ public sealed class MainForm : Form
             MarkIgnoredRows(resultsView, sha256);
             foreach (var result in results.Where(result => string.Equals(result.Sha256, sha256, StringComparison.OrdinalIgnoreCase)))
             {
+                result.StatusBeforeIgnore = result.Status;
                 result.Status = "ignored";
-                if (!result.Notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase))
+                if (!HasIgnoreNote(result.Notes))
                 {
                     result.Notes = string.IsNullOrWhiteSpace(result.Notes)
-                        ? "Detection ignored by user."
-                        : $"{result.Notes}; Detection ignored by user.";
+                        ? "File hash ignored by user."
+                        : $"{result.Notes}; File hash ignored by user.";
                 }
             }
         }
@@ -5961,7 +5963,7 @@ public sealed class MainForm : Form
     {
         var accepted = MessageBox.Show(
             this,
-            $"Clear the ignore flag for {hashes.Count} detection(s)?",
+            $"Clear the ignore flag for {hashes.Count} file hash(es)?",
             "Clear ignore flag",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
@@ -5977,7 +5979,12 @@ public sealed class MainForm : Form
             MarkUnignoredRows(resultsView, sha256);
             foreach (var result in results.Where(result => string.Equals(result.Sha256, sha256, StringComparison.OrdinalIgnoreCase)))
             {
-                result.Status = result.IsDetection ? "detected" : "clean";
+                result.Status = !string.IsNullOrWhiteSpace(result.StatusBeforeIgnore)
+                    ? result.StatusBeforeIgnore
+                    : result.IsDetection
+                        ? "detected"
+                        : "unknown";
+                result.StatusBeforeIgnore = "";
                 result.Notes = RemoveIgnoreNote(result.Notes);
                 if (ResultNeedsAction(result))
                 {
@@ -6009,11 +6016,11 @@ public sealed class MainForm : Form
 
             row.Text = "ignored";
             var notes = GetSubItemText(row, ColNotes);
-            row.SubItems[ColNotes].Text = notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            row.SubItems[ColNotes].Text = HasIgnoreNote(notes)
                 ? notes
                 : string.IsNullOrWhiteSpace(notes)
-                    ? "Detection ignored by user."
-                    : $"{notes}; Detection ignored by user.";
+                    ? "File hash ignored by user."
+                    : $"{notes}; File hash ignored by user.";
             ApplyResultRowColor(row);
         }
     }
@@ -6048,7 +6055,19 @@ public sealed class MainForm : Form
 
         return string.Join("; ",
             notes.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Where(note => !note.Equals("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)));
+                .Where(note => !IsIgnoreNote(note)));
+    }
+
+    private static bool HasIgnoreNote(string notes)
+    {
+        return notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || notes.Contains("File hash ignored by user.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsIgnoreNote(string note)
+    {
+        return note.Equals("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || note.Equals("File hash ignored by user.", StringComparison.OrdinalIgnoreCase);
     }
 
     private void OpenSelectedReport(ListView sourceView)
@@ -6322,15 +6341,19 @@ public sealed class MainForm : Form
 
         public void Set(ScanResult result)
         {
+            var cacheStatus = string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(result.StatusBeforeIgnore)
+                    ? result.StatusBeforeIgnore
+                    : result.Status;
             entries[result.Sha256] = new CacheEntry
             {
-                Status = result.Status,
+                Status = cacheStatus,
                 Malicious = result.Malicious,
                 Suspicious = result.Suspicious,
                 Harmless = result.Harmless,
                 Undetected = result.Undetected,
                 Link = result.Link,
-                Notes = result.Notes,
+                Notes = RemoveIgnoreNote(result.Notes),
                 CheckedAtUtc = DateTimeOffset.UtcNow,
                 VirusTotalDeferred = result.VirusTotalDeferred,
             };
@@ -6902,6 +6925,7 @@ public sealed class MainForm : Form
         public double FileAgeDays { get; set; } = -1;
         public List<string> PersistenceSources { get; set; } = [];
         public bool VirusTotalDeferred { get; set; }
+        public string StatusBeforeIgnore { get; set; } = "";
         public bool IsDetection => Malicious > 0 || Suspicious > 0;
         public bool IsAlert => IsDetection && !string.Equals(Status, "ignored", StringComparison.OrdinalIgnoreCase);
 
