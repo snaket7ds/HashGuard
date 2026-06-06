@@ -6651,10 +6651,18 @@ public sealed class MainForm : Form
 
         public async Task LoadAsync()
         {
-            if (File.Exists(QuotaPath))
+            try
             {
-                await using var stream = File.OpenRead(QuotaPath);
-                state = await JsonSerializer.DeserializeAsync<QuotaState>(stream) ?? new QuotaState();
+                if (File.Exists(QuotaPath))
+                {
+                    await using var stream = File.OpenRead(QuotaPath);
+                    state = await JsonSerializer.DeserializeAsync<QuotaState>(stream) ?? new QuotaState();
+                }
+            }
+            catch
+            {
+                // Ignore stale or malformed quota data; it is local rate-limit bookkeeping.
+                state = new QuotaState();
             }
 
             ResetIfNewDay();
