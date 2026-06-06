@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.39 - 2026-06-06
+
+- Fixed ignored file hashes being re-added to the Review Queue when scan results were reused from the local provider cache.
+
 ## v1.0.38 - 2026-06-06
 
 - Added opt-in anonymous usage reporting settings and Cloudflare Worker/D1 dashboard scaffolding.

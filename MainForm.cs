@@ -3065,6 +3065,7 @@ public sealed class MainForm : Form
                 result.Link = string.Format(ReportUrl, result.Sha256);
                 result.ApplyCache(cachedEntry, "Skipped unchanged file");
                 result.Status = "clean/seen";
+                ApplyIgnoredHash(result);
                 ApplyRiskAndTrust(result);
                 return result;
             }
@@ -3079,6 +3080,7 @@ public sealed class MainForm : Form
                     result.Status = "clean/seen";
                     hashCache.SetFileState(result);
                     await hashCache.SaveAsync();
+                    ApplyIgnoredHash(result);
                     ApplyRiskAndTrust(result);
                     return result;
                 }
@@ -3088,6 +3090,7 @@ public sealed class MainForm : Form
                     result.ApplyCache(cached, "Recent cached provider state");
                     result.Status = cached.Status;
                     AppendResultNote(result, "Provider lookups skipped temporarily to reduce repeat API usage.");
+                    ApplyIgnoredHash(result);
                     ApplyRiskAndTrust(result);
                     return result;
                 }
@@ -3139,6 +3142,7 @@ public sealed class MainForm : Form
         {
             result.Status = "error";
             result.Notes = FormatScanError(ex);
+            ApplyIgnoredHash(result);
             ApplyRiskAndTrust(result);
             return result;
         }
