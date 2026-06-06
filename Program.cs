@@ -20,8 +20,6 @@ internal static class Program
             return;
         }
 
-        FirstRunSetup.EnsureCodeSigningCertificateTrusted();
-
         if (FirstRunSetup.RelaunchElevatedIfInstalled())
         {
             return;
@@ -75,7 +73,7 @@ internal static class FirstRunSetup
 {
     private const string InstallDirectory = @"C:\Program Files\HashGuard";
 
-    public static void EnsureCodeSigningCertificateTrusted()
+    public static void EnsureCodeSigningCertificateTrusted(bool promptBeforeInstall = true, bool showSuccessMessage = true)
     {
         X509Certificate2? certificate = null;
         try
@@ -86,22 +84,28 @@ internal static class FirstRunSetup
                 return;
             }
 
-            var choice = ShowTopMostMessageBox(
-                "HashGuard is signed with a local code-signing certificate that is not trusted by this Windows account yet.\n\nHashGuard can install this certificate into your Current User Trusted Root and Trusted Publishers stores so Windows can identify this build as signed by HashGuard on this PC.\n\nInstall the HashGuard local signing certificate now?",
-                "HashGuard Code Signing",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question);
-            if (choice != DialogResult.Yes)
+            if (promptBeforeInstall)
             {
-                return;
+                var choice = ShowTopMostMessageBox(
+                    "HashGuard is signed with a local code-signing certificate that is not trusted by this Windows account yet.\n\nHashGuard can install this certificate into your Current User Trusted Root and Trusted Publishers stores so Windows can identify this build as signed by HashGuard on this PC.\n\nInstall the HashGuard local signing certificate now?",
+                    "HashGuard Code Signing",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+                if (choice != DialogResult.Yes)
+                {
+                    return;
+                }
             }
 
             InstallCertificateForCurrentUser(certificate);
-            ShowTopMostMessageBox(
-                "The HashGuard local signing certificate was installed for the current Windows user.",
-                "HashGuard Code Signing",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            if (showSuccessMessage)
+            {
+                ShowTopMostMessageBox(
+                    "The HashGuard local signing certificate was installed for the current Windows user.",
+                    "HashGuard Code Signing",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
         }
         catch (Exception ex)
         {
@@ -129,28 +133,42 @@ internal static class FirstRunSetup
 
         if (args.Any(arg => string.Equals(arg, "--install", StringComparison.OrdinalIgnoreCase)))
         {
-            return IsAdministrator() ? InstallAndRelaunch() : RelaunchElevated("--install");
+            var installOptions = SetupOptions.FromArgs(args);
+            if (installOptions.TrustSigningCertificate)
+            {
+                EnsureCodeSigningCertificateTrusted(promptBeforeInstall: false, showSuccessMessage: false);
+            }
+
+            return IsAdministrator() ? InstallAndRelaunch(installOptions) : RelaunchElevated(BuildInstallArguments(installOptions));
         }
 
         if (File.Exists(MainForm.GetAppSettingsPath()))
         {
+            EnsureCodeSigningCertificateTrusted();
             return true;
         }
 
-        var choice = ShowTopMostMessageBox(
-            "HashGuard is not configured yet. Install to C:\\Program Files\\HashGuard and create Desktop/Start Menu shortcuts?\n\nChoose No to run portable from this folder.",
-            "HashGuard First Run",
-            MessageBoxButtons.YesNoCancel,
-            MessageBoxIcon.Question);
-
-        if (choice == DialogResult.Cancel)
+        var options = ShowFirstRunOptionsDialog();
+        if (options is null)
         {
             return false;
         }
 
-        if (choice == DialogResult.Yes)
+        if (options.TrustSigningCertificate)
         {
-            return IsAdministrator() ? InstallAndRelaunch() : RelaunchElevated("--install");
+            EnsureCodeSigningCertificateTrusted(promptBeforeInstall: false, showSuccessMessage: false);
+        }
+
+        if (options.InstallToProgramFiles)
+        {
+            return IsAdministrator() ? InstallAndRelaunch(options) : RelaunchElevated(BuildInstallArguments(options));
+        }
+
+        if (options.CreateDesktopShortcut)
+        {
+            CreateShortcut(
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "HashGuard.lnk"),
+                Application.ExecutablePath);
         }
 
         return ConfigurePortable();
@@ -166,6 +184,12 @@ internal static class FirstRunSetup
         {
             return null;
         }
+    }
+
+    private static bool IsCurrentExecutableCertificateTrustNeeded()
+    {
+        using var certificate = GetCurrentExecutableCertificate();
+        return certificate is not null && !IsCertificateTrustedForCurrentUser(certificate);
     }
 
     private static bool IsCertificateTrustedForCurrentUser(X509Certificate2 certificate)
@@ -226,7 +250,125 @@ internal static class FirstRunSetup
         return true;
     }
 
-    private static bool InstallAndRelaunch()
+    private static SetupOptions? ShowFirstRunOptionsDialog()
+    {
+        using var dialog = new Form
+        {
+            Text = "HashGuard First Run",
+            StartPosition = FormStartPosition.CenterScreen,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            ClientSize = new Size(660, 270),
+            MaximizeBox = false,
+            MinimizeBox = false,
+            TopMost = true,
+            ShowInTaskbar = true,
+        };
+
+        var title = new Label
+        {
+            Text = "Choose how HashGuard should set up this build.",
+            Dock = DockStyle.Top,
+            Height = 40,
+            Padding = new Padding(16, 12, 16, 0),
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+        };
+        var note = new Label
+        {
+            Text = "You can run portable, install to Program Files, trust the local signing certificate, and create a shortcut from one place.",
+            Dock = DockStyle.Top,
+            Height = 48,
+            Padding = new Padding(16, 2, 16, 0),
+            ForeColor = Color.DimGray,
+        };
+        var install = new CheckBox
+        {
+            Text = "Install HashGuard to C:\\Program Files\\HashGuard (If unchecked, app will run as portable)",
+            Checked = true,
+            AutoSize = false,
+            Height = 28,
+            Dock = DockStyle.Top,
+            Padding = new Padding(16, 0, 0, 0),
+        };
+        var trustCert = new CheckBox
+        {
+            Text = "Trust this build's local code-signing certificate for this Windows user",
+            Checked = IsCurrentExecutableCertificateTrustNeeded(),
+            Enabled = IsCurrentExecutableCertificateTrustNeeded(),
+            AutoSize = false,
+            Height = 28,
+            Dock = DockStyle.Top,
+            Padding = new Padding(16, 0, 0, 0),
+        };
+        var shortcut = new CheckBox
+        {
+            Text = "Create a Desktop shortcut",
+            Checked = true,
+            AutoSize = false,
+            Height = 28,
+            Dock = DockStyle.Top,
+            Padding = new Padding(16, 0, 0, 0),
+        };
+        var deleteOriginal = new CheckBox
+        {
+            Text = "Delete this original executable after installing",
+            Checked = false,
+            AutoSize = false,
+            Height = 28,
+            Dock = DockStyle.Top,
+            Padding = new Padding(16, 0, 0, 0),
+        };
+        var ok = new Button { Text = "Continue", DialogResult = DialogResult.OK, Width = 96, Height = 32 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 86, Height = 32 };
+        var buttons = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.RightToLeft,
+            Dock = DockStyle.Bottom,
+            Height = 54,
+            Padding = new Padding(16, 10, 16, 10),
+        };
+        buttons.Controls.Add(ok);
+        buttons.Controls.Add(cancel);
+
+        void RefreshDeleteOriginal()
+        {
+            deleteOriginal.Enabled = install.Checked;
+            if (!install.Checked)
+            {
+                deleteOriginal.Checked = false;
+            }
+        }
+
+        install.CheckedChanged += (_, _) => RefreshDeleteOriginal();
+        RefreshDeleteOriginal();
+
+        dialog.Controls.Add(buttons);
+        dialog.Controls.Add(deleteOriginal);
+        dialog.Controls.Add(shortcut);
+        dialog.Controls.Add(trustCert);
+        dialog.Controls.Add(install);
+        dialog.Controls.Add(note);
+        dialog.Controls.Add(title);
+        dialog.AcceptButton = ok;
+        dialog.CancelButton = cancel;
+
+        using var owner = CreateTopMostOwner();
+        owner.Show();
+        owner.Activate();
+        if (dialog.ShowDialog(owner) != DialogResult.OK)
+        {
+            return null;
+        }
+
+        return new SetupOptions
+        {
+            InstallToProgramFiles = install.Checked,
+            TrustSigningCertificate = trustCert.Checked,
+            CreateDesktopShortcut = shortcut.Checked,
+            DeleteOriginalAfterInstall = deleteOriginal.Checked,
+        };
+    }
+
+    private static bool InstallAndRelaunch(SetupOptions options)
     {
         try
         {
@@ -242,7 +384,7 @@ internal static class FirstRunSetup
             }
 
             Directory.CreateDirectory(Path.Combine(InstallDirectory, "config"));
-            if (ShouldCreateDesktopShortcut())
+            if (options.CreateDesktopShortcut)
             {
                 CreateShortcut(
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "HashGuard.lnk"),
@@ -253,13 +395,20 @@ internal static class FirstRunSetup
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs", "HashGuard.lnk"),
                 targetExe);
 
-            Process.Start(new ProcessStartInfo(targetExe, $"--post-install --delete-original \"{currentExe}\"") { UseShellExecute = true });
-            DeleteOriginalAfterExit(currentExe, targetExe);
+            var postInstallArgs = options.DeleteOriginalAfterInstall
+                ? $"--post-install --delete-original \"{currentExe}\""
+                : "--post-install";
+            Process.Start(new ProcessStartInfo(targetExe, postInstallArgs) { UseShellExecute = true });
+            if (options.DeleteOriginalAfterInstall)
+            {
+                DeleteOriginalAfterExit(currentExe, targetExe);
+            }
+
             return false;
         }
         catch (UnauthorizedAccessException)
         {
-            return RelaunchElevated("--install");
+            return RelaunchElevated(BuildInstallArguments(options));
         }
         catch (Exception ex)
         {
@@ -370,15 +519,25 @@ internal static class FirstRunSetup
             : argument;
     }
 
-    private static bool ShouldCreateDesktopShortcut()
+    private static string BuildInstallArguments(SetupOptions options)
     {
-        var choice = ShowTopMostMessageBox(
-            "Create a Desktop shortcut for HashGuard?",
-            "HashGuard Install",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Question);
+        var args = new List<string> { "--install" };
+        if (options.CreateDesktopShortcut)
+        {
+            args.Add("--create-desktop-shortcut");
+        }
 
-        return choice == DialogResult.Yes;
+        if (options.DeleteOriginalAfterInstall)
+        {
+            args.Add("--delete-original-after-install");
+        }
+
+        if (options.TrustSigningCertificate)
+        {
+            args.Add("--trust-signing-cert");
+        }
+
+        return string.Join(" ", args);
     }
 
     private static void CopyExistingDataDirectory(string directoryName, string currentExe)
@@ -543,5 +702,24 @@ internal static class FirstRunSetup
         shortcut.GetType().InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, shortcut, null);
         Marshal.FinalReleaseComObject(shortcut);
         Marshal.FinalReleaseComObject(shell);
+    }
+
+    private sealed class SetupOptions
+    {
+        public bool InstallToProgramFiles { get; init; }
+        public bool TrustSigningCertificate { get; init; }
+        public bool CreateDesktopShortcut { get; init; }
+        public bool DeleteOriginalAfterInstall { get; init; }
+
+        public static SetupOptions FromArgs(string[] args)
+        {
+            return new SetupOptions
+            {
+                InstallToProgramFiles = true,
+                TrustSigningCertificate = args.Any(arg => string.Equals(arg, "--trust-signing-cert", StringComparison.OrdinalIgnoreCase)),
+                CreateDesktopShortcut = args.Any(arg => string.Equals(arg, "--create-desktop-shortcut", StringComparison.OrdinalIgnoreCase)),
+                DeleteOriginalAfterInstall = args.Any(arg => string.Equals(arg, "--delete-original-after-install", StringComparison.OrdinalIgnoreCase)),
+            };
+        }
     }
 }

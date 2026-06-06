@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v1.0.33 - 2026-06-06
+
+- Consolidated first-run setup into one options dialog for certificate trust, Program Files install, Desktop shortcut creation, and original-file cleanup.
+- Clarified that leaving Program Files install unchecked runs HashGuard as a portable app.
+- Updated user-facing scan timestamps to use the computer's local AM/PM time without a fixed timezone label.
+- Improved Review Queue cleanup so ignored or quarantined detections are removed from needs-review status.
+- Kept ignored and quarantined detections counted as handled activity instead of action-needed items.
+
 ## v1.0.32 - 2026-06-05
 
 - Replaced the tray artwork with large status-only icons for clean, scanning, and action-needed states.

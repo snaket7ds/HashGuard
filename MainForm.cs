@@ -509,6 +509,7 @@ public sealed class MainForm : Form
         activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
         resultsView.SelectedIndexChanged += (_, _) =>
         {
+            ReconcileReviewQueue(updateSummary: false);
             var hasSelection = resultsView.SelectedItems.Count > 0;
             openReport.Enabled = hasSelection;
             openLocation.Enabled = hasSelection;
@@ -516,6 +517,8 @@ public sealed class MainForm : Form
             quarantineSelected.Enabled = hasSelection;
             UpdateIgnoreButtonText(resultsView, ignoreSelected);
         };
+        resultsView.Enter += (_, _) => ReconcileReviewQueue();
+        resultsView.MouseDown += (_, _) => ReconcileReviewQueue();
         openReport.Enabled = false;
         openLocation.Enabled = false;
         ignoreSelected.Enabled = false;
@@ -1748,7 +1751,7 @@ public sealed class MainForm : Form
             var alerts = unresolved.Where(result => result.IsAlert).ToList();
             var errors = unresolved.Count(result => result.Status == "error");
             var highRisk = unresolved.Count(result => result.RiskScore >= 70);
-            var lastScanTime = FormatCentralTime(DateTimeOffset.Now);
+            var lastScanTime = FormatComputerTime(DateTimeOffset.Now);
             SetDashboardState(
                 unresolved.Count > 0 ? "Action needed" : "Clean",
                 alerts.Count > 0
@@ -2182,18 +2185,9 @@ public sealed class MainForm : Form
         }
     }
 
-    private static string FormatCentralTime(DateTimeOffset timestamp)
+    private static string FormatComputerTime(DateTimeOffset timestamp)
     {
-        try
-        {
-            var central = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
-            return TimeZoneInfo.ConvertTime(timestamp, central).ToString("yyyy-MM-dd h:mm tt 'CST'");
-        }
-        catch
-        {
-            var central = TimeZoneInfo.FindSystemTimeZoneById("America/Chicago");
-            return TimeZoneInfo.ConvertTime(timestamp, central).ToString("yyyy-MM-dd h:mm tt 'CST'");
-        }
+        return timestamp.ToLocalTime().ToString("yyyy-MM-dd h:mm tt");
     }
 
     private static string FormatDisplayPath(string path, int maxLength = 86)
@@ -3787,6 +3781,67 @@ public sealed class MainForm : Form
         FitResultColumns(resultsView);
     }
 
+    private void ReconcileReviewQueue(bool updateSummary = true)
+    {
+        if (results.Count == 0)
+        {
+            UpdateResultsEmptyState();
+            return;
+        }
+
+        resultsView.BeginUpdate();
+        try
+        {
+            foreach (var item in resultsView.Items.Cast<ListViewItem>().ToList())
+            {
+                var result = FindResultForReviewQueueRow(item);
+                if (result is null || !ResultNeedsAction(result))
+                {
+                    resultsView.Items.Remove(item);
+                    continue;
+                }
+
+                item.Text = result.Status;
+                item.SubItems[ColRisk].Text = $"{result.RiskLevel} {result.RiskScore}";
+                item.SubItems[ColTrust].Text = result.TrustSummary;
+                item.SubItems[ColMalicious].Text = result.Malicious.ToString();
+                item.SubItems[ColSuspicious].Text = result.Suspicious.ToString();
+                item.SubItems[ColProcess].Text = result.ProcessNames;
+                item.SubItems[ColPids].Text = result.Pids;
+                item.SubItems[ColSha256].Text = result.Sha256;
+                item.SubItems[ColPath].Text = result.Path;
+                item.SubItems[ColNotes].Text = BuildReviewRecommendation(result);
+                ApplyResultRowColor(item);
+            }
+
+            foreach (var result in results.Where(ResultNeedsAction))
+            {
+                AddReviewQueueRow(result);
+            }
+        }
+        finally
+        {
+            resultsView.EndUpdate();
+        }
+
+        UpdateResultsEmptyState();
+        FitResultColumns(resultsView);
+        if (updateSummary)
+        {
+            UpdateSummary();
+        }
+    }
+
+    private ScanResult? FindResultForReviewQueueRow(ListViewItem item)
+    {
+        var sha256 = GetSubItemText(item, ColSha256);
+        var path = GetSubItemText(item, ColPath);
+        return results.FirstOrDefault(result =>
+            !string.IsNullOrWhiteSpace(sha256)
+                ? string.Equals(result.Sha256, sha256, StringComparison.OrdinalIgnoreCase)
+                : string.Equals(result.Path, path, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string BuildReviewRecommendation(ScanResult result)
     {
         if (ResultIsHandled(result))
@@ -3944,7 +3999,7 @@ public sealed class MainForm : Form
             using var writer = new StreamWriter(logPath, append: true, Encoding.UTF8);
             if (writeHeader)
             {
-                writer.WriteLine("timestamp,status,risk_score,risk_level,trust,provider_results,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes");
+                writer.WriteLine("timestamp_computer_time,status,risk_score,risk_level,trust,provider_results,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes");
             }
 
             writer.WriteLine(string.Join(",", new[]
@@ -4271,6 +4326,7 @@ public sealed class MainForm : Form
     private static bool IsHandledActivityItem(ListViewItem item)
     {
         return string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase)
+            || GetSubItemText(item, ColNotes).StartsWith("Handled:", StringComparison.OrdinalIgnoreCase)
             || GetSubItemText(item, ColNotes).Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
             || GetSubItemText(item, ColNotes).Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
     }
@@ -5230,7 +5286,7 @@ public sealed class MainForm : Form
 
         SaveQuarantineManifest(manifest);
         statusLabel.Text = $"Quarantined {moved} file(s).";
-        UpdateResultsEmptyState();
+        ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
         if (failures.Count > 0)
         {
@@ -5730,7 +5786,7 @@ public sealed class MainForm : Form
             using var writer = new StreamWriter(logPath, append: true, Encoding.UTF8);
             if (writeHeader)
             {
-                writer.WriteLine("timestamp,action,source_path,target_path,details");
+                writer.WriteLine("timestamp_computer_time,action,source_path,target_path,details");
             }
 
             writer.WriteLine(string.Join(",", new[]
@@ -5901,7 +5957,7 @@ public sealed class MainForm : Form
         }
 
         SaveIgnoredHashes();
-        UpdateResultsEmptyState();
+        ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
         statusLabel.Text = $"{hashes.Count} detection(s) ignored. Future scans will mark those hashes as ignored.";
     }
@@ -5936,7 +5992,7 @@ public sealed class MainForm : Form
         }
 
         SaveIgnoredHashes();
-        UpdateResultsEmptyState();
+        ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
         statusLabel.Text = $"{hashes.Count} ignore flag(s) cleared.";
     }

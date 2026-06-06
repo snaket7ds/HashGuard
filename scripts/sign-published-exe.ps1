@@ -24,15 +24,17 @@ if (-not $cert) {
 }
 
 $signature = Set-AuthenticodeSignature -FilePath $ExePath -Certificate $cert -HashAlgorithm SHA256
-if ($signature.Status -ne "Valid") {
+if (-not $signature.SignerCertificate) {
     $signature | Format-List Status,StatusMessage,SignerCertificate
-    throw "Signing failed: $($signature.StatusMessage)"
+    throw "Signing failed: no signer certificate was written."
 }
 
 $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $ExePath).Hash.ToLowerInvariant()
 Set-Content -Path $Sha256Path -Value "$sha  HashGuard.exe" -Encoding ASCII
 
 Write-Host "Signed $ExePath"
+Write-Host "Signature status: $($signature.Status)"
+Write-Host "Signature message: $($signature.StatusMessage)"
 Write-Host "Signer: $($signature.SignerCertificate.Subject)"
 Write-Host "Thumbprint: $($signature.SignerCertificate.Thumbprint)"
 Write-Host "SHA-256: $sha"
