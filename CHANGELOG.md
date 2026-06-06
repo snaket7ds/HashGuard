@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.40 - 2026-06-06
+
+- Wired anonymous usage reporting to the Cloudflare Worker endpoint so updated clients can report active app usage when reporting is enabled.
+
 ## v1.0.39 - 2026-06-06
 
 - Fixed ignored file hashes being re-added to the Review Queue when scan results were reused from the local provider cache.

@@ -37,7 +37,7 @@ public sealed class MainForm : Form
     private static readonly string CurrentVersion = GetCurrentVersion();
     private const string GitHubOwner = "snaket7ds";
     private const string GitHubRepo = "HashGuard";
-    private const string TelemetryEndpointUrl = "";
+    private const string TelemetryEndpointUrl = "https://damp-cloud-4908.rod-81a.workers.dev/events";
     private static readonly TimeSpan CleanCacheMaxAge = TimeSpan.FromDays(7);
     private static readonly TimeSpan UnknownCacheMaxAge = TimeSpan.FromHours(12);
     private static readonly TimeSpan ErrorCacheMaxAge = TimeSpan.FromHours(1);
