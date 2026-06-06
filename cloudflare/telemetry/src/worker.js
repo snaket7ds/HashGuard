@@ -100,14 +100,20 @@ async function buildSummary(env) {
         COUNT(*) AS installs
       FROM events latest
       INNER JOIN (
-        SELECT install_id, MAX(received_at) AS latest_received_at
-        FROM events
-        WHERE event_type = 'app_install'
-        GROUP BY install_id
+        SELECT latest_events.install_id, MAX(latest_events.received_at) AS latest_received_at
+        FROM events latest_events
+        INNER JOIN (
+          SELECT DISTINCT install_id
+          FROM events
+          WHERE event_type = 'app_install'
+        ) installed
+          ON latest_events.install_id = installed.install_id
+        WHERE latest_events.event_type IN ('app_install', 'app_start', 'app_ping')
+        GROUP BY latest_events.install_id
       ) grouped
         ON latest.install_id = grouped.install_id
         AND latest.received_at = grouped.latest_received_at
-      WHERE latest.event_type = 'app_install'
+      WHERE latest.event_type IN ('app_install', 'app_start', 'app_ping')
       GROUP BY latest.app_version
       ORDER BY installs DESC, latest.app_version DESC`
     ),
