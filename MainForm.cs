@@ -32,6 +32,7 @@ public sealed class MainForm : Form
     private const string ConfigFolderName = "config";
     private const string AppSettingsFileName = "settings.json";
     private const string IgnoredHashesFileName = "ignored-hashes.json";
+    private const string IgnoredPathsFileName = "ignored-paths.json";
     private const string QuarantineFolderName = "quarantine";
     private const string QuarantineManifestFileName = "quarantine-manifest.json";
     private static readonly string CurrentVersion = GetCurrentVersion();
@@ -128,6 +129,7 @@ public sealed class MainForm : Form
     private readonly HashCache hashCache = new();
     private readonly QuotaTracker quotaTracker = new();
     private readonly HashSet<string> ignoredHashes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> ignoredPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, ProcessFileState> monitoredProcessFiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<string> allFileScanQueue = new();
     private readonly HashSet<string> queuedAllFileScanPaths = new(StringComparer.OrdinalIgnoreCase);
@@ -232,6 +234,7 @@ public sealed class MainForm : Form
         closedOlderInstances = CloseOtherInstances();
         appSettings = LoadAppSettings();
         LoadIgnoredHashes();
+        LoadIgnoredPaths();
         colorModeBox.Items.AddRange(["Use Windows setting", "Light", "Dark"]);
         ApplyAppSettings();
         Text = "HashGuard";
@@ -3703,13 +3706,18 @@ public sealed class MainForm : Form
 
     private void ApplyIgnoredHash(ScanResult result)
     {
-        if (!string.IsNullOrWhiteSpace(result.Sha256) && ignoredHashes.Contains(result.Sha256))
+        var ignoredByHash = !string.IsNullOrWhiteSpace(result.Sha256) && ignoredHashes.Contains(result.Sha256);
+        var ignoredByPath = !string.IsNullOrWhiteSpace(result.Path) && ignoredPaths.Contains(result.Path);
+        if (ignoredByHash || ignoredByPath)
         {
             result.StatusBeforeIgnore = result.Status;
             result.Status = "ignored";
+            var ignoreNote = ignoredByHash ? "File hash ignored by user." : "File path ignored by user.";
             result.Notes = string.IsNullOrWhiteSpace(result.Notes)
-                ? "File hash ignored by user."
-                : $"{result.Notes}; File hash ignored by user.";
+                ? ignoreNote
+                : HasIgnoreNote(result.Notes)
+                    ? result.Notes
+                    : $"{result.Notes}; {ignoreNote}";
         }
     }
 
@@ -5126,6 +5134,11 @@ public sealed class MainForm : Form
         return Path.Combine(GetConfigDirectory(), IgnoredHashesFileName);
     }
 
+    private static string GetIgnoredPathsPath()
+    {
+        return Path.Combine(GetConfigDirectory(), IgnoredPathsFileName);
+    }
+
     private static string GetQuarantineDirectory()
     {
         return Path.Combine(GetConfigDirectory(), QuarantineFolderName);
@@ -5165,6 +5178,38 @@ public sealed class MainForm : Form
         File.WriteAllText(
             GetIgnoredHashesPath(),
             JsonSerializer.Serialize(ignoredHashes.OrderBy(hash => hash, StringComparer.OrdinalIgnoreCase), new JsonSerializerOptions { WriteIndented = true }),
+            Encoding.UTF8);
+    }
+
+    private void LoadIgnoredPaths()
+    {
+        ignoredPaths.Clear();
+        var path = GetIgnoredPathsPath();
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            var paths = JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path, Encoding.UTF8)) ?? [];
+            foreach (var ignoredPath in paths.Where(ignoredPath => !string.IsNullOrWhiteSpace(ignoredPath)))
+            {
+                ignoredPaths.Add(ignoredPath.Trim());
+            }
+        }
+        catch
+        {
+            // Ignore malformed ignored-path data; users can recreate it from the Review Queue.
+        }
+    }
+
+    private void SaveIgnoredPaths()
+    {
+        Directory.CreateDirectory(GetConfigDirectory());
+        File.WriteAllText(
+            GetIgnoredPathsPath(),
+            JsonSerializer.Serialize(ignoredPaths.OrderBy(path => path, StringComparer.OrdinalIgnoreCase), new JsonSerializerOptions { WriteIndented = true }),
             Encoding.UTF8);
     }
 
@@ -5958,25 +6003,25 @@ public sealed class MainForm : Form
 
     private void ToggleSelectedIgnoreFlag(ListView sourceView)
     {
-        var hashes = GetSelectedDetectionHashes(sourceView);
-        if (hashes.Count > 0 && hashes.All(sha256 => IsIgnoredHashSelected(sourceView, sha256)))
+        var targets = GetSelectedIgnoreTargets(sourceView);
+        if (targets.Count > 0 && targets.All(target => IsIgnoredTargetSelected(sourceView, target)))
         {
-            ClearSelectedIgnoreFlags(sourceView, hashes);
+            ClearSelectedIgnoreFlags(sourceView, targets);
             return;
         }
 
-        IgnoreSelectedDetection(sourceView, hashes);
+        IgnoreSelectedDetection(sourceView, targets);
     }
 
     private void UpdateIgnoreButtonText(ListView sourceView, Button button)
     {
-        var hashes = GetSelectedDetectionHashes(sourceView);
-        button.Text = hashes.Count > 0 && hashes.All(sha256 => IsIgnoredHashSelected(sourceView, sha256))
+        var targets = GetSelectedIgnoreTargets(sourceView);
+        button.Text = targets.Count > 0 && targets.All(target => IsIgnoredTargetSelected(sourceView, target))
             ? "Clear Ignore Flag"
             : "Ignore Selected";
     }
 
-    private static List<string> GetSelectedDetectionHashes(ListView sourceView)
+    private static List<IgnoreTarget> GetSelectedIgnoreTargets(ListView sourceView)
     {
         if (sourceView.SelectedIndices.Count == 0)
         {
@@ -5985,22 +6030,35 @@ public sealed class MainForm : Form
 
         return sourceView.SelectedItems
             .Cast<ListViewItem>()
-            .Where(item => !string.IsNullOrWhiteSpace(GetSubItemText(item, ColSha256)))
-            .Select(item => GetSubItemText(item, ColSha256))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(item =>
+            {
+                var sha256 = GetSubItemText(item, ColSha256);
+                return !string.IsNullOrWhiteSpace(sha256)
+                    ? new IgnoreTarget("hash", sha256)
+                    : new IgnoreTarget("path", GetSubItemText(item, ColPath));
+            })
+            .Where(target => !string.IsNullOrWhiteSpace(target.Value))
+            .GroupBy(target => $"{target.Kind}:{target.Value}", StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
             .ToList();
     }
 
-    private bool IsIgnoredHashSelected(ListView sourceView, string sha256)
+    private bool IsIgnoredTargetSelected(ListView sourceView, IgnoreTarget target)
     {
-        return ignoredHashes.Contains(sha256)
-            || sourceView.SelectedItems
-                .Cast<ListViewItem>()
-                .Any(item => string.Equals(GetSubItemText(item, ColSha256), sha256, StringComparison.OrdinalIgnoreCase)
-                    && string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase));
+        return target.Kind == "hash"
+            ? ignoredHashes.Contains(target.Value)
+                || sourceView.SelectedItems
+                    .Cast<ListViewItem>()
+                    .Any(item => string.Equals(GetSubItemText(item, ColSha256), target.Value, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase))
+            : ignoredPaths.Contains(target.Value)
+                || sourceView.SelectedItems
+                    .Cast<ListViewItem>()
+                    .Any(item => string.Equals(GetSubItemText(item, ColPath), target.Value, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase));
     }
 
-    private void IgnoreSelectedDetection(ListView sourceView, List<string> hashes)
+    private void IgnoreSelectedDetection(ListView sourceView, List<IgnoreTarget> targets)
     {
         if (sourceView.SelectedIndices.Count == 0)
         {
@@ -6008,15 +6066,17 @@ public sealed class MainForm : Form
             return;
         }
 
-        if (hashes.Count == 0)
+        if (targets.Count == 0)
         {
-            MessageBox.Show(this, "Select one or more file items with SHA-256 hashes.", "No file selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "Select one or more file items with a SHA-256 hash or file path.", "No file selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
+        var hashCount = targets.Count(target => target.Kind == "hash");
+        var pathCount = targets.Count - hashCount;
         var accepted = MessageBox.Show(
             this,
-            $"Ignore {hashes.Count} file hash(es) in future scans?",
+            $"Ignore {DescribeIgnoreTargets(hashCount, pathCount)} in future scans?",
             "Ignore files",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -6025,35 +6085,47 @@ public sealed class MainForm : Form
             return;
         }
 
-        foreach (var sha256 in hashes)
+        foreach (var target in targets)
         {
-            ignoredHashes.Add(sha256);
-            MarkIgnoredRows(sourceView, sha256);
-            MarkIgnoredRows(resultsView, sha256);
-            foreach (var result in results.Where(result => string.Equals(result.Sha256, sha256, StringComparison.OrdinalIgnoreCase)))
+            if (target.Kind == "hash")
+            {
+                ignoredHashes.Add(target.Value);
+            }
+            else
+            {
+                ignoredPaths.Add(target.Value);
+            }
+
+            MarkIgnoredRows(sourceView, target);
+            MarkIgnoredRows(resultsView, target);
+            foreach (var result in results.Where(result => TargetMatchesResult(target, result)))
             {
                 result.StatusBeforeIgnore = result.Status;
                 result.Status = "ignored";
                 if (!HasIgnoreNote(result.Notes))
                 {
+                    var ignoreNote = target.Kind == "hash" ? "File hash ignored by user." : "File path ignored by user.";
                     result.Notes = string.IsNullOrWhiteSpace(result.Notes)
-                        ? "File hash ignored by user."
-                        : $"{result.Notes}; File hash ignored by user.";
+                        ? ignoreNote
+                        : $"{result.Notes}; {ignoreNote}";
                 }
             }
         }
 
         SaveIgnoredHashes();
+        SaveIgnoredPaths();
         ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
-        statusLabel.Text = $"{hashes.Count} file hash(es) ignored. Future scans will mark those hashes as ignored.";
+        statusLabel.Text = $"{DescribeIgnoreTargets(hashCount, pathCount)} ignored. Future scans will mark matching files as ignored.";
     }
 
-    private void ClearSelectedIgnoreFlags(ListView sourceView, List<string> hashes)
+    private void ClearSelectedIgnoreFlags(ListView sourceView, List<IgnoreTarget> targets)
     {
+        var hashCount = targets.Count(target => target.Kind == "hash");
+        var pathCount = targets.Count - hashCount;
         var accepted = MessageBox.Show(
             this,
-            $"Clear the ignore flag for {hashes.Count} file hash(es)?",
+            $"Clear the ignore flag for {DescribeIgnoreTargets(hashCount, pathCount)}?",
             "Clear ignore flag",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question);
@@ -6062,12 +6134,20 @@ public sealed class MainForm : Form
             return;
         }
 
-        foreach (var sha256 in hashes)
+        foreach (var target in targets)
         {
-            ignoredHashes.Remove(sha256);
-            MarkUnignoredRows(sourceView, sha256);
-            MarkUnignoredRows(resultsView, sha256);
-            foreach (var result in results.Where(result => string.Equals(result.Sha256, sha256, StringComparison.OrdinalIgnoreCase)))
+            if (target.Kind == "hash")
+            {
+                ignoredHashes.Remove(target.Value);
+            }
+            else
+            {
+                ignoredPaths.Remove(target.Value);
+            }
+
+            MarkUnignoredRows(sourceView, target);
+            MarkUnignoredRows(resultsView, target);
+            foreach (var result in results.Where(result => TargetMatchesResult(target, result)))
             {
                 result.Status = !string.IsNullOrWhiteSpace(result.StatusBeforeIgnore)
                     ? result.StatusBeforeIgnore
@@ -6084,16 +6164,17 @@ public sealed class MainForm : Form
         }
 
         SaveIgnoredHashes();
+        SaveIgnoredPaths();
         ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
-        statusLabel.Text = $"{hashes.Count} ignore flag(s) cleared.";
+        statusLabel.Text = $"{targets.Count} ignore flag(s) cleared.";
     }
 
-    private static void MarkIgnoredRows(ListView view, string sha256)
+    private static void MarkIgnoredRows(ListView view, IgnoreTarget target)
     {
         foreach (var row in view.Items.Cast<ListViewItem>().ToList())
         {
-            if (!string.Equals(GetSubItemText(row, ColSha256), sha256, StringComparison.OrdinalIgnoreCase))
+            if (!TargetMatchesRow(target, row))
             {
                 continue;
             }
@@ -6106,20 +6187,21 @@ public sealed class MainForm : Form
 
             row.Text = "ignored";
             var notes = GetSubItemText(row, ColNotes);
+            var ignoreNote = target.Kind == "hash" ? "File hash ignored by user." : "File path ignored by user.";
             row.SubItems[ColNotes].Text = HasIgnoreNote(notes)
                 ? notes
                 : string.IsNullOrWhiteSpace(notes)
-                    ? "File hash ignored by user."
-                    : $"{notes}; File hash ignored by user.";
+                    ? ignoreNote
+                    : $"{notes}; {ignoreNote}";
             ApplyResultRowColor(row);
         }
     }
 
-    private static void MarkUnignoredRows(ListView view, string sha256)
+    private static void MarkUnignoredRows(ListView view, IgnoreTarget target)
     {
         foreach (ListViewItem row in view.Items)
         {
-            if (!string.Equals(GetSubItemText(row, ColSha256), sha256, StringComparison.OrdinalIgnoreCase))
+            if (!TargetMatchesRow(target, row))
             {
                 continue;
             }
@@ -6134,6 +6216,31 @@ public sealed class MainForm : Form
                 : RemoveIgnoreNote(GetSubItemText(row, ColNotes));
             ApplyResultRowColor(row);
         }
+    }
+
+    private static bool TargetMatchesResult(IgnoreTarget target, ScanResult result)
+    {
+        return target.Kind == "hash"
+            ? string.Equals(result.Sha256, target.Value, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(result.Path, target.Value, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TargetMatchesRow(IgnoreTarget target, ListViewItem row)
+    {
+        return target.Kind == "hash"
+            ? string.Equals(GetSubItemText(row, ColSha256), target.Value, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(GetSubItemText(row, ColPath), target.Value, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string DescribeIgnoreTargets(int hashCount, int pathCount)
+    {
+        return (hashCount, pathCount) switch
+        {
+            (> 0, > 0) => $"{hashCount} file hash(es) and {pathCount} file path(s)",
+            (> 0, _) => $"{hashCount} file hash(es)",
+            (_, > 0) => $"{pathCount} file path(s)",
+            _ => "0 files",
+        };
     }
 
     private static string RemoveIgnoreNote(string notes)
@@ -6151,13 +6258,15 @@ public sealed class MainForm : Form
     private static bool HasIgnoreNote(string notes)
     {
         return notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
-            || notes.Contains("File hash ignored by user.", StringComparison.OrdinalIgnoreCase);
+            || notes.Contains("File hash ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || notes.Contains("File path ignored by user.", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsIgnoreNote(string note)
     {
         return note.Equals("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
-            || note.Equals("File hash ignored by user.", StringComparison.OrdinalIgnoreCase);
+            || note.Equals("File hash ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || note.Equals("File path ignored by user.", StringComparison.OrdinalIgnoreCase);
     }
 
     private void OpenSelectedReport(ListView sourceView)
@@ -6893,6 +7002,8 @@ public sealed class MainForm : Form
     }
 
     private sealed record CymruReputation(DateTimeOffset LastSeenUtc, int DetectionPercent);
+
+    private sealed record IgnoreTarget(string Kind, string Value);
 
     private enum TrayState
     {

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.42 - 2026-06-06
+
+- Fixed Ignore so selected Review Queue rows without SHA-256 hashes, such as scan-error rows, can be ignored by file path instead of showing "No file selected."
+
 ## v1.0.41 - 2026-06-06
 
 - Added a one-time anonymous `app_install` telemetry event per install ID so install counts are based on unique installed app IDs.
