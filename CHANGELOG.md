@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.38 - 2026-06-06
+
+- Added opt-in anonymous usage reporting settings and Cloudflare Worker/D1 dashboard scaffolding.
+- Added low-volume anonymous `app_start` and `scan_complete` event hooks with no file paths, hashes, process names, usernames, machine names, API keys, or report links.
+
 ## v1.0.37 - 2026-06-06
 
 - Fixed ignored file hashes so high-risk unknown items stay out of the Review Queue on future scans.

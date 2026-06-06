@@ -1,0 +1,8 @@
+name = "hashguard-telemetry"
+main = "src/worker.js"
+compatibility_date = "2026-06-06"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hashguard_telemetry"
+database_id = "replace-with-cloudflare-d1-database-id"

@@ -48,6 +48,12 @@ Open settings inside the app to configure:
 
 Settings are stored in the local `config` folder. Scan logs are stored in `logs`.
 
+## Anonymous Usage Reporting
+
+HashGuard can send optional anonymous usage events when enabled in Settings. The payload is limited to a random install ID, app version, OS version, event type, and scan summary counts. It does not include file paths, file hashes, process names, usernames, machine names, API keys, or provider report links.
+
+The Cloudflare Worker and D1 dashboard scaffold lives in `cloudflare/telemetry`. Deploy it first, then set `TelemetryEndpointUrl` in `MainForm.cs` to the deployed `/events` URL before publishing a release.
+
 ## Build
 
 HashGuard targets Windows and uses .NET 8 Windows Forms.

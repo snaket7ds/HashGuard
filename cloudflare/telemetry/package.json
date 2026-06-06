@@ -1,0 +1,13 @@
+{
+  "name": "hashguard-telemetry",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/worker.js",
+    "deploy": "wrangler deploy",
+    "schema": "wrangler d1 execute hashguard_telemetry --file=./schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

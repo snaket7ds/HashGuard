@@ -24,3 +24,7 @@ updates/
 release/
 dist/HashGuard.exe
 dist/HashGuard-*-win-x64.tar.gz
+
+# Cloudflare local deployment config
+cloudflare/telemetry/wrangler.toml
+.wrangler/

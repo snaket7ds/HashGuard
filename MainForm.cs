@@ -37,6 +37,7 @@ public sealed class MainForm : Form
     private static readonly string CurrentVersion = GetCurrentVersion();
     private const string GitHubOwner = "snaket7ds";
     private const string GitHubRepo = "HashGuard";
+    private const string TelemetryEndpointUrl = "";
     private static readonly TimeSpan CleanCacheMaxAge = TimeSpan.FromDays(7);
     private static readonly TimeSpan UnknownCacheMaxAge = TimeSpan.FromHours(12);
     private static readonly TimeSpan ErrorCacheMaxAge = TimeSpan.FromHours(1);
@@ -95,6 +96,7 @@ public sealed class MainForm : Form
     private readonly CheckBox mhrEnabledBox = new() { Text = "Use Team Cymru MHR", AutoSize = true, Checked = true };
     private readonly CheckBox hashCacheEnabledBox = new() { Text = "Enable Hash Cache", AutoSize = true, Checked = true };
     private readonly CheckBox autoUpdateChecksBox = new() { Text = "Check updates automatically", AutoSize = true };
+    private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = true };
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
     private readonly NumericUpDown timeoutBox = new() { Minimum = 10, Maximum = 300, Value = 60, Width = 64 };
     private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
@@ -268,6 +270,7 @@ public sealed class MainForm : Form
             SaveCurrentAppSettings();
             UpdateAutomaticUpdateTimer();
         };
+        telemetryEnabledBox.CheckedChanged += (_, _) => SaveCurrentAppSettings();
         Resize += (_, _) => MinimizeToTrayIfNeeded();
         FormClosing += (_, e) => CloseToTrayUnlessExiting(e);
         FormClosed += (_, _) =>
@@ -277,6 +280,7 @@ public sealed class MainForm : Form
         };
         Shown += async (_, _) =>
         {
+            _ = SendTelemetryEventAsync("app_start");
             ShowFirstRunSetupIfNeeded();
             if (startupScanFile is not null)
             {
@@ -935,6 +939,7 @@ public sealed class MainForm : Form
         var runElevated = new CheckBox { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
         var scanAllFiles = new CheckBox { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
+        var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
         var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
         var uploadUnknown = new CheckBox { Text = "Upload files missing from VirusTotal", Checked = uploadUnknownBox.Checked, AutoSize = true };
         var trustedPublishers = new TextBox
@@ -1028,6 +1033,7 @@ public sealed class MainForm : Form
         var behaviorPage = CreateSettingsPage(
             ("Scanning", [hashCache, autoProcessScan, scanAllFiles, runElevated]),
             ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, CreateSettingRow("Colors", colorMode), autoUpdates]),
+            ("Privacy", [telemetryEnabled]),
             ("Version and Updates", [updateInfo]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
 
@@ -1119,6 +1125,7 @@ public sealed class MainForm : Form
             DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
         }
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
+        telemetryEnabledBox.Checked = telemetryEnabled.Checked;
         appSettings.TrustedPublishers = trustedPublishers.Lines
             .Select(line => line.Trim())
             .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -1178,6 +1185,41 @@ public sealed class MainForm : Form
             $"Running elevated: {elevated}",
             "Use Update to check GitHub release notes and install a verified HashGuard.exe asset.",
         });
+    }
+
+    private async Task SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)
+    {
+        if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(TelemetryEndpointUrl))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(appSettings.AnonymousInstallId))
+        {
+            appSettings.AnonymousInstallId = Guid.NewGuid().ToString("N");
+            SaveCurrentAppSettings();
+        }
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{CurrentVersion}");
+            var payload = new
+            {
+                eventType,
+                installId = appSettings.AnonymousInstallId,
+                appVersion = CurrentVersion,
+                osVersion = Environment.OSVersion.VersionString,
+                sentAtUtc = DateTimeOffset.UtcNow,
+                data = data ?? [],
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(TelemetryEndpointUrl, content);
+        }
+        catch
+        {
+            // Anonymous telemetry is best-effort and must never interrupt protection.
+        }
     }
 
     private void ShowFirstRunSetupIfNeeded()
@@ -1624,6 +1666,17 @@ public sealed class MainForm : Form
             var errors = unresolved.Count(result => result.Status == "error");
             var highRisk = unresolved.Count(result => result.RiskScore >= 70);
             statusLabel.Text = $"Done. {unresolved.Count} action needed, {alerts.Count} detections, {unknown} unknown/uploaded, {errors} errors. Cache: {hashCache.Count} hashes.";
+            _ = SendTelemetryEventAsync(
+                "scan_complete",
+                new Dictionary<string, object>
+                {
+                    ["items_scanned"] = results.Count,
+                    ["action_needed"] = unresolved.Count,
+                    ["detections"] = alerts.Count,
+                    ["unknown"] = unknown,
+                    ["errors"] = errors,
+                    ["high_risk"] = highRisk,
+                });
             SetDashboardState(
                 unresolved.Count > 0 ? "Action needed" : "Clean",
                 alerts.Count > 0
@@ -4804,6 +4857,7 @@ public sealed class MainForm : Form
         }
 
         autoUpdateChecksBox.Checked = appSettings.AutoUpdateChecks;
+        telemetryEnabledBox.Checked = appSettings.TelemetryEnabled;
         colorModeBox.SelectedIndex = ColorModeToIndex(appSettings.ColorMode, appSettings.UseSystemDefaultColors);
         delayBox.Value = Math.Clamp(appSettings.DelaySeconds, (int)delayBox.Minimum, (int)delayBox.Maximum);
         timeoutBox.Value = Math.Clamp(appSettings.TimeoutSeconds, (int)timeoutBox.Minimum, (int)timeoutBox.Maximum);
@@ -4827,6 +4881,11 @@ public sealed class MainForm : Form
         appSettings.RunElevated = runElevatedBox.Checked;
         appSettings.ScanAllFiles = scanAllFilesBox.Checked;
         appSettings.AutoUpdateChecks = autoUpdateChecksBox.Checked;
+        appSettings.TelemetryEnabled = telemetryEnabledBox.Checked;
+        if (appSettings.TelemetryEnabled && string.IsNullOrWhiteSpace(appSettings.AnonymousInstallId))
+        {
+            appSettings.AnonymousInstallId = Guid.NewGuid().ToString("N");
+        }
         appSettings.ColorMode = IndexToColorMode(colorModeBox.SelectedIndex);
         appSettings.UseSystemDefaultColors = appSettings.ColorMode == ColorModeSystem;
         appSettings.DelaySeconds = (int)delayBox.Value;
@@ -6824,6 +6883,8 @@ public sealed class MainForm : Form
         public bool RunElevated { get; set; }
         public bool ScanAllFiles { get; set; }
         public bool AutoUpdateChecks { get; set; }
+        public bool TelemetryEnabled { get; set; } = true;
+        public string AnonymousInstallId { get; set; } = "";
         public bool UseSystemDefaultColors { get; set; }
         public string ColorMode { get; set; } = ColorModeLight;
         public bool FirstRunSetupShown { get; set; }
