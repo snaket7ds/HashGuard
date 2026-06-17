@@ -441,7 +441,7 @@ function renderDashboard() {
     }
 
     function escapeHtml(value) {
-      return value.replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;', "'": "&#39;" }[ch]));
+      return value.replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     }
   </script>
 </body>
