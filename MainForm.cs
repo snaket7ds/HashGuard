@@ -268,7 +268,8 @@ public sealed class MainForm : Form
         telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
         statusBadgePulseTimer.Tick += (_, _) =>
         {
-            statusBadgePulsePhase += 0.22f;
+            // Full top→bottom sweep about every ~1.1s at 40ms ticks.
+            statusBadgePulsePhase += 0.23f;
             if (statusBadgePulsePhase > MathF.PI * 2f)
             {
                 statusBadgePulsePhase -= MathF.PI * 2f;
@@ -887,7 +888,7 @@ public sealed class MainForm : Form
     private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state, float pulsePhase = 0f)
     {
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var maxSize = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
+        var size = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
         // Webroot-style traffic light: green secure, yellow attention, red critical, gray idle.
         var actionNeeded = state == "action";
         var scanning = state is "scanning" or "stopped";
@@ -900,27 +901,20 @@ public sealed class MainForm : Form
                     ? Color.FromArgb(176, 190, 197)
                     : BrandGreen;
 
-        // Pulse only on the main status badge while scanning (tray stays solid yellow).
-        var pulse = scanning ? (MathF.Sin(pulsePhase) + 1f) / 2f : 0f;
-        var size = scanning
-            ? (int)Math.Round(maxSize * (0.84f + 0.16f * pulse))
-            : maxSize;
-        size = Math.Max(16, size);
         var rect = new Rectangle((bounds.Width - size) / 2, (bounds.Height - size) / 2, size, size);
-
-        if (scanning)
-        {
-            var haloSize = (int)Math.Round(maxSize * (0.92f + 0.22f * pulse));
-            var haloRect = new Rectangle((bounds.Width - haloSize) / 2, (bounds.Height - haloSize) / 2, haloSize, haloSize);
-            var haloAlpha = (int)(55 + 100 * pulse);
-            using var halo = new SolidBrush(Color.FromArgb(haloAlpha, AttentionYellow));
-            graphics.FillEllipse(halo, haloRect);
-        }
 
         using var fill = new SolidBrush(fillColor);
         using var ring = new Pen(Color.FromArgb(40, 0, 0, 0), Math.Max(2, size / 28));
         graphics.FillEllipse(fill, rect);
         graphics.DrawEllipse(ring, rect);
+
+        if (scanning)
+        {
+            // Horizontal "searching files" scan line (main window only; tray stays solid yellow).
+            PaintScanningSearchLine(graphics, rect, pulsePhase);
+            return;
+        }
+
         var glyphColor = actionNeeded || idle ? Color.White : Color.FromArgb(30, 40, 30);
         using var pen = new Pen(glyphColor, Math.Max(3, size / 16)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
         if (actionNeeded)
@@ -932,25 +926,8 @@ public sealed class MainForm : Form
         }
         else if (idle)
         {
-            // Neutral ring for "not scanned yet"
             using var idlePen = new Pen(Color.White, Math.Max(3, size / 16));
             graphics.DrawEllipse(idlePen, rect.Left + size * 0.28f, rect.Top + size * 0.28f, size * 0.44f, size * 0.44f);
-        }
-        else if (scanning)
-        {
-            // Activity bars (static glyph; motion comes from the pulse scale/halo).
-            var cx = rect.Left + rect.Width / 2f;
-            var cy = rect.Top + rect.Height / 2f;
-            var barW = Math.Max(3f, size * 0.09f);
-            var gap = size * 0.12f;
-            using var barBrush = new SolidBrush(Color.FromArgb(30, 40, 30));
-            for (var i = -1; i <= 1; i++)
-            {
-                var h = size * (0.22f + 0.12f * (i == 0 ? 1.15f : 0.75f));
-                var x = cx + i * gap - barW / 2f;
-                var y = cy - h / 2f;
-                graphics.FillRectangle(barBrush, x, y, barW, h);
-            }
         }
         else
         {
@@ -960,6 +937,77 @@ public sealed class MainForm : Form
                 new PointF(rect.Left + rect.Width * 0.43f, rect.Top + rect.Height * 0.67f),
                 new PointF(rect.Left + rect.Width * 0.76f, rect.Top + rect.Height * 0.32f),
             });
+        }
+    }
+
+    /// <summary>
+    /// Draws a horizontal scan line that sweeps top→bottom over faint file-list rows,
+    /// clipped to the circular badge (antivirus-style "searching files" look).
+    /// </summary>
+    private static void PaintScanningSearchLine(Graphics graphics, Rectangle rect, float pulsePhase)
+    {
+        var state = graphics.Save();
+        try
+        {
+            using var clipPath = new System.Drawing.Drawing2D.GraphicsPath();
+            clipPath.AddEllipse(rect);
+            graphics.SetClip(clipPath);
+
+            // Faint "file rows" behind the beam.
+            var rowGap = Math.Max(5f, rect.Height / 9f);
+            using var rowPen = new Pen(Color.FromArgb(55, 40, 50, 20), 1.2f);
+            for (var y = rect.Top + rowGap * 0.85f; y < rect.Bottom - 2; y += rowGap)
+            {
+                var inset = rect.Width * 0.16f;
+                // Slightly varied row lengths look more like a file list.
+                var rowIndex = (int)((y - rect.Top) / rowGap);
+                var lengthScale = 0.55f + 0.35f * ((rowIndex * 37) % 5) / 4f;
+                graphics.DrawLine(
+                    rowPen,
+                    rect.Left + inset,
+                    y,
+                    rect.Left + inset + (rect.Width - inset * 2) * lengthScale,
+                    y);
+            }
+
+            // Continuous top→bottom progress (0..1), then wrap.
+            var progress = pulsePhase / (MathF.PI * 2f);
+            progress -= MathF.Floor(progress);
+            var scanY = rect.Top + progress * rect.Height;
+
+            // Soft trail above the beam (recently scanned area).
+            var trailHeight = Math.Max(10f, rect.Height * 0.28f);
+            var trailTop = Math.Max(rect.Top, scanY - trailHeight);
+            if (scanY > rect.Top + 1)
+            {
+                using var trail = new System.Drawing.Drawing2D.LinearGradientBrush(
+                    new PointF(rect.Left, trailTop),
+                    new PointF(rect.Left, scanY),
+                    Color.FromArgb(0, 255, 255, 255),
+                    Color.FromArgb(90, 255, 255, 255));
+                graphics.FillRectangle(trail, rect.Left, trailTop, rect.Width, scanY - trailTop);
+            }
+
+            // Bright horizontal search line + thin core.
+            var lineWidth = Math.Max(2.5f, rect.Height * 0.045f);
+            using var glowPen = new Pen(Color.FromArgb(160, 255, 255, 255), lineWidth * 2.4f)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            };
+            using var corePen = new Pen(Color.FromArgb(240, 30, 40, 20), lineWidth)
+            {
+                StartCap = System.Drawing.Drawing2D.LineCap.Round,
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            };
+            var x1 = rect.Left + rect.Width * 0.10f;
+            var x2 = rect.Right - rect.Width * 0.10f;
+            graphics.DrawLine(glowPen, x1, scanY, x2, scanY);
+            graphics.DrawLine(corePen, x1, scanY, x2, scanY);
+        }
+        finally
+        {
+            graphics.Restore(state);
         }
     }
 
