@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.49 - 2026-08-09
+
+- Scanning badge is static again (solid yellow with activity bars); no pulse or heartbeat animation.
+
 ## v1.0.48 - 2026-08-09
 
 - Scanning badge uses an ECG-style heartbeat line that sweeps left↔right over faint file rows (main window); tray stays solid yellow.

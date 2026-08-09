@@ -147,8 +147,6 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer updateCheckTimer = new() { Interval = 60000 };
     private readonly System.Windows.Forms.Timer allFileScanTimer = new() { Interval = 15000 };
     private readonly System.Windows.Forms.Timer telemetryHeartbeatTimer = new() { Interval = 300000 };
-    private readonly System.Windows.Forms.Timer statusBadgePulseTimer = new() { Interval = 40 };
-    private float statusBadgePulsePhase;
     private readonly string? startupScanFile;
     private readonly bool startupMinimized;
     private readonly int closedOlderInstances;
@@ -266,17 +264,6 @@ public sealed class MainForm : Form
         allFileScanTimer.Tick += async (_, _) => await ScanQueuedAllFileAsync();
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
         telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
-        statusBadgePulseTimer.Tick += (_, _) =>
-        {
-            // Full left→right→left heartbeat sweep about every ~1.4s at 40ms ticks.
-            statusBadgePulsePhase += 0.18f;
-            if (statusBadgePulsePhase > MathF.PI * 2f)
-            {
-                statusBadgePulsePhase -= MathF.PI * 2f;
-            }
-
-            statusDot.Invalidate();
-        };
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
         settingsButton.Click += (_, _) => ShowSettingsDialog();
         uploadUnknownBox.CheckedChanged += (_, _) => ConfirmUploads();
@@ -302,7 +289,6 @@ public sealed class MainForm : Form
         {
             scanPipeCancellation.Cancel();
             telemetryHeartbeatTimer.Stop();
-            statusBadgePulseTimer.Stop();
             StopAllFileWatchers();
         };
         Shown += async (_, _) =>
@@ -461,7 +447,7 @@ public sealed class MainForm : Form
         var statusCard = CreateSoftCardPanel();
         statusCard.Margin = new Padding(0, 0, 12, 0);
         statusCard.Padding = new Padding(18);
-        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "idle", statusBadgePulsePhase);
+        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "idle");
         statusDot.Width = 96;
         statusDot.Height = 96;
         statusDot.Margin = new Padding(0, 0, 18, 0);
@@ -885,7 +871,7 @@ public sealed class MainForm : Form
         view.Font = new Font("Segoe UI", 9, FontStyle.Regular);
     }
 
-    private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state, float pulsePhase = 0f)
+    private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state)
     {
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         var size = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
@@ -908,15 +894,13 @@ public sealed class MainForm : Form
         graphics.FillEllipse(fill, rect);
         graphics.DrawEllipse(ring, rect);
 
-        if (scanning)
-        {
-            // Horizontal "searching files" scan line (main window only; tray stays solid yellow).
-            PaintScanningSearchLine(graphics, rect, pulsePhase);
-            return;
-        }
-
         var glyphColor = actionNeeded || idle ? Color.White : Color.FromArgb(30, 40, 30);
-        using var pen = new Pen(glyphColor, Math.Max(3, size / 16)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
+        using var pen = new Pen(glyphColor, Math.Max(3, size / 16))
+        {
+            StartCap = System.Drawing.Drawing2D.LineCap.Round,
+            EndCap = System.Drawing.Drawing2D.LineCap.Round,
+            LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
+        };
         if (actionNeeded)
         {
             var centerX = rect.Left + rect.Width / 2f;
@@ -929,6 +913,22 @@ public sealed class MainForm : Form
             using var idlePen = new Pen(Color.White, Math.Max(3, size / 16));
             graphics.DrawEllipse(idlePen, rect.Left + size * 0.28f, rect.Top + size * 0.28f, size * 0.44f, size * 0.44f);
         }
+        else if (scanning)
+        {
+            // Static activity bars (no animation).
+            var cx = rect.Left + rect.Width / 2f;
+            var cy = rect.Top + rect.Height / 2f;
+            var barW = Math.Max(3f, size * 0.09f);
+            var gap = size * 0.12f;
+            using var barBrush = new SolidBrush(Color.FromArgb(30, 40, 30));
+            for (var i = -1; i <= 1; i++)
+            {
+                var h = size * (0.22f + 0.12f * (i == 0 ? 1.15f : 0.75f));
+                var x = cx + i * gap - barW / 2f;
+                var y = cy - h / 2f;
+                graphics.FillRectangle(barBrush, x, y, barW, h);
+            }
+        }
         else
         {
             graphics.DrawLines(pen, new[]
@@ -938,207 +938,6 @@ public sealed class MainForm : Form
                 new PointF(rect.Left + rect.Width * 0.76f, rect.Top + rect.Height * 0.32f),
             });
         }
-    }
-
-    /// <summary>
-    /// Draws an ECG-style heartbeat trace that sweeps left↔right over faint file rows,
-    /// clipped to the circular badge (main window only; tray stays solid yellow).
-    /// </summary>
-    private static void PaintScanningSearchLine(Graphics graphics, Rectangle rect, float pulsePhase)
-    {
-        var state = graphics.Save();
-        try
-        {
-            using var clipPath = new System.Drawing.Drawing2D.GraphicsPath();
-            clipPath.AddEllipse(rect);
-            graphics.SetClip(clipPath);
-
-            var insetX = rect.Width * 0.12f;
-            var insetY = rect.Height * 0.18f;
-            var left = rect.Left + insetX;
-            var right = rect.Right - insetX;
-            var midY = rect.Top + rect.Height * 0.52f;
-            var width = right - left;
-
-            // Faint "file list" rows under the ECG.
-            var rowGap = Math.Max(5f, rect.Height / 10f);
-            using var rowPen = new Pen(Color.FromArgb(48, 40, 50, 20), 1.1f);
-            for (var y = rect.Top + insetY; y < rect.Bottom - insetY; y += rowGap)
-            {
-                var rowIndex = (int)((y - rect.Top) / rowGap);
-                var lengthScale = 0.50f + 0.40f * ((rowIndex * 41) % 5) / 4f;
-                graphics.DrawLine(rowPen, left, y, left + width * lengthScale, y);
-            }
-
-            // 0..1 phase; bounce left→right→left for continuous L/R scanning.
-            var cycle = pulsePhase / (MathF.PI * 2f);
-            cycle -= MathF.Floor(cycle);
-            var bounce = cycle < 0.5f ? cycle * 2f : 2f - cycle * 2f; // 0→1→0
-            var headX = left + bounce * width;
-
-            // Full ECG path across the badge (stationary shape).
-            var points = BuildHeartbeatPolyline(left, right, midY, rect.Height);
-            if (points.Length < 2)
-            {
-                return;
-            }
-
-            // Dim baseline path (whole trace).
-            using var dimPen = new Pen(Color.FromArgb(70, 30, 40, 20), Math.Max(1.6f, rect.Height * 0.028f))
-            {
-                LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
-                StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                EndCap = System.Drawing.Drawing2D.LineCap.Round,
-            };
-            graphics.DrawLines(dimPen, points);
-
-            // Bright segment from left (or right when reversing) up to the moving head —
-            // always the "trail" behind the sweep direction.
-            var goingRight = cycle < 0.5f;
-            var litPoints = goingRight
-                ? points.Where(p => p.X <= headX + 0.5f).ToArray()
-                : points.Where(p => p.X >= headX - 0.5f).ToArray();
-
-            // Ensure head sits on the waveform.
-            var headY = SampleHeartbeatY(points, headX);
-            if (litPoints.Length >= 1)
-            {
-                var lit = new List<PointF>(litPoints.Length + 1);
-                if (goingRight)
-                {
-                    lit.AddRange(litPoints);
-                    if (lit.Count == 0 || Math.Abs(lit[^1].X - headX) > 0.5f)
-                    {
-                        lit.Add(new PointF(headX, headY));
-                    }
-                    else
-                    {
-                        lit[^1] = new PointF(headX, headY);
-                    }
-                }
-                else
-                {
-                    lit.Add(new PointF(headX, headY));
-                    lit.AddRange(litPoints);
-                }
-
-                if (lit.Count >= 2)
-                {
-                    var coreW = Math.Max(2.2f, rect.Height * 0.04f);
-                    using var glowPen = new Pen(Color.FromArgb(150, 255, 255, 255), coreW * 2.6f)
-                    {
-                        LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
-                        StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                        EndCap = System.Drawing.Drawing2D.LineCap.Round,
-                    };
-                    using var corePen = new Pen(Color.FromArgb(245, 25, 35, 15), coreW)
-                    {
-                        LineJoin = System.Drawing.Drawing2D.LineJoin.Round,
-                        StartCap = System.Drawing.Drawing2D.LineCap.Round,
-                        EndCap = System.Drawing.Drawing2D.LineCap.Round,
-                    };
-                    graphics.DrawLines(glowPen, lit.ToArray());
-                    graphics.DrawLines(corePen, lit.ToArray());
-                }
-            }
-
-            // Moving head cursor (bright bead).
-            var bead = Math.Max(3.5f, rect.Width * 0.045f);
-            using var beadGlow = new SolidBrush(Color.FromArgb(140, 255, 255, 255));
-            using var beadCore = new SolidBrush(Color.FromArgb(250, 30, 40, 20));
-            graphics.FillEllipse(beadGlow, headX - bead * 1.35f, headY - bead * 1.35f, bead * 2.7f, bead * 2.7f);
-            graphics.FillEllipse(beadCore, headX - bead, headY - bead, bead * 2f, bead * 2f);
-        }
-        finally
-        {
-            graphics.Restore(state);
-        }
-    }
-
-    private static PointF[] BuildHeartbeatPolyline(float left, float right, float midY, float badgeHeight)
-    {
-        // Normalized ECG-ish segments across 0..1 (baseline + QRS spike + recovery).
-        // yOffset is relative to midY; negative = up on screen.
-        var amp = badgeHeight * 0.22f;
-        ReadOnlySpan<(float x, float y)> keys =
-        [
-            (0.00f, 0.00f),
-            (0.10f, 0.00f),
-            (0.16f, -0.12f), // P
-            (0.22f, 0.00f),
-            (0.30f, 0.00f),
-            (0.34f, 0.18f),  // Q
-            (0.40f, -1.00f), // R peak
-            (0.46f, 0.28f),  // S
-            (0.52f, 0.00f),
-            (0.62f, 0.00f),
-            (0.70f, -0.22f), // T
-            (0.78f, 0.00f),
-            (0.88f, 0.00f),
-            (1.00f, 0.00f),
-        ];
-
-        var width = right - left;
-        var samples = Math.Max(48, (int)(width / 1.5f));
-        var points = new PointF[samples + 1];
-        for (var i = 0; i <= samples; i++)
-        {
-            var t = i / (float)samples;
-            var yNorm = SampleKeyframe(keys, t);
-            points[i] = new PointF(left + t * width, midY + yNorm * amp);
-        }
-
-        return points;
-    }
-
-    private static float SampleKeyframe(ReadOnlySpan<(float x, float y)> keys, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        for (var i = 0; i < keys.Length - 1; i++)
-        {
-            var a = keys[i];
-            var b = keys[i + 1];
-            if (t >= a.x && t <= b.x)
-            {
-                var u = (t - a.x) / Math.Max(0.0001f, b.x - a.x);
-                // Smoothstep for softer ECG corners.
-                u = u * u * (3f - 2f * u);
-                return a.y + (b.y - a.y) * u;
-            }
-        }
-
-        return keys[^1].y;
-    }
-
-    private static float SampleHeartbeatY(PointF[] points, float x)
-    {
-        if (points.Length == 0)
-        {
-            return 0f;
-        }
-
-        if (x <= points[0].X)
-        {
-            return points[0].Y;
-        }
-
-        if (x >= points[^1].X)
-        {
-            return points[^1].Y;
-        }
-
-        for (var i = 0; i < points.Length - 1; i++)
-        {
-            var a = points[i];
-            var b = points[i + 1];
-            if (x >= a.X && x <= b.X)
-            {
-                var u = (x - a.X) / Math.Max(0.0001f, b.X - a.X);
-                return a.Y + (b.Y - a.Y) * u;
-            }
-        }
-
-        return points[^1].Y;
     }
 
     private static Icon CreateTrayStatusIcon(TrayState state)
@@ -1928,20 +1727,6 @@ public sealed class MainForm : Form
                     : "Your device is secure";
         statusSubtitle.Text = subtitle;
         statusDot.Tag = actionNeeded ? "action" : scanning ? "scanning" : stopped ? "stopped" : "clean";
-        if (scanning)
-        {
-            if (!statusBadgePulseTimer.Enabled)
-            {
-                statusBadgePulsePhase = 0f;
-                statusBadgePulseTimer.Start();
-            }
-        }
-        else
-        {
-            statusBadgePulseTimer.Stop();
-            statusBadgePulsePhase = 0f;
-        }
-
         statusDot.Invalidate();
         if (actionNeeded)
         {
@@ -1950,7 +1735,6 @@ public sealed class MainForm : Form
         }
         else if (scanning)
         {
-            // Solid yellow tray icon (no pulse) — animation is main-window only.
             trayIcon.Icon = scanningTrayIcon;
             trayIcon.Text = "HashGuard - Checking";
         }
