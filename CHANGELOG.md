@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.48 - 2026-08-09
+
+- Scanning badge uses an ECG-style heartbeat line that sweeps left↔right over faint file rows (main window); tray stays solid yellow.
+
 ## v1.0.47 - 2026-08-09
 
 - Scanning badge uses a horizontal "searching files" scan line over faint file rows (main window); tray stays solid yellow.
