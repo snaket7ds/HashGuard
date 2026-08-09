@@ -127,26 +127,84 @@ internal static class HashGuardLogic
 
     public static bool MatchesActivityFilter(ActivityFilter filter, string status, string riskText, int malicious, int suspicious)
     {
-        if (string.Equals(status, "ignored", StringComparison.OrdinalIgnoreCase))
+        if (IsIgnoredStatus(status))
         {
             return filter is ActivityFilter.All or ActivityFilter.Clean;
         }
 
         return filter switch
         {
-            ActivityFilter.ActionNeeded => malicious + suspicious > 0
-                || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
-                || riskText.StartsWith("High", StringComparison.OrdinalIgnoreCase),
-            ActivityFilter.Unknown => string.Equals(status, "unknown", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "uploaded", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "limited access", StringComparison.OrdinalIgnoreCase),
-            ActivityFilter.Clean => string.Equals(status, "clean", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "clean/seen", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(status, "ignored", StringComparison.OrdinalIgnoreCase),
+            ActivityFilter.ActionNeeded => NeedsAction(status, riskText, malicious, suspicious),
+            ActivityFilter.Unknown => IsUnknownStatus(status),
+            ActivityFilter.Clean => IsCleanStatus(status),
             ActivityFilter.Errors => string.Equals(status, "error", StringComparison.OrdinalIgnoreCase),
             _ => true,
         };
     }
+
+    public static bool IsIgnoredStatus(string? status) =>
+        string.Equals(status, "ignored", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsCleanStatus(string? status) =>
+        string.Equals(status, "clean", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "clean/seen", StringComparison.OrdinalIgnoreCase)
+        || IsIgnoredStatus(status);
+
+    public static bool IsUnknownStatus(string? status) =>
+        string.Equals(status, "unknown", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "uploaded", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "limited access", StringComparison.OrdinalIgnoreCase);
+
+    public static bool NeedsAction(string? status, string? riskText, int malicious, int suspicious)
+    {
+        if (IsIgnoredStatus(status))
+        {
+            return false;
+        }
+
+        return malicious + suspicious > 0
+            || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
+            || (riskText?.StartsWith("High", StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    /// <summary>
+    /// True when notes indicate the file was moved to HashGuard quarantine.
+    /// </summary>
+    public static bool NoteIndicatesQuarantined(string? notes) =>
+        !string.IsNullOrWhiteSpace(notes)
+        && (notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase)
+            || notes.Contains("Quarantined", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether a selected review-queue row can be ignored by hash and/or path.
+    /// </summary>
+    public static bool CanIgnoreTarget(string? sha256, string? path, out string kind, out string value)
+    {
+        if (!string.IsNullOrWhiteSpace(sha256))
+        {
+            kind = "hash";
+            value = sha256.Trim();
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            kind = "path";
+            value = path.Trim();
+            return true;
+        }
+
+        kind = "";
+        value = "";
+        return false;
+    }
+
+    public static string RiskBucket(int riskScore) => riskScore switch
+    {
+        >= 70 => "High",
+        >= 40 => "Medium",
+        _ => "Low",
+    };
 
     private static string? NormalizeExecutablePath(string? path)
     {

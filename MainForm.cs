@@ -74,14 +74,20 @@ public sealed class MainForm : Form
     private const string ColorModeSystem = "system";
     private const string ColorModeLight = "light";
     private const string ColorModeDark = "dark";
-    private static readonly Color AccentGold = Color.FromArgb(255, 199, 44);
-    private static readonly Color SuccessGreen = Color.FromArgb(21, 128, 61);
-    private static readonly Color DangerRed = Color.FromArgb(185, 28, 28);
+    // Webroot-inspired SecureAnywhere palette (brand green primary, calm neutrals).
+    private static readonly Color BrandGreen = Color.FromArgb(125, 204, 38);      // #7DCC26 Webroot green
+    private static readonly Color BrandGreenDark = Color.FromArgb(90, 160, 20);
+    private static readonly Color AccentGold = BrandGreen; // primary CTA uses brand green
+    private static readonly Color SuccessGreen = Color.FromArgb(76, 175, 40);
+    private static readonly Color AttentionYellow = Color.FromArgb(255, 193, 7);
+    private static readonly Color DangerRed = Color.FromArgb(211, 47, 47);
+    private static readonly Color SoftBorder = Color.FromArgb(220, 226, 232);
+    private static readonly Color SoftAppBack = Color.FromArgb(242, 245, 247);
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
-    private readonly Button scanButton = new() { Text = "Run Scan", Width = 172, Height = 42, BackColor = AccentGold, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI", 10, FontStyle.Bold) };
-    private readonly Button updateButton = new() { Text = "Update", Width = 86, Height = 40, Font = new Font("Segoe UI", 9, FontStyle.Bold) };
+    private readonly Button scanButton = new() { Text = "Scan Now", Width = 172, Height = 42, BackColor = BrandGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 10, FontStyle.Bold) };
+    private readonly Button updateButton = new() { Text = "Update", Width = 86, Height = 40, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
     private readonly Button settingsButton = new() { Text = "\uE713", Width = 44, Height = 40, Font = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
     private readonly CheckBox rightClickScanBox = new() { Text = "Add Explorer right-click scan", AutoSize = true };
@@ -97,7 +103,7 @@ public sealed class MainForm : Form
     private readonly CheckBox mhrEnabledBox = new() { Text = "Use Team Cymru MHR", AutoSize = true, Checked = true };
     private readonly CheckBox hashCacheEnabledBox = new() { Text = "Enable Hash Cache", AutoSize = true, Checked = true };
     private readonly CheckBox autoUpdateChecksBox = new() { Text = "Check updates automatically", AutoSize = true };
-    private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = true };
+    private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = false };
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
     private readonly NumericUpDown timeoutBox = new() { Minimum = 10, Maximum = 300, Value = 60, Width = 64 };
     private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
@@ -112,9 +118,9 @@ public sealed class MainForm : Form
     private readonly ProgressBar progressBar = new();
     private readonly Label statusLabel = new() { AutoEllipsis = false };
     private readonly Label countLabel = new() { AutoSize = true };
-    private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "action" };
-    private readonly Label statusTitle = new() { Text = "You are not protected", AutoSize = true, Font = new Font("Segoe UI", 24, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label statusSubtitle = new() { Text = "Run a process scan to verify protection.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "idle" };
+    private readonly Label statusTitle = new() { Text = "Not scanned yet", AutoSize = true, Font = new Font("Segoe UI Semibold", 18, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label statusSubtitle = new() { Text = "Run a scan to check running apps and local trust signals.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label summaryLabel = new() { Text = "Items scanned: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label actionLabel = new() { Text = "Needs review: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label reputationStateLabel = new();
@@ -136,6 +142,7 @@ public sealed class MainForm : Form
     private readonly List<FileSystemWatcher> allFileWatchers = [];
     private readonly Dictionary<string, ProcessFileState> userTouchedFileScanStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly object allFileScanLock = new();
+    private readonly ScanGate scanGate = new();
     private readonly System.Windows.Forms.Timer processMonitorTimer = new() { Interval = 5000 };
     private readonly System.Windows.Forms.Timer updateCheckTimer = new() { Interval = 60000 };
     private readonly System.Windows.Forms.Timer allFileScanTimer = new() { Interval = 15000 };
@@ -321,14 +328,14 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        BackColor = Color.FromArgb(246, 247, 249);
+        BackColor = SoftAppBack;
         trayIcon.Text = "HashGuard";
         trayIcon.Icon = cleanTrayIcon;
         trayIcon.Visible = true;
         trayIcon.DoubleClick += (_, _) => RestoreFromTray();
         trayIcon.ContextMenuStrip = new ContextMenuStrip();
         trayIcon.ContextMenuStrip.Items.Add("Open", null, (_, _) => RestoreFromTray());
-        trayIcon.ContextMenuStrip.Items.Add("Run Scan", null, async (_, _) => await StartScanAsync());
+        trayIcon.ContextMenuStrip.Items.Add("Scan Now", null, async (_, _) => await StartScanAsync());
         trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) =>
         {
             exitRequested = true;
@@ -340,21 +347,51 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 4,
             Padding = new Padding(0),
+            BackColor = SoftAppBack,
         };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 4)); // brand accent strip
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 72));
         Controls.Add(root);
 
-        var header = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 2, Height = 86, BackColor = Color.FromArgb(28, 28, 28), Padding = new Padding(24, 14, 24, 12) };
+        var brandStrip = new Panel { Dock = DockStyle.Fill, BackColor = BrandGreen, Margin = new Padding(0), Tag = "brand-strip" };
+        root.Controls.Add(brandStrip, 0, 0);
+
+        // Light SecureAnywhere-style header (white/soft) instead of solid black admin bar.
+        var header = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            Height = 76,
+            BackColor = Color.White,
+            Padding = new Padding(24, 12, 24, 12),
+            Margin = new Padding(0),
+        };
         header.Tag = "header";
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var titleBlock = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = new Padding(0) };
-        titleBlock.Controls.Add(new Label { Text = "HashGuard", AutoSize = true, Font = new Font("Segoe UI", 20, FontStyle.Bold), ForeColor = Color.White, Margin = new Padding(0) });
-        titleBlock.Controls.Add(new Label { Text = "Process reputation, local trust scoring, and quarantine", AutoSize = true, ForeColor = Color.FromArgb(205, 205, 205), Margin = new Padding(1, 2, 0, 0) });
+        titleBlock.Controls.Add(new Label
+        {
+            Text = "HashGuard",
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 18, FontStyle.Bold),
+            ForeColor = Color.FromArgb(32, 40, 48),
+            Margin = new Padding(0),
+            Tag = "header-title",
+        });
+        titleBlock.Controls.Add(new Label
+        {
+            Text = "Endpoint protection · Reputation · Quarantine",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(100, 110, 120),
+            Font = new Font("Segoe UI", 9, FontStyle.Regular),
+            Margin = new Padding(1, 2, 0, 0),
+            Tag = "header-sub",
+        });
         header.Controls.Add(titleBlock, 0, 0);
         var headerButtons = new FlowLayoutPanel
         {
@@ -380,18 +417,19 @@ public sealed class MainForm : Form
         headerButtons.Controls.Add(settingsButton);
         headerButtons.Controls.Add(scanButton);
         header.Controls.Add(headerButtons, 1, 0);
-        root.Controls.Add(header, 0, 0);
+        root.Controls.Add(header, 0, 1);
 
         var main = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(20, 20, 20, 12),
+            Padding = new Padding(20, 16, 20, 10),
+            BackColor = SoftAppBack,
         };
         main.RowStyles.Add(new RowStyle(SizeType.Absolute, 218));
         main.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.Controls.Add(main, 0, 1);
+        root.Controls.Add(main, 0, 2);
         resultsView.Name = MainResultsViewName;
 
         var overview = new TableLayoutPanel
@@ -400,33 +438,29 @@ public sealed class MainForm : Form
             ColumnCount = 2,
             RowCount = 1,
             Margin = new Padding(0, 0, 0, 12),
+            BackColor = SoftAppBack,
         };
         overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42));
         overview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58));
         main.Controls.Add(overview, 0, 0);
 
-        var statusCard = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Padding = new Padding(18),
-            Margin = new Padding(0, 0, 12, 0),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
-        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "clean");
+        var statusCard = CreateSoftCardPanel();
+        statusCard.Margin = new Padding(0, 0, 12, 0);
+        statusCard.Padding = new Padding(18);
+        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "idle");
         statusDot.Width = 96;
         statusDot.Height = 96;
         statusDot.Margin = new Padding(0, 0, 18, 0);
         statusTitle.AutoSize = false;
         statusTitle.Dock = DockStyle.Fill;
-        statusTitle.Font = new Font("Segoe UI", 18, FontStyle.Bold);
+        statusTitle.Font = new Font("Segoe UI Semibold", 17, FontStyle.Bold);
         statusTitle.TextAlign = ContentAlignment.BottomLeft;
         statusSubtitle.AutoSize = false;
         statusSubtitle.Dock = DockStyle.Fill;
         statusSubtitle.TextAlign = ContentAlignment.TopLeft;
         statusSubtitle.MaximumSize = new Size(0, 0);
 
-        var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3 };
+        var statusLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, BackColor = Color.Transparent };
         statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116));
         statusLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         statusLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96));
@@ -435,26 +469,26 @@ public sealed class MainForm : Form
         statusLayout.Controls.Add(statusDot, 0, 0);
         statusLayout.SetRowSpan(statusDot, 2);
 
-        var statusText = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0) };
+        var statusText = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0), BackColor = Color.Transparent };
         statusText.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         statusText.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         statusText.Controls.Add(statusTitle, 0, 0);
         statusText.Controls.Add(statusSubtitle, 0, 1);
         statusLayout.Controls.Add(statusText, 1, 0);
 
-        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 8, 0, 0) };
+        var stats = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 8, 0, 0), BackColor = Color.Transparent };
         stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         stats.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         summaryLabel.Dock = DockStyle.Fill;
         summaryLabel.MaximumSize = new Size(0, 0);
         summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
-        summaryLabel.BackColor = Color.FromArgb(246, 247, 249);
+        summaryLabel.BackColor = Color.FromArgb(236, 245, 230);
         summaryLabel.Padding = new Padding(12, 0, 12, 0);
         summaryLabel.Margin = new Padding(0, 0, 8, 0);
         actionLabel.Dock = DockStyle.Fill;
         actionLabel.TextAlign = ContentAlignment.MiddleLeft;
-        actionLabel.BackColor = Color.FromArgb(246, 247, 249);
+        actionLabel.BackColor = Color.FromArgb(236, 245, 230);
         actionLabel.Padding = new Padding(12, 0, 12, 0);
         actionLabel.Margin = new Padding(0);
         stats.Controls.Add(summaryLabel, 0, 0);
@@ -477,25 +511,21 @@ public sealed class MainForm : Form
         overview.Controls.Add(tiles, 1, 0);
 
         ConfigureResultsView(resultsView);
-        var resultsPanel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Padding = new Padding(14),
-            Margin = new Padding(0),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
-        var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3 };
+        var resultsPanel = CreateSoftCardPanel();
+        resultsPanel.Padding = new Padding(16);
+        resultsPanel.Margin = new Padding(0);
+        var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         resultsLayout.Controls.Add(new Label
         {
-            Text = "Review Queue",
+            Text = "PC Security · Review Queue",
             Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Font = new Font("Segoe UI Semibold", 10, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(35, 35, 35),
+            ForeColor = Color.FromArgb(40, 48, 56),
+            BackColor = Color.Transparent,
         }, 0, 0);
         var resultsHost = new Panel { Dock = DockStyle.Fill };
         resultsHost.Controls.Add(resultsEmptyLabel);
@@ -544,22 +574,18 @@ public sealed class MainForm : Form
         resultsPanel.Controls.Add(resultsLayout);
         main.Controls.Add(resultsPanel, 0, 1);
 
-        var bottomCard = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Margin = new Padding(20, 0, 20, 20),
-            Padding = new Padding(14, 8, 14, 8),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
-        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0) };
+        var bottomCard = CreateSoftCardPanel();
+        bottomCard.Margin = new Padding(20, 0, 20, 16);
+        bottomCard.Padding = new Padding(14, 10, 14, 10);
+        var bottom = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0), BackColor = Color.Transparent };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+        bottom.RowStyles.Add(new RowStyle(SizeType.Absolute, 12));
         bottom.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         progressBar.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-        progressBar.Height = 14;
+        progressBar.Height = 10;
         progressBar.Margin = new Padding(0, 0, 0, 0);
+        progressBar.Style = ProgressBarStyle.Continuous;
         statusLabel.Dock = DockStyle.Fill;
         statusLabel.TextAlign = ContentAlignment.TopLeft;
         statusLabel.Margin = new Padding(0, 6, 0, 0);
@@ -575,7 +601,7 @@ public sealed class MainForm : Form
         bottom.Controls.Add(statusLabel, 0, 1);
         bottom.SetColumnSpan(statusLabel, 2);
         bottomCard.Controls.Add(bottom);
-        root.Controls.Add(bottomCard, 0, 2);
+        root.Controls.Add(bottomCard, 0, 3);
 
         statusLabel.Text = "Ready";
         UpdateResultsEmptyState();
@@ -584,16 +610,33 @@ public sealed class MainForm : Form
         ApplyAppTheme(this);
     }
 
-    private static Panel CreateFeatureTile(string title, string subtitle, string state, Action? onClick = null)
+    private static Panel CreateSoftCardPanel()
     {
-        var tile = new Panel
+        var panel = new Panel
         {
             Dock = DockStyle.Fill,
             BackColor = Color.White,
-            Margin = new Padding(4),
-            Padding = new Padding(12),
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,
+            Padding = new Padding(14),
+            Tag = "soft-card",
         };
+        panel.Paint += (_, e) => PaintSoftCardBorder(e.Graphics, panel.ClientRectangle, SoftBorder);
+        return panel;
+    }
+
+    private static void PaintSoftCardBorder(Graphics graphics, Rectangle bounds, Color borderColor)
+    {
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var pen = new Pen(borderColor, 1);
+        var rect = new Rectangle(bounds.X, bounds.Y, Math.Max(0, bounds.Width - 1), Math.Max(0, bounds.Height - 1));
+        graphics.DrawRectangle(pen, rect);
+    }
+
+    private static Panel CreateFeatureTile(string title, string subtitle, string state, Action? onClick = null)
+    {
+        var tile = CreateSoftCardPanel();
+        tile.Margin = new Padding(4);
+        tile.Padding = new Padding(14);
 
         var cursor = onClick is null ? Cursors.Default : Cursors.Hand;
         var layout = CreateTileTextLayout(
@@ -601,6 +644,7 @@ public sealed class MainForm : Form
             CreateTileDetail(subtitle, cursor),
             CreateTileState(state, SuccessGreen, cursor));
         layout.Cursor = cursor;
+        layout.BackColor = Color.Transparent;
         tile.Controls.Add(layout);
         if (onClick is not null)
         {
@@ -611,21 +655,18 @@ public sealed class MainForm : Form
 
     private Panel CreateReputationTile()
     {
-        var tile = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Margin = new Padding(4),
-            Padding = new Padding(12),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
+        var tile = CreateSoftCardPanel();
+        tile.Margin = new Padding(4);
+        tile.Padding = new Padding(14);
 
         ConfigureTileDetailLabel(reputationStateLabel);
         ConfigureTileStateLabel(reputationProtectionLabel, SuccessGreen);
-        tile.Controls.Add(CreateTileTextLayout(
+        var layout = CreateTileTextLayout(
             CreateTileTitle("Cloud Reputation"),
             reputationStateLabel,
-            reputationProtectionLabel));
+            reputationProtectionLabel);
+        layout.BackColor = Color.Transparent;
+        tile.Controls.Add(layout);
         return tile;
     }
 
@@ -640,31 +681,29 @@ public sealed class MainForm : Form
 
     private Panel CreateHashCacheTile()
     {
-        var tile = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Margin = new Padding(4),
-            Padding = new Padding(12),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
+        var tile = CreateSoftCardPanel();
+        tile.Margin = new Padding(4);
+        tile.Padding = new Padding(14);
 
         ConfigureTileStateLabel(hashCacheStateLabel, SuccessGreen);
-        tile.Controls.Add(CreateTileTextLayout(
+        var layout = CreateTileTextLayout(
             CreateTileTitle("Hash Cache"),
             CreateTileDetail("Repeat lookups"),
-            hashCacheStateLabel));
+            hashCacheStateLabel);
+        layout.BackColor = Color.Transparent;
+        tile.Controls.Add(layout);
         WireClick(tile, OpenHashCacheFolder);
         return tile;
     }
 
     private static void ConfigureHeaderButton(Button button)
     {
-        button.BackColor = Color.FromArgb(52, 52, 52);
-        button.ForeColor = Color.White;
+        // Ghost header buttons on light chrome (Webroot-style).
+        button.BackColor = Color.FromArgb(245, 248, 250);
+        button.ForeColor = Color.FromArgb(50, 60, 70);
         button.FlatStyle = FlatStyle.Flat;
         button.FlatAppearance.BorderSize = 1;
-        button.FlatAppearance.BorderColor = Color.FromArgb(85, 85, 85);
+        button.FlatAppearance.BorderColor = SoftBorder;
         button.UseVisualStyleBackColor = false;
     }
 
@@ -673,10 +712,13 @@ public sealed class MainForm : Form
         return new Button
         {
             Text = text,
-            Width = Math.Max(86, text.Length * 8 + 24),
-            Height = 30,
+            Width = Math.Max(90, text.Length * 8 + 28),
+            Height = 32,
             Margin = new Padding(0, 0, 8, 0),
             FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(245, 248, 250),
+            ForeColor = Color.FromArgb(40, 50, 60),
+            Font = new Font("Segoe UI", 9, FontStyle.Regular),
         };
     }
 
@@ -833,21 +875,35 @@ public sealed class MainForm : Form
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         var size = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
         var rect = new Rectangle((bounds.Width - size) / 2, (bounds.Height - size) / 2, size, size);
+        // Webroot-style traffic light: green secure, yellow attention, red critical, gray idle.
         var actionNeeded = state == "action";
         var scanning = state is "scanning" or "stopped";
+        var idle = state == "idle";
         var fillColor = actionNeeded
             ? DangerRed
             : scanning
-                ? Color.FromArgb(255, 205, 0)
-                : SuccessGreen;
+                ? AttentionYellow
+                : idle
+                    ? Color.FromArgb(176, 190, 197)
+                    : BrandGreen;
         using var fill = new SolidBrush(fillColor);
-        using var pen = new Pen(actionNeeded ? Color.FromArgb(150, 0, 0) : Color.FromArgb(36, 36, 36), Math.Max(3, size / 16));
+        using var ring = new Pen(Color.FromArgb(40, 0, 0, 0), Math.Max(2, size / 28));
         graphics.FillEllipse(fill, rect);
+        graphics.DrawEllipse(ring, rect);
+        var glyphColor = actionNeeded || idle ? Color.White : Color.FromArgb(30, 40, 30);
+        using var pen = new Pen(glyphColor, Math.Max(3, size / 16)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round, LineJoin = System.Drawing.Drawing2D.LineJoin.Round };
         if (actionNeeded)
         {
-            var centerX = rect.Left + rect.Width / 2;
+            var centerX = rect.Left + rect.Width / 2f;
             graphics.DrawLine(pen, centerX, rect.Top + rect.Height * 0.25f, centerX, rect.Top + rect.Height * 0.62f);
-            graphics.FillEllipse(Brushes.White, centerX - size * 0.055f, rect.Top + rect.Height * 0.74f, size * 0.11f, size * 0.11f);
+            using var dot = new SolidBrush(Color.White);
+            graphics.FillEllipse(dot, centerX - size * 0.055f, rect.Top + rect.Height * 0.74f, size * 0.11f, size * 0.11f);
+        }
+        else if (idle)
+        {
+            // Neutral shield outline / dash for "not scanned yet"
+            using var idlePen = new Pen(Color.White, Math.Max(3, size / 16));
+            graphics.DrawEllipse(idlePen, rect.Left + size * 0.28f, rect.Top + size * 0.28f, size * 0.44f, size * 0.44f);
         }
         else
         {
@@ -884,9 +940,9 @@ public sealed class MainForm : Form
     {
         var badgeColor = state switch
         {
-            TrayState.ActionNeeded => Color.FromArgb(218, 45, 45),
-            TrayState.Scanning => Color.FromArgb(255, 205, 0),
-            _ => Color.FromArgb(0, 145, 82),
+            TrayState.ActionNeeded => DangerRed,
+            TrayState.Scanning => AttentionYellow,
+            _ => BrandGreen,
         };
 
         using var badgeFill = new SolidBrush(badgeColor);
@@ -1066,9 +1122,10 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(18, 4, 18, 12),
         };
-        ok.BackColor = AccentGold;
-        ok.ForeColor = Color.FromArgb(24, 24, 24);
-        ok.FlatAppearance.BorderColor = Color.FromArgb(218, 161, 0);
+        ok.BackColor = BrandGreen;
+        ok.ForeColor = Color.FromArgb(20, 40, 10);
+        ok.FlatAppearance.BorderColor = BrandGreenDark;
+        ok.FlatAppearance.BorderSize = 0;
         cancel.FlatAppearance.BorderSize = 1;
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
@@ -1234,7 +1291,7 @@ public sealed class MainForm : Form
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            using var http = AppHttp.Create(TimeSpan.FromSeconds(5));
             http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{CurrentVersion}");
             var payload = new
             {
@@ -1489,6 +1546,8 @@ public sealed class MainForm : Form
     private static void ApplyTheme(Control control, ThemePalette palette, bool inHeader)
     {
         var header = inHeader || control.Tag as string == "header";
+        var brandStrip = control.Tag as string == "brand-strip";
+        var softCard = control.Tag as string == "soft-card";
         switch (control)
         {
             case Form:
@@ -1511,14 +1570,14 @@ public sealed class MainForm : Form
                 comboBox.BackColor = palette.InputBack;
                 comboBox.ForeColor = palette.Text;
                 break;
-            case Button button when button.Text is "Run Scan" or "Stop Scan":
+            case Button button when button.Text is "Scan Now" or "Run Scan" or "Stop Scan":
                 break;
             case Button button:
                 button.FlatStyle = FlatStyle.Flat;
                 button.FlatAppearance.BorderSize = 1;
                 button.FlatAppearance.BorderColor = header ? palette.HeaderButtonBorder : palette.Border;
                 button.BackColor = header ? palette.HeaderButtonBack : palette.ButtonBack;
-                button.ForeColor = header ? Color.White : palette.Text;
+                button.ForeColor = header ? palette.HeaderText : palette.Text;
                 break;
             case CheckBox:
             case Label:
@@ -1529,11 +1588,28 @@ public sealed class MainForm : Form
                     break;
                 }
 
-                if (!header && control.ForeColor != DangerRed && control.ForeColor != SuccessGreen)
+                if (control.Tag as string is "header-title")
+                {
+                    control.ForeColor = palette.HeaderText;
+                    control.BackColor = Color.Transparent;
+                    break;
+                }
+
+                if (control.Tag as string is "header-sub")
+                {
+                    control.ForeColor = palette.MutedText;
+                    control.BackColor = Color.Transparent;
+                    break;
+                }
+
+                if (!header && control.ForeColor != DangerRed && control.ForeColor != SuccessGreen && control.ForeColor != BrandGreen)
                 {
                     control.ForeColor = control.ForeColor == Color.DimGray ? palette.MutedText : palette.Text;
                 }
-                control.BackColor = Color.Transparent;
+                if (!header)
+                {
+                    control.BackColor = Color.Transparent;
+                }
                 break;
             case TabControl:
             case TabPage:
@@ -1543,8 +1619,36 @@ public sealed class MainForm : Form
             case TableLayoutPanel:
             case FlowLayoutPanel:
             case Panel:
-                control.BackColor = header ? palette.HeaderBack : (control.BackColor == ThemePalette.Light.AppBack ? palette.AppBack : palette.Surface);
-                control.ForeColor = header ? Color.White : palette.Text;
+                if (brandStrip)
+                {
+                    control.BackColor = BrandGreen;
+                    break;
+                }
+
+                if (header)
+                {
+                    control.BackColor = palette.HeaderBack;
+                    control.ForeColor = palette.HeaderText;
+                    break;
+                }
+
+                if (softCard)
+                {
+                    control.BackColor = palette.Surface;
+                    control.ForeColor = palette.Text;
+                    break;
+                }
+
+                // Keep soft app background on root layout panels.
+                if (control.BackColor == SoftAppBack || control.BackColor == ThemePalette.Light.AppBack || control.BackColor == Color.FromArgb(246, 247, 249))
+                {
+                    control.BackColor = palette.AppBack;
+                }
+                else if (control.BackColor == Color.White || control.BackColor == ThemePalette.Light.Surface)
+                {
+                    control.BackColor = palette.Surface;
+                }
+                control.ForeColor = palette.Text;
                 break;
         }
 
@@ -1568,11 +1672,12 @@ public sealed class MainForm : Form
 
     private void SetScanButtonReadyStyle()
     {
-        scanButton.Text = "Run Scan";
-        scanButton.BackColor = AccentGold;
-        scanButton.ForeColor = Color.FromArgb(24, 24, 24);
-        scanButton.FlatAppearance.BorderSize = 1;
-        scanButton.FlatAppearance.BorderColor = Color.FromArgb(218, 161, 0);
+        scanButton.Text = "Scan Now";
+        scanButton.BackColor = BrandGreen;
+        scanButton.ForeColor = Color.FromArgb(20, 40, 10);
+        scanButton.FlatAppearance.BorderSize = 0;
+        scanButton.FlatAppearance.BorderColor = BrandGreenDark;
+        scanButton.FlatStyle = FlatStyle.Flat;
     }
 
     private void SetScanButtonStopStyle()
@@ -1580,7 +1685,7 @@ public sealed class MainForm : Form
         scanButton.Text = "Stop Scan";
         scanButton.BackColor = DangerRed;
         scanButton.ForeColor = Color.White;
-        scanButton.FlatAppearance.BorderSize = 1;
+        scanButton.FlatAppearance.BorderSize = 0;
         scanButton.FlatAppearance.BorderColor = DangerRed;
     }
 
@@ -1588,7 +1693,14 @@ public sealed class MainForm : Form
     {
         var scanning = title.Contains("Scanning", StringComparison.OrdinalIgnoreCase);
         var stopped = title.Contains("Stopped", StringComparison.OrdinalIgnoreCase);
-        statusTitle.Text = actionNeeded ? "Threats need review" : scanning ? "Scanning" : stopped ? "Scan stopped" : "Protected";
+        // Webroot-style status copy: green = secure, yellow = attention, red = critical.
+        statusTitle.Text = actionNeeded
+            ? "Attention needed"
+            : scanning
+                ? "Scanning"
+                : stopped
+                    ? "Scan stopped"
+                    : "Your device is secure";
         statusSubtitle.Text = subtitle;
         statusDot.Tag = actionNeeded ? "action" : scanning ? "scanning" : stopped ? "stopped" : "clean";
         statusDot.Invalidate();
@@ -1610,7 +1722,7 @@ public sealed class MainForm : Form
         else
         {
             trayIcon.Icon = cleanTrayIcon;
-            trayIcon.Text = "HashGuard - Clean";
+            trayIcon.Text = "HashGuard - Secure";
         }
     }
 
@@ -1621,6 +1733,12 @@ public sealed class MainForm : Form
             scanCancellation.Cancel();
             scanButton.Enabled = false;
             statusLabel.Text = "Stopping scan...";
+            return;
+        }
+
+        if (!scanGate.TryEnter())
+        {
+            statusLabel.Text = "A scan is already running.";
             return;
         }
 
@@ -1660,7 +1778,7 @@ public sealed class MainForm : Form
             totalCount = paths.Count;
             progressBar.Maximum = Math.Max(paths.Count, 1);
 
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds((int)timeoutBox.Value) };
+            using var http = AppHttp.Create((int)timeoutBox.Value);
             if (!string.IsNullOrWhiteSpace(apiKey))
             {
                 http.DefaultRequestHeaders.Add("x-apikey", apiKey);
@@ -1771,12 +1889,14 @@ public sealed class MainForm : Form
                 processBaselineReady = true;
                 processMonitorTimer.Start();
             }
+
+            scanGate.Exit();
         }
     }
 
     private async Task ScanNewProcessFilesAsync()
     {
-        if (scanCancellation is not null || processMonitorScanRunning)
+        if (scanCancellation is not null || processMonitorScanRunning || scanGate.IsBusy)
         {
             return;
         }
@@ -1795,6 +1915,11 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (!scanGate.TryEnter())
+        {
+            return;
+        }
+
         processMonitorScanRunning = true;
         progressBar.Value = 0;
         progressBar.Maximum = Math.Max(newPaths.Count, 1);
@@ -1804,7 +1929,7 @@ public sealed class MainForm : Form
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds((int)timeoutBox.Value) };
+            using var http = AppHttp.Create((int)timeoutBox.Value);
             var apiKey = apiKeyBox.Text.Trim();
             if (!string.IsNullOrWhiteSpace(apiKey))
             {
@@ -1860,6 +1985,7 @@ public sealed class MainForm : Form
         finally
         {
             processMonitorScanRunning = false;
+            scanGate.Exit();
         }
     }
 
@@ -2184,7 +2310,7 @@ public sealed class MainForm : Form
 
     private async Task ScanQueuedAllFileAsync()
     {
-        if (!scanAllFilesBox.Checked || !processBaselineReady || scanCancellation is not null || processMonitorScanRunning || allFileScanRunning)
+        if (!scanAllFilesBox.Checked || !processBaselineReady || scanCancellation is not null || processMonitorScanRunning || allFileScanRunning || scanGate.IsBusy)
         {
             return;
         }
@@ -2211,12 +2337,17 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (!scanGate.TryEnter())
+        {
+            return;
+        }
+
         allFileScanRunning = true;
         statusLabel.Text = $"Idle file scan: {path}";
         SetDashboardState("Scanning", "Process monitoring is idle. Checking file activity.", false);
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds((int)timeoutBox.Value) };
+            using var http = AppHttp.Create((int)timeoutBox.Value);
             var apiKey = apiKeyBox.Text.Trim();
             if (!string.IsNullOrWhiteSpace(apiKey))
             {
@@ -2257,6 +2388,7 @@ public sealed class MainForm : Form
         finally
         {
             allFileScanRunning = false;
+            scanGate.Exit();
         }
     }
 
@@ -2365,6 +2497,12 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (!scanGate.TryEnter())
+        {
+            MessageBox.Show(this, "A scan is already running. Try again when it finishes.", "Right-click scan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         scanButton.Enabled = false;
         results.Clear();
         resultsView.Items.Clear();
@@ -2384,7 +2522,7 @@ public sealed class MainForm : Form
                 statusLabel.Text = "VirusTotal API key is not configured. Running local/provider checks that do not require it.";
             }
 
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds((int)timeoutBox.Value) };
+            using var http = AppHttp.Create((int)timeoutBox.Value);
             if (virusTotalEnabledBox.Checked && !string.IsNullOrWhiteSpace(apiKey))
             {
                 http.DefaultRequestHeaders.Add("x-apikey", apiKey);
@@ -2421,6 +2559,7 @@ public sealed class MainForm : Form
         finally
         {
             scanButton.Enabled = true;
+            scanGate.Exit();
         }
     }
 
@@ -2801,7 +2940,7 @@ public sealed class MainForm : Form
         {
             var releasesApiUrl = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases";
             var latestReleaseApiUrl = $"{releasesApiUrl}/latest";
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var http = AppHttp.Create(TimeSpan.FromSeconds(30));
             http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{CurrentVersion}");
             http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
 
@@ -3466,7 +3605,7 @@ public sealed class MainForm : Form
 
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            using var http = AppHttp.Create(TimeSpan.FromSeconds(30));
             http.DefaultRequestHeaders.Add("apikey", apiKey);
             using var response = await http.GetAsync(string.Format(MetaDefenderHashUrl, result.Sha256), cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound)
@@ -3638,7 +3777,7 @@ public sealed class MainForm : Form
     private static async Task<CymruReputation?> QueryCymruAsync(string sha256, CancellationToken cancellationToken)
     {
         var queryName = BuildCymruQueryName(sha256);
-        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var http = AppHttp.Create(TimeSpan.FromSeconds(10));
         using var response = await http.GetAsync(string.Format(CymruDnsQueryUrl, Uri.EscapeDataString(queryName)), cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -7029,7 +7168,7 @@ public sealed class MainForm : Form
         public bool RunElevated { get; set; }
         public bool ScanAllFiles { get; set; }
         public bool AutoUpdateChecks { get; set; }
-        public bool TelemetryEnabled { get; set; } = true;
+        public bool TelemetryEnabled { get; set; } = false;
         public string AnonymousInstallId { get; set; } = "";
         public bool AppInstallReported { get; set; }
         public bool UseSystemDefaultColors { get; set; }
@@ -7065,36 +7204,40 @@ public sealed class MainForm : Form
         Color Border,
         Color CalloutBack,
         Color HeaderBack,
+        Color HeaderText,
         Color HeaderButtonBack,
         Color HeaderButtonBorder)
     {
+        // Soft consumer-security light theme (Webroot SecureAnywhere–inspired).
         public static ThemePalette Light { get; } = new(
-            Color.FromArgb(246, 247, 249),
+            Color.FromArgb(242, 245, 247),
             Color.White,
-            Color.FromArgb(246, 247, 249),
+            Color.FromArgb(236, 245, 230),
             Color.White,
-            Color.FromArgb(35, 35, 35),
-            Color.DimGray,
-            SystemColors.Control,
-            Color.FromArgb(218, 222, 228),
-            Color.FromArgb(250, 251, 253),
-            Color.FromArgb(28, 28, 28),
-            Color.FromArgb(52, 52, 52),
-            Color.FromArgb(85, 85, 85));
+            Color.FromArgb(32, 40, 48),
+            Color.FromArgb(100, 110, 120),
+            Color.FromArgb(245, 248, 250),
+            Color.FromArgb(220, 226, 232),
+            Color.FromArgb(248, 252, 245),
+            Color.White,
+            Color.FromArgb(32, 40, 48),
+            Color.FromArgb(245, 248, 250),
+            Color.FromArgb(220, 226, 232));
 
         public static ThemePalette Dark { get; } = new(
-            Color.FromArgb(24, 26, 30),
-            Color.FromArgb(34, 37, 43),
-            Color.FromArgb(44, 48, 55),
-            Color.FromArgb(25, 28, 33),
-            Color.FromArgb(235, 238, 242),
-            Color.FromArgb(170, 176, 186),
-            Color.FromArgb(50, 55, 64),
-            Color.FromArgb(72, 78, 88),
-            Color.FromArgb(40, 44, 52),
-            Color.FromArgb(18, 20, 24),
-            Color.FromArgb(44, 48, 56),
-            Color.FromArgb(76, 82, 92));
+            Color.FromArgb(22, 28, 26),
+            Color.FromArgb(32, 40, 36),
+            Color.FromArgb(40, 52, 42),
+            Color.FromArgb(28, 34, 30),
+            Color.FromArgb(232, 240, 234),
+            Color.FromArgb(150, 168, 156),
+            Color.FromArgb(44, 54, 48),
+            Color.FromArgb(60, 74, 64),
+            Color.FromArgb(36, 48, 40),
+            Color.FromArgb(28, 36, 32),
+            Color.FromArgb(232, 240, 234),
+            Color.FromArgb(44, 54, 48),
+            Color.FromArgb(70, 86, 74));
     }
 
     private sealed class QuarantineEntry

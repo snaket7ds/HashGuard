@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../HashGuardLogic.cs" Link="HashGuardLogic.cs" />
+    <Compile Include="../../ScanGate.cs" Link="ScanGate.cs" />
   </ItemGroup>
 </Project>

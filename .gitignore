@@ -28,3 +28,6 @@ dist/HashGuard-*-win-x64.tar.gz
 # Cloudflare local deployment config
 cloudflare/telemetry/wrangler.toml
 .wrangler/
+cloudflare/telemetry/node_modules/
+node_modules/
+dist-local/

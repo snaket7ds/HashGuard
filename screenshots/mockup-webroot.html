@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HashGuard — current UI mockups (pre design changes)</title>
+<style>
+  :root {
+    --app-back: #f2f5f7;
+    --surface: #ffffff;
+    --pill: #f6f7f9;
+    --text: #232323;
+    --muted: #696969;
+    --border: #dce2e8;
+    --header: #1c1c1c;
+    --header-btn: #343434;
+    --header-btn-border: #555555;
+    --accent: #7dcc26;
+    --green: #4caf28;
+    --red: #d32f2f;
+    --scan-amber: #ffc107;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: #2a2a2a;
+    color: var(--text);
+  }
+  .page {
+    padding: 28px 24px 48px;
+  }
+  .caption {
+    color: #ddd;
+    font-size: 13px;
+    margin: 0 0 10px 8px;
+    font-family: ui-monospace, monospace;
+  }
+  .window {
+    width: 1100px;
+    height: 720px;
+    margin: 0 0 40px;
+    background: var(--app-back);
+    border: 1px solid #111;
+    box-shadow: 0 12px 40px rgba(0,0,0,.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .titlebar {
+    height: 32px;
+    background: #202020;
+    color: #eee;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+  .titlebar .dots span {
+    display: inline-block;
+    width: 10px; height: 10px; border-radius: 50%;
+    margin-left: 6px; background: #555;
+  }
+  .header {
+    height: 86px;
+    background: #ffffff; border-bottom: 1px solid var(--border);
+    color: #202830;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 24px 12px;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #202830;
+  }
+  .header .sub {
+    margin: 2px 0 0 1px;
+    font-size: 9px;
+    color: #646e78;
+  }
+  .header-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .btn {
+    border: 1px solid #aaa;
+    background: #f0f0f0;
+    color: #222;
+    font: 600 9.5px "Segoe UI", sans-serif;
+    height: 30px;
+    padding: 0 12px;
+    cursor: default;
+  }
+  .btn:disabled { opacity: .45; }
+  .btn-header {
+    background: #f5f8fa;
+    color: #323c46;
+    border: 1px solid var(--border);
+    height: 40px;
+    min-width: 86px;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .btn-icon {
+    width: 44px;
+    min-width: 44px;
+    font-family: "Segoe MDL2 Assets", "Segoe UI Symbol", sans-serif;
+    font-size: 14px;
+  }
+  .btn-scan {
+    background: var(--accent);
+    color: #14280a;
+    border: 1px solid #5aa014;
+    height: 42px;
+    width: 172px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .btn-scan.stop {
+    background: var(--red);
+    color: #fff;
+    border-color: #7f1d1d;
+  }
+  .main {
+    flex: 1;
+    padding: 20px 20px 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .overview {
+    height: 218px;
+    display: grid;
+    grid-template-columns: 42% 58%;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 18px;
+  }
+  .status-card {
+    display: grid;
+    grid-template-columns: 116px 1fr;
+    grid-template-rows: 96px 1fr 58px;
+    gap: 0 12px;
+  }
+  .badge {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    grid-row: 1 / span 2;
+    align-self: start;
+    justify-self: center;
+    margin-top: 0;
+    display: grid;
+    place-items: center;
+    box-shadow: inset 0 0 0 4px rgba(0,0,0,.15);
+  }
+  .badge.action { background: #d32f2f; }
+  .badge.clean { background: #7dcc26; }
+  .badge.scanning, .badge.stopped { background: var(--scan-amber); }
+  .badge svg { width: 48px; height: 48px; }
+  .status-text { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-direction: column; min-width: 0; padding-top: 4px; }
+  .status-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0 0 6px;
+    line-height: 1.15;
+  }
+  .status-sub {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .stats {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .stat {
+    background: var(--pill);
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    height: 42px;
+  }
+  .tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+    min-height: 0;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tile .t { font-size: 9.5px; font-weight: 700; }
+  .tile .d { font-size: 8.5px; color: var(--text); }
+  .tile .s { font-size: 8.5px; font-weight: 700; color: var(--green); margin-top: auto; padding-top: 8px; }
+  .tile .s.bad { color: var(--red); }
+  .queue {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .queue h2 {
+    margin: 0 0 8px;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .queue-host {
+    flex: 1;
+    border: 1px solid var(--border);
+    position: relative;
+    min-height: 120px;
+    overflow: hidden;
+  }
+  .empty {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    color: var(--muted);
+    font-size: 10px;
+    padding: 24px;
+    background: #fff;
+  }
+  table.results {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9px;
+  }
+  table.results th {
+    text-align: left;
+    background: #f0f0f0;
+    border-bottom: 1px solid #ccc;
+    padding: 6px 8px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  table.results td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.results tr.selected { background: #cce4f7; }
+  .status-clean { color: var(--green); font-weight: 600; }
+  .status-error { color: var(--red); font-weight: 600; }
+  .status-unknown { color: #b45309; font-weight: 600; }
+  .status-detected { color: var(--red); font-weight: 700; }
+  .queue-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    gap: 12px;
+  }
+  .queue-actions .left, .queue-actions .right {
+    display: flex;
+    gap: 8px;
+  }
+  .footer {
+    height: 88px;
+    margin: 0 20px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    flex-shrink: 0;
+  }
+  .progress {
+    height: 14px;
+    background: #e5e7eb;
+    border: 1px solid #d1d5db;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress > i {
+    display: block;
+    height: 100%;
+    background: #0a84ff;
+  }
+  .progress.scan > i { background: var(--accent); }
+  .progress.done > i { background: var(--green); }
+  .foot-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-top: 6px;
+    gap: 12px;
+  }
+  .status-line {
+    font-size: 11px;
+    color: var(--text);
+    flex: 1;
+    line-height: 1.3;
+  }
+  .count {
+    font-size: 11px;
+    width: 76px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .note {
+    max-width: 1100px;
+    margin: 8px 8px 24px;
+    color: #bbb;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  /* Dark theme variant */
+  .window.dark {
+    --app-back: #181a1e;
+    --surface: #22252b;
+    --pill: #2c3037;
+    --text: #ebeef2;
+    --muted: #aab0ba;
+    --border: #484e58;
+    --header: #121418;
+    --header-btn: #2c3038;
+    --header-btn-border: #4c525c;
+  }
+  .window.dark .empty { background: var(--surface); }
+  .window.dark table.results th { background: #2a2e36; border-color: #484e58; }
+  .window.dark table.results td { border-color: #333842; }
+  .window.dark table.results tr.selected { background: #1e3a5f; }
+  .window.dark .progress { background: #2a2e36; border-color: #484e58; }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="note">
+    Mockups of HashGuard UI after <strong>Webroot-inspired</strong> visual refresh
+    (from <code>MainForm.BuildLayout</code> / theme colors). Not live screenshots of the EXE —
+    generated so you can review visuals before any design changes. Window chrome is approximate.
+  </p>
+
+  <!-- 1 PRE-SCAN -->
+  <p class="caption" id="cap-prescan">01 — First open / not yet scanned (default labels)</p>
+  <div class="window" id="state-prescan" data-shot="01-prescan-not-protected">
+    <div class="titlebar"><span>HashGuard</span><span class="dots"><span></span><span></span><span></span></span></div>
+    <div style="height:4px;background:#7dcc26"></div>
+    <div class="header">
+      <div>
+        <h1>HashGuard</h1>
+        <div class="sub">Endpoint protection · Reputation · Quarantine</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-header">Update</button>
+        <button class="btn btn-header btn-icon" title="Settings">&#xE713;</button>
+        <button class="btn btn-scan">Scan Now</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="overview">
+        <div class="card status-card">
+          <div class="badge idle" title="idle" style="background:#b0bec5">
+            <svg viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="10" stroke="#fff" stroke-width="4"/></svg>
+          </div>
+          <div class="status-text">
+            <div class="status-title">Not scanned yet</div>
+            <div class="status-sub">Run a scan to check running apps and local trust signals.</div>
+          </div>
+          <div class="stats">
+            <div class="stat">Items scanned: 0</div>
+            <div class="stat">Needs review: 0</div>
+          </div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><div class="t">Process Security</div><div class="d">Running apps</div><div class="s">Protected</div></div>
+          <div class="tile"><div class="t">Cloud Reputation</div><div class="d">Connected services 3/3</div><div class="s">Secure</div></div>
+          <div class="tile"><div class="t">Hash Cache</div><div class="d">Repeat lookups</div><div class="s">Enabled</div></div>
+          <div class="tile"><div class="t">Activity Log</div><div class="d">Scan history</div><div class="s">Open</div></div>
+        </div>
+      </div>
+      <div class="queue">
+        <h2>PC Security · Review Queue</h2>
+        <div class="queue-host">
+          <div class="empty">No items need review. Run a scan or open Activity Log for full scan history.</div>
+        </div>
+        <div class="queue-actions">
+          <div class="left">
+            <button class="btn" disabled>Open Report</button>
+            <button class="btn" disabled>Open Location</button>
+            <button class="btn" disabled>Ignore</button>
+            <button class="btn" disabled>Quarantine</button>
+          </div>
+          <div class="right"><button class="btn">Activity Log</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="progress"><i style="width:0%"></i></div>
+      <div class="foot-row">
+        <div class="status-line">Ready</div>
+        <div class="count"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 SCANNING -->
+  <p class="caption">02 — Scanning in progress</p>
+  <div class="window" id="state-scanning" data-shot="02-scanning">
+    <div class="titlebar"><span>HashGuard</span><span class="dots"><span></span><span></span><span></span></span></div>
+    <div style="height:4px;background:#7dcc26"></div>
+    <div class="header">
+      <div>
+        <h1>HashGuard</h1>
+        <div class="sub">Endpoint protection · Reputation · Quarantine</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-header">Update</button>
+        <button class="btn btn-header btn-icon">&#xE713;</button>
+        <button class="btn btn-scan stop">Stop Scan</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="overview">
+        <div class="card status-card">
+          <div class="badge scanning">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M14 24h8l4 10 8-20" stroke="#242424" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="status-text">
+            <div class="status-title">Scanning</div>
+            <div class="status-sub">Checking running process files with enabled reputation services.</div>
+          </div>
+          <div class="stats">
+            <div class="stat">Preparing scan</div>
+            <div class="stat">Needs review: 0</div>
+          </div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><div class="t">Process Security</div><div class="d">Running apps</div><div class="s">Protected</div></div>
+          <div class="tile"><div class="t">Cloud Reputation</div><div class="d">Connected services 3/3</div><div class="s">Secure</div></div>
+          <div class="tile"><div class="t">Hash Cache</div><div class="d">Repeat lookups</div><div class="s">Enabled</div></div>
+          <div class="tile"><div class="t">Activity Log</div><div class="d">Scan history</div><div class="s">Open</div></div>
+        </div>
+      </div>
+      <div class="queue">
+        <h2>PC Security · Review Queue</h2>
+        <div class="queue-host">
+          <div class="empty">No items need review. Run a scan or open Activity Log for full scan history.</div>
+        </div>
+        <div class="queue-actions">
+          <div class="left">
+            <button class="btn" disabled>Open Report</button>
+            <button class="btn" disabled>Open Location</button>
+            <button class="btn" disabled>Ignore</button>
+            <button class="btn" disabled>Quarantine</button>
+          </div>
+          <div class="right"><button class="btn">Activity Log</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="progress scan"><i style="width:42%"></i></div>
+      <div class="foot-row">
+        <div class="status-line">Scanning 18 of 43: C:\Program Files\Example\app.exe</div>
+        <div class="count">18 / 43</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 CLEAN -->
+  <p class="caption">03 — Clean / Protected after scan</p>
+  <div class="window" id="state-clean" data-shot="03-clean-protected">
+    <div class="titlebar"><span>HashGuard</span><span class="dots"><span></span><span></span><span></span></span></div>
+    <div style="height:4px;background:#7dcc26"></div>
+    <div class="header">
+      <div>
+        <h1>HashGuard</h1>
+        <div class="sub">Endpoint protection · Reputation · Quarantine</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-header">Update</button>
+        <button class="btn btn-header btn-icon">&#xE713;</button>
+        <button class="btn btn-scan">Scan Now</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="overview">
+        <div class="card status-card">
+          <div class="badge clean">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M12 24l8 8 16-18" stroke="#242424" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="status-text">
+            <div class="status-title">Your device is secure</div>
+            <div class="status-sub">No unresolved threats or high-risk items were found.</div>
+          </div>
+          <div class="stats">
+            <div class="stat">Items scanned: 43</div>
+            <div class="stat">Needs review: 0</div>
+          </div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><div class="t">Process Security</div><div class="d">Running apps</div><div class="s">Protected</div></div>
+          <div class="tile"><div class="t">Cloud Reputation</div><div class="d">Connected services 3/3</div><div class="s">Secure</div></div>
+          <div class="tile"><div class="t">Hash Cache</div><div class="d">Repeat lookups</div><div class="s">Enabled</div></div>
+          <div class="tile"><div class="t">Activity Log</div><div class="d">Scan history</div><div class="s">Open</div></div>
+        </div>
+      </div>
+      <div class="queue">
+        <h2>PC Security · Review Queue</h2>
+        <div class="queue-host">
+          <div class="empty">No items need review. Run a scan or open Activity Log for full scan history.</div>
+        </div>
+        <div class="queue-actions">
+          <div class="left">
+            <button class="btn" disabled>Open Report</button>
+            <button class="btn" disabled>Open Location</button>
+            <button class="btn" disabled>Ignore</button>
+            <button class="btn" disabled>Quarantine</button>
+          </div>
+          <div class="right"><button class="btn">Activity Log</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="progress done"><i style="width:100%"></i></div>
+      <div class="foot-row">
+        <div class="status-line">Done. 0 action needed, 0 detections, 2 unknown/uploaded, 0 errors. Cache: 1204 hashes.</div>
+        <div class="count">43 / 43</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 ACTION NEEDED -->
+  <p class="caption">04 — Attention needed (populated PC Security · Review Queue)</p>
+  <div class="window" id="state-action" data-shot="04-action-needed-queue">
+    <div class="titlebar"><span>HashGuard</span><span class="dots"><span></span><span></span><span></span></span></div>
+    <div style="height:4px;background:#7dcc26"></div>
+    <div class="header">
+      <div>
+        <h1>HashGuard</h1>
+        <div class="sub">Endpoint protection · Reputation · Quarantine</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-header">Update</button>
+        <button class="btn btn-header btn-icon">&#xE713;</button>
+        <button class="btn btn-scan">Scan Now</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="overview">
+        <div class="card status-card">
+          <div class="badge action">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M24 12v18" stroke="#fff" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="38" r="2.5" fill="#fff"/></svg>
+          </div>
+          <div class="status-text">
+            <div class="status-title">Attention needed</div>
+            <div class="status-sub">A reputation service reported malicious or suspicious detections.</div>
+          </div>
+          <div class="stats">
+            <div class="stat">Items scanned: 41</div>
+            <div class="stat">Needs review: 3</div>
+          </div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><div class="t">Process Security</div><div class="d">Running apps</div><div class="s">Protected</div></div>
+          <div class="tile"><div class="t">Cloud Reputation</div><div class="d">Connected services 3/3</div><div class="s">Secure</div></div>
+          <div class="tile"><div class="t">Hash Cache</div><div class="d">Repeat lookups</div><div class="s">Enabled</div></div>
+          <div class="tile"><div class="t">Activity Log</div><div class="d">Scan history</div><div class="s">Open</div></div>
+        </div>
+      </div>
+      <div class="queue">
+        <h2>PC Security · Review Queue</h2>
+        <div class="queue-host">
+          <table class="results">
+            <thead>
+              <tr>
+                <th>Status</th><th>Risk</th><th>Trust</th><th>Mal</th><th>Sus</th>
+                <th>Process</th><th>PIDs</th><th>SHA-256</th><th>Path</th><th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="selected">
+                <td class="status-detected">detected</td>
+                <td>High 88</td>
+                <td>Unsigned</td>
+                <td>12</td><td>3</td>
+                <td>suspicious.exe</td>
+                <td>4820</td>
+                <td>a1b2c3d4e5f6…</td>
+                <td>C:\Users\Public\suspicious.exe</td>
+                <td>VirusTotal: 12/70</td>
+              </tr>
+              <tr>
+                <td class="status-unknown">unknown</td>
+                <td>High 72</td>
+                <td>User path</td>
+                <td>0</td><td>0</td>
+                <td>helper.exe</td>
+                <td>2199</td>
+                <td>998877665544…</td>
+                <td>C:\Users\rodrigo\AppData\Local\Temp\helper.exe</td>
+                <td>Not seen by providers</td>
+              </tr>
+              <tr>
+                <td class="status-error">error</td>
+                <td>Medium 45</td>
+                <td>—</td>
+                <td>0</td><td>0</td>
+                <td>locked.dll host</td>
+                <td>880</td>
+                <td></td>
+                <td>C:\ProgramData\Vendor\module.dll</td>
+                <td>Could not open file for hashing</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="queue-actions">
+          <div class="left">
+            <button class="btn">Open Report</button>
+            <button class="btn">Open Location</button>
+            <button class="btn">Ignore</button>
+            <button class="btn">Quarantine</button>
+          </div>
+          <div class="right"><button class="btn">Activity Log</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="progress done"><i style="width:100%"></i></div>
+      <div class="foot-row">
+        <div class="status-line">Done. 3 action needed, 1 detections, 1 unknown/uploaded, 1 errors. Cache: 1204 hashes.</div>
+        <div class="count">41 / 41</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5 DARK CLEAN -->
+  <p class="caption">05 — Dark theme (Protected) — palette from ThemePalette.Dark</p>
+  <div class="window dark" id="state-dark" data-shot="05-dark-protected">
+    <div class="titlebar"><span>HashGuard</span><span class="dots"><span></span><span></span><span></span></span></div>
+    <div style="height:4px;background:#7dcc26"></div>
+    <div class="header">
+      <div>
+        <h1>HashGuard</h1>
+        <div class="sub">Endpoint protection · Reputation · Quarantine</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-header">Update</button>
+        <button class="btn btn-header btn-icon">&#xE713;</button>
+        <button class="btn btn-scan">Scan Now</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="overview">
+        <div class="card status-card">
+          <div class="badge clean">
+            <svg viewBox="0 0 48 48" fill="none"><path d="M12 24l8 8 16-18" stroke="#242424" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="status-text">
+            <div class="status-title">Your device is secure</div>
+            <div class="status-sub">No unresolved threats or high-risk items were found.</div>
+          </div>
+          <div class="stats">
+            <div class="stat">Items scanned: 43</div>
+            <div class="stat">Needs review: 0</div>
+          </div>
+        </div>
+        <div class="tiles">
+          <div class="tile"><div class="t">Process Security</div><div class="d">Running apps</div><div class="s">Protected</div></div>
+          <div class="tile"><div class="t">Cloud Reputation</div><div class="d">Connected services 3/3</div><div class="s">Secure</div></div>
+          <div class="tile"><div class="t">Hash Cache</div><div class="d">Repeat lookups</div><div class="s">Enabled</div></div>
+          <div class="tile"><div class="t">Activity Log</div><div class="d">Scan history</div><div class="s">Open</div></div>
+        </div>
+      </div>
+      <div class="queue">
+        <h2>PC Security · Review Queue</h2>
+        <div class="queue-host">
+          <div class="empty">No items need review. Run a scan or open Activity Log for full scan history.</div>
+        </div>
+        <div class="queue-actions">
+          <div class="left">
+            <button class="btn" disabled>Open Report</button>
+            <button class="btn" disabled>Open Location</button>
+            <button class="btn" disabled>Ignore</button>
+            <button class="btn" disabled>Quarantine</button>
+          </div>
+          <div class="right"><button class="btn">Activity Log</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <div class="progress done"><i style="width:100%"></i></div>
+      <div class="foot-row">
+        <div class="status-line">Done. 0 action needed. Cache: 1204 hashes.</div>
+        <div class="count">43 / 43</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

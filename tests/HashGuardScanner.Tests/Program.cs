@@ -50,6 +50,47 @@ var tests = new (string Name, Action Test)[]
     {
         AssertFalse(HashGuardLogic.MatchesActivityFilter(ActivityFilter.ActionNeeded, "ignored", "High 90", 3, 1));
         AssertTrue(HashGuardLogic.MatchesActivityFilter(ActivityFilter.Clean, "ignored", "High 90", 3, 1));
+        AssertFalse(HashGuardLogic.NeedsAction("ignored", "High 90", 3, 1));
+        AssertTrue(HashGuardLogic.IsIgnoredStatus("ignored"));
+    }),
+    ("needs action for high risk without detections", () =>
+    {
+        AssertTrue(HashGuardLogic.NeedsAction("clean", "High 80", 0, 0));
+        AssertFalse(HashGuardLogic.NeedsAction("clean", "Low 5", 0, 0));
+    }),
+    ("quarantine notes are detected", () =>
+    {
+        AssertTrue(HashGuardLogic.NoteIndicatesQuarantined("Quarantined to C:\\q\\file.bin"));
+        AssertTrue(HashGuardLogic.NoteIndicatesQuarantined("File Quarantined"));
+        AssertFalse(HashGuardLogic.NoteIndicatesQuarantined("No issues"));
+        AssertFalse(HashGuardLogic.NoteIndicatesQuarantined(null));
+    }),
+    ("can ignore by hash or path", () =>
+    {
+        AssertTrue(HashGuardLogic.CanIgnoreTarget("abc", null, out var kind, out var value));
+        AssertEqual("hash", kind);
+        AssertEqual("abc", value);
+        AssertTrue(HashGuardLogic.CanIgnoreTarget(null, "C:\\x.exe", out kind, out value));
+        AssertEqual("path", kind);
+        AssertEqual("C:\\x.exe", value);
+        AssertFalse(HashGuardLogic.CanIgnoreTarget(" ", "  ", out _, out _));
+    }),
+    ("risk buckets", () =>
+    {
+        AssertEqual("High", HashGuardLogic.RiskBucket(70));
+        AssertEqual("Medium", HashGuardLogic.RiskBucket(40));
+        AssertEqual("Low", HashGuardLogic.RiskBucket(10));
+    }),
+    ("scan gate is non-reentrant", () =>
+    {
+        var gate = new ScanGate();
+        AssertTrue(gate.TryEnter());
+        AssertTrue(gate.IsBusy);
+        AssertFalse(gate.TryEnter());
+        gate.Exit();
+        AssertFalse(gate.IsBusy);
+        AssertTrue(gate.TryEnter());
+        gate.Exit();
     }),
 };
 
@@ -74,13 +115,14 @@ if (failures.Count > 0)
     return 1;
 }
 
+Console.WriteLine($"OK {tests.Length} tests");
 return 0;
 
 static void AssertEqual<T>(T expected, T actual)
 {
     if (!EqualityComparer<T>.Default.Equals(expected, actual))
     {
-        throw new InvalidOperationException($"expected '{expected}', got '{actual}'");
+        throw new Exception($"Expected {expected}, got {actual}");
     }
 }
 
@@ -88,7 +130,7 @@ static void AssertTrue(bool value)
 {
     if (!value)
     {
-        throw new InvalidOperationException("expected true");
+        throw new Exception("Expected true");
     }
 }
 
@@ -96,6 +138,6 @@ static void AssertFalse(bool value)
 {
     if (value)
     {
-        throw new InvalidOperationException("expected false");
+        throw new Exception("Expected false");
     }
 }

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v1.0.45 - 2026-08-09
+
+- Visual refresh inspired by Webroot SecureAnywhere: brand green primary CTA, soft light chrome, green status strip.
+- Status language: "Your device is secure" / "Attention needed" / neutral "Not scanned yet" (no red alarm before first scan).
+- Soft card borders; light header instead of solid black admin bar; "Scan Now" primary button.
+- Traffic-light status badges (green / yellow / red / gray idle).
+- Shared HTTP connection pool (`AppHttp`) so scans reuse sockets instead of creating a new pool each time.
+- `ScanGate` prevents overlapping full scans, process monitoring, idle file scans, and right-click scans.
+- Expanded `HashGuardLogic` helpers and unit tests for ignore/quarantine/action-needed rules.
+- New installs default anonymous telemetry off (existing settings keep their saved value).
+- Added `RECOMMENDATIONS.md` and UI mockup screenshots under `screenshots/`.
+
 ## v1.0.43 - 2026-06-06
 
 - Added an anonymous `app_ping` heartbeat so the Cloudflare dashboard can show App Running Live from unique install IDs seen in the last 10 minutes.
