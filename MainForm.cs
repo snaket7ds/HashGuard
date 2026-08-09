@@ -147,6 +147,8 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer updateCheckTimer = new() { Interval = 60000 };
     private readonly System.Windows.Forms.Timer allFileScanTimer = new() { Interval = 15000 };
     private readonly System.Windows.Forms.Timer telemetryHeartbeatTimer = new() { Interval = 300000 };
+    private readonly System.Windows.Forms.Timer statusBadgePulseTimer = new() { Interval = 40 };
+    private float statusBadgePulsePhase;
     private readonly string? startupScanFile;
     private readonly bool startupMinimized;
     private readonly int closedOlderInstances;
@@ -264,6 +266,16 @@ public sealed class MainForm : Form
         allFileScanTimer.Tick += async (_, _) => await ScanQueuedAllFileAsync();
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
         telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
+        statusBadgePulseTimer.Tick += (_, _) =>
+        {
+            statusBadgePulsePhase += 0.22f;
+            if (statusBadgePulsePhase > MathF.PI * 2f)
+            {
+                statusBadgePulsePhase -= MathF.PI * 2f;
+            }
+
+            statusDot.Invalidate();
+        };
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
         settingsButton.Click += (_, _) => ShowSettingsDialog();
         uploadUnknownBox.CheckedChanged += (_, _) => ConfirmUploads();
@@ -289,6 +301,7 @@ public sealed class MainForm : Form
         {
             scanPipeCancellation.Cancel();
             telemetryHeartbeatTimer.Stop();
+            statusBadgePulseTimer.Stop();
             StopAllFileWatchers();
         };
         Shown += async (_, _) =>
@@ -447,10 +460,11 @@ public sealed class MainForm : Form
         var statusCard = CreateSoftCardPanel();
         statusCard.Margin = new Padding(0, 0, 12, 0);
         statusCard.Padding = new Padding(18);
-        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "idle");
+        statusDot.Paint += (_, e) => PaintStatusBadge(e.Graphics, statusDot.ClientRectangle, statusDot.Tag as string ?? "idle", statusBadgePulsePhase);
         statusDot.Width = 96;
         statusDot.Height = 96;
         statusDot.Margin = new Padding(0, 0, 18, 0);
+        statusDot.BackColor = Color.Transparent;
         statusTitle.AutoSize = false;
         statusTitle.Dock = DockStyle.Fill;
         statusTitle.Font = new Font("Segoe UI Semibold", 17, FontStyle.Bold);
@@ -870,11 +884,10 @@ public sealed class MainForm : Form
         view.Font = new Font("Segoe UI", 9, FontStyle.Regular);
     }
 
-    private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state)
+    private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state, float pulsePhase = 0f)
     {
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var size = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
-        var rect = new Rectangle((bounds.Width - size) / 2, (bounds.Height - size) / 2, size, size);
+        var maxSize = Math.Max(20, Math.Min(bounds.Width, bounds.Height) - 8);
         // Webroot-style traffic light: green secure, yellow attention, red critical, gray idle.
         var actionNeeded = state == "action";
         var scanning = state is "scanning" or "stopped";
@@ -886,6 +899,24 @@ public sealed class MainForm : Form
                 : idle
                     ? Color.FromArgb(176, 190, 197)
                     : BrandGreen;
+
+        // Pulse only on the main status badge while scanning (tray stays solid yellow).
+        var pulse = scanning ? (MathF.Sin(pulsePhase) + 1f) / 2f : 0f;
+        var size = scanning
+            ? (int)Math.Round(maxSize * (0.84f + 0.16f * pulse))
+            : maxSize;
+        size = Math.Max(16, size);
+        var rect = new Rectangle((bounds.Width - size) / 2, (bounds.Height - size) / 2, size, size);
+
+        if (scanning)
+        {
+            var haloSize = (int)Math.Round(maxSize * (0.92f + 0.22f * pulse));
+            var haloRect = new Rectangle((bounds.Width - haloSize) / 2, (bounds.Height - haloSize) / 2, haloSize, haloSize);
+            var haloAlpha = (int)(55 + 100 * pulse);
+            using var halo = new SolidBrush(Color.FromArgb(haloAlpha, AttentionYellow));
+            graphics.FillEllipse(halo, haloRect);
+        }
+
         using var fill = new SolidBrush(fillColor);
         using var ring = new Pen(Color.FromArgb(40, 0, 0, 0), Math.Max(2, size / 28));
         graphics.FillEllipse(fill, rect);
@@ -901,9 +932,25 @@ public sealed class MainForm : Form
         }
         else if (idle)
         {
-            // Neutral shield outline / dash for "not scanned yet"
+            // Neutral ring for "not scanned yet"
             using var idlePen = new Pen(Color.White, Math.Max(3, size / 16));
             graphics.DrawEllipse(idlePen, rect.Left + size * 0.28f, rect.Top + size * 0.28f, size * 0.44f, size * 0.44f);
+        }
+        else if (scanning)
+        {
+            // Activity bars (static glyph; motion comes from the pulse scale/halo).
+            var cx = rect.Left + rect.Width / 2f;
+            var cy = rect.Top + rect.Height / 2f;
+            var barW = Math.Max(3f, size * 0.09f);
+            var gap = size * 0.12f;
+            using var barBrush = new SolidBrush(Color.FromArgb(30, 40, 30));
+            for (var i = -1; i <= 1; i++)
+            {
+                var h = size * (0.22f + 0.12f * (i == 0 ? 1.15f : 0.75f));
+                var x = cx + i * gap - barW / 2f;
+                var y = cy - h / 2f;
+                graphics.FillRectangle(barBrush, x, y, barW, h);
+            }
         }
         else
         {
@@ -1703,6 +1750,20 @@ public sealed class MainForm : Form
                     : "Your device is secure";
         statusSubtitle.Text = subtitle;
         statusDot.Tag = actionNeeded ? "action" : scanning ? "scanning" : stopped ? "stopped" : "clean";
+        if (scanning)
+        {
+            if (!statusBadgePulseTimer.Enabled)
+            {
+                statusBadgePulsePhase = 0f;
+                statusBadgePulseTimer.Start();
+            }
+        }
+        else
+        {
+            statusBadgePulseTimer.Stop();
+            statusBadgePulsePhase = 0f;
+        }
+
         statusDot.Invalidate();
         if (actionNeeded)
         {
@@ -1711,6 +1772,7 @@ public sealed class MainForm : Form
         }
         else if (scanning)
         {
+            // Solid yellow tray icon (no pulse) — animation is main-window only.
             trayIcon.Icon = scanningTrayIcon;
             trayIcon.Text = "HashGuard - Checking";
         }

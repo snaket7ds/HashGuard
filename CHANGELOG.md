@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.46 - 2026-08-09
+
+- Pulsing yellow main status badge while scanning (scale + soft halo); tray stays solid yellow.
+
 ## v1.0.45 - 2026-08-09
 
 - Visual refresh inspired by Webroot SecureAnywhere: brand green primary CTA, soft light chrome, green status strip.
