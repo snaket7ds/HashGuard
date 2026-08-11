@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.0.50 - 2026-08-11
+
+- Telemetry starts immediately when enabled in Settings (no app restart required); disabling stops the heartbeat timer.
+- Telemetry dashboard: Active 24h/7d/30d and daily charts count heartbeats (`app_ping`) and scans as presence, not only launches.
+- Telemetry dashboard: separate launch counters, per-install last-seen table, 30-day scan stats, event volume, sparkline, auto-refresh, dark mode.
+- Telemetry ingest: dedupe rapid `app_ping` writes; reject short/probe install IDs; composite D1 indexes for presence queries.
+
 ## v1.0.49 - 2026-08-09
 
 - Scanning badge is static again (solid yellow with activity bars); no pulse or heartbeat animation.

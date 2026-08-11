@@ -13,9 +13,12 @@ It must not send file paths, hashes, process names, usernames, machine names, AP
 
 The dashboard uses these events:
 
-- `app_install`: sent once per anonymous install ID; used for total installs.
-- `app_start`: sent when the app starts; used for running apps in 24h, 7d, and 30d windows.
-- `app_ping`: sent every five minutes while the app is open; used for the live running count.
+- `app_install`: sent once per anonymous install ID; counted toward total installs.
+- `app_start`: sent when the app launches; counts as presence **and** as a launch.
+- `app_ping`: heartbeat every five minutes while the app is open; counts as presence for Online Now / Active 24h / 7d / 30d / daily charts.
+- `scan_complete`: optional scan totals (items, action needed, detections, high risk).
+
+Presence metrics count unique install IDs that sent either `app_start` or `app_ping` in the window (so tray apps that stay open still show as active). Launch metrics count only `app_start`. Duplicate `app_ping` events within ~4 minutes from the same install are accepted but not stored, to keep D1 write volume low.
 
 ## Deploy
 

@@ -1278,6 +1278,7 @@ public sealed class MainForm : Form
     {
         if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(TelemetryEndpointUrl))
         {
+            telemetryHeartbeatTimer.Stop();
             return;
         }
 
@@ -1296,8 +1297,12 @@ public sealed class MainForm : Form
             }
         }
 
+        // Always announce presence when init runs (startup, or Settings toggle on).
         _ = SendTelemetryEventAsync("app_start");
-        telemetryHeartbeatTimer.Start();
+        if (!telemetryHeartbeatTimer.Enabled)
+        {
+            telemetryHeartbeatTimer.Start();
+        }
     }
 
     private async Task<bool> SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)
@@ -5087,6 +5092,7 @@ public sealed class MainForm : Form
         appSettings.RunElevated = runElevatedBox.Checked;
         appSettings.ScanAllFiles = scanAllFilesBox.Checked;
         appSettings.AutoUpdateChecks = autoUpdateChecksBox.Checked;
+        var telemetryWasEnabled = appSettings.TelemetryEnabled;
         appSettings.TelemetryEnabled = telemetryEnabledBox.Checked;
         if (appSettings.TelemetryEnabled && string.IsNullOrWhiteSpace(appSettings.AnonymousInstallId))
         {
@@ -5109,6 +5115,16 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             statusLabel.Text = $"Could not save settings: {ex.Message}";
+        }
+
+        // Start/stop reporting immediately when the setting changes (do not require app restart).
+        if (appSettings.TelemetryEnabled && !telemetryWasEnabled)
+        {
+            _ = InitializeTelemetryAsync();
+        }
+        else if (!appSettings.TelemetryEnabled && telemetryWasEnabled)
+        {
+            telemetryHeartbeatTimer.Stop();
         }
     }
 
