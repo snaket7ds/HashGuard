@@ -187,6 +187,19 @@ var tests = new (string Name, Action Test)[]
         var asset = new GitHubAsset { Digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
         AssertEqual("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UpdateVerifier.GetReleaseAssetSha256(asset));
     }),
+    ("config path is next to the app (not LocalAppData)", () =>
+    {
+        var config = AppPaths.GetConfigDirectory();
+        AssertTrue(config.EndsWith($"{Path.DirectorySeparatorChar}config", StringComparison.OrdinalIgnoreCase)
+            || config.EndsWith("/config", StringComparison.OrdinalIgnoreCase)
+            || config.EndsWith("\\config", StringComparison.OrdinalIgnoreCase));
+        AssertFalse(config.Contains($"{Path.DirectorySeparatorChar}HashGuard{Path.DirectorySeparatorChar}config", StringComparison.OrdinalIgnoreCase)
+            && config.Contains("Local", StringComparison.OrdinalIgnoreCase));
+        // Primary path must be under the app base directory.
+        AssertTrue(config.StartsWith(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+            || config.Contains(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase)
+            || Path.GetFullPath(config).StartsWith(Path.GetFullPath(AppContext.BaseDirectory), StringComparison.OrdinalIgnoreCase));
+    }),
     ("hash cache reusable clean entry respects age", () =>
     {
         var fresh = new CacheEntry

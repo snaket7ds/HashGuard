@@ -46,24 +46,27 @@ internal static class UpdateVerifier
     }
 
     /// <summary>
-    /// When the current executable is signed, require the update to share the same publisher name.
-    /// Unsigned current builds skip the publisher check (local/dev).
+    /// Authenticode publisher check after SHA-256 verification.
+    /// GitHub release builds are often unsigned; only fail when BOTH files are signed
+    /// and the publisher names differ. Never block a hash-verified update solely because
+    /// the download is unsigned.
     /// </summary>
     public static bool PublisherMatchesCurrentBuild(string currentExePath, string updateExePath, out string detail)
     {
         detail = "";
         var currentPublisher = TryGetPublisher(currentExePath);
-        if (string.IsNullOrWhiteSpace(currentPublisher))
+        var updatePublisher = TryGetPublisher(updateExePath);
+
+        if (string.IsNullOrWhiteSpace(updatePublisher))
         {
-            detail = "Current build is unsigned; publisher check skipped.";
+            detail = "Update is unsigned; relying on SHA-256 only.";
             return true;
         }
 
-        var updatePublisher = TryGetPublisher(updateExePath);
-        if (string.IsNullOrWhiteSpace(updatePublisher))
+        if (string.IsNullOrWhiteSpace(currentPublisher))
         {
-            detail = "Update is not Authenticode-signed.";
-            return false;
+            detail = "Current build is unsigned; update publisher accepted after SHA-256.";
+            return true;
         }
 
         if (!string.Equals(currentPublisher, updatePublisher, StringComparison.OrdinalIgnoreCase))

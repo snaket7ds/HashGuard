@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.52 - 2026-08-12
+
+- Fixed settings/cache/log path regression from v1.0.51: store data next to `HashGuard.exe` again (`config\`, `logs\`), matching v1.0.50 and earlier.
+- Auto-migrate any settings written under `%LocalAppData%\HashGuard\config` in v1.0.51 back next to the app when the app-local config is empty.
+- Fixed in-app updates: do not block a SHA-256-verified update solely because the GitHub build is unsigned (publisher check only fails when both EXEs are signed and publishers differ).
+
 ## v1.0.51 - 2026-08-11
 
 - Extracted modules: `Models/`, `Storage/` (HashCache, QuotaTracker, scan snapshot), `Providers/` (JSON helpers, VT/MetaDefender/Cymru stats, Cymru client), `Scanning/` (path security, file hash, report export, scheduled scan), `Telemetry/`, `Updates/`, `Ui/ThemePalette`, plus `AppPaths` and `AppConstants`.
