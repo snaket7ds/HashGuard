@@ -489,7 +489,8 @@ public sealed partial class MainForm : Form
         var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        // Tall enough for two button rows when the window is narrow (Activity Log must stay visible).
+        resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
         resultsLayout.Controls.Add(new Label
         {
             Text = "PC Security · Review Queue",
@@ -504,16 +505,20 @@ public sealed partial class MainForm : Form
         resultsHost.Controls.Add(resultsView);
         resultsEmptyLabel.BringToFront();
         resultsLayout.Controls.Add(resultsHost, 0, 1);
-        var queueActions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 8, 0, 0) };
-        queueActions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        queueActions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        var rowActions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
+        var queueActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
+            AutoScroll = false,
+            Margin = new Padding(0, 4, 0, 0),
+            Padding = new Padding(0),
+        };
         var openReport = CreateQueueActionButton("Open Report");
         var openLocation = CreateQueueActionButton("Open Location");
         var ignoreSelected = CreateQueueActionButton("Ignore");
         var ignorePublisher = CreateQueueActionButton("Ignore Publisher");
         var quarantineSelected = CreateQueueActionButton("Quarantine");
-        var utilityActions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(12, 0, 0, 0) };
         var exportReport = CreateQueueActionButton("Export");
         var activityLog = CreateQueueActionButton("Activity Log");
         openReport.Click += (_, _) => OpenSelectedReport(resultsView);
@@ -541,15 +546,14 @@ public sealed partial class MainForm : Form
         ignoreSelected.Enabled = false;
         ignorePublisher.Enabled = false;
         quarantineSelected.Enabled = false;
-        rowActions.Controls.Add(openReport);
-        rowActions.Controls.Add(openLocation);
-        rowActions.Controls.Add(ignoreSelected);
-        rowActions.Controls.Add(ignorePublisher);
-        rowActions.Controls.Add(quarantineSelected);
-        utilityActions.Controls.Add(exportReport);
-        utilityActions.Controls.Add(activityLog);
-        queueActions.Controls.Add(rowActions, 0, 0);
-        queueActions.Controls.Add(utilityActions, 1, 0);
+        // Order: triage actions first, then always-available utilities (never clipped off the right edge).
+        queueActions.Controls.Add(openReport);
+        queueActions.Controls.Add(openLocation);
+        queueActions.Controls.Add(ignoreSelected);
+        queueActions.Controls.Add(ignorePublisher);
+        queueActions.Controls.Add(quarantineSelected);
+        queueActions.Controls.Add(exportReport);
+        queueActions.Controls.Add(activityLog);
         resultsLayout.Controls.Add(queueActions, 0, 2);
         resultsPanel.Controls.Add(resultsLayout);
         main.Controls.Add(resultsPanel, 0, 1);
@@ -692,9 +696,12 @@ public sealed partial class MainForm : Form
         return new Button
         {
             Text = text,
-            Width = Math.Max(90, text.Length * 8 + 28),
-            Height = 32,
-            Margin = new Padding(0, 0, 8, 0),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            MinimumSize = new Size(88, 30),
+            Height = 30,
+            Margin = new Padding(0, 2, 6, 2),
+            Padding = new Padding(10, 2, 10, 2),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(245, 248, 250),
             ForeColor = Color.FromArgb(40, 50, 60),

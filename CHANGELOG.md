@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.53 - 2026-08-12
+
+- Review Queue action bar: wrap buttons onto a second row so Export and Activity Log are no longer clipped.
+- On startup, merge any leftover v1.0.51 `%LocalAppData%\HashGuard` data into the app folder, then delete that LocalAppData tree.
+
 ## v1.0.52 - 2026-08-12
 
 - Fixed settings/cache/log path regression from v1.0.51: store data next to `HashGuard.exe` again (`config\`, `logs\`), matching v1.0.50 and earlier.

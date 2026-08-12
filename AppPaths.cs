@@ -15,8 +15,6 @@ internal static class AppPaths
     public const string LastScanSnapshotFileName = "last-scan-snapshot.json";
     public const string ScanPipeName = "HashGuard.ScanRequest";
 
-    private static bool migrationAttempted;
-
     /// <summary>
     /// App-local config directory (same as v1.0.50): next to the executable.
     /// </summary>
@@ -41,83 +39,49 @@ internal static class AppPaths
     public static IEnumerable<string> GetLogDirectories()
     {
         yield return GetLogDirectory();
-        // v1.0.51 briefly wrote logs under LocalAppData; keep them discoverable for cache import.
-        var legacyLogs = GetLegacyLocalAppDataLogsDirectory();
-        if (!string.IsNullOrWhiteSpace(legacyLogs))
-        {
-            yield return legacyLogs;
-        }
     }
 
     /// <summary>
-    /// v1.0.51 incorrectly stored data under %LocalAppData%\HashGuard\config.
-    /// If the app-local config is empty/missing but legacy LocalAppData has settings,
-    /// copy that data back next to the EXE so keys and preferences return.
+    /// v1.0.51 incorrectly stored data under %LocalAppData%\HashGuard\.
+    /// Merge any useful files into the app-local config/logs, then delete that
+    /// leftover LocalAppData tree so the bug does not leave orphaned files behind.
     /// </summary>
     private static void EnsureLegacyLocalAppDataMigration()
     {
-        if (migrationAttempted)
-        {
-            return;
-        }
-
-        migrationAttempted = true;
-
         try
         {
-            var primaryConfig = Path.Combine(AppContext.BaseDirectory, ConfigFolderName);
-            var primarySettings = Path.Combine(primaryConfig, AppSettingsFileName);
-            var legacyConfig = GetLegacyLocalAppDataConfigDirectory();
-            if (string.IsNullOrWhiteSpace(legacyConfig) || !Directory.Exists(legacyConfig))
+            var legacyRoot = GetLegacyLocalAppDataRoot();
+            if (string.IsNullOrWhiteSpace(legacyRoot) || !Directory.Exists(legacyRoot))
             {
                 return;
             }
 
-            var legacySettings = Path.Combine(legacyConfig, AppSettingsFileName);
-            var primaryMissingOrEmpty = !File.Exists(primarySettings) || new FileInfo(primarySettings).Length == 0;
-            var legacyHasSettings = File.Exists(legacySettings) && new FileInfo(legacySettings).Length > 0;
+            var primaryConfig = Path.Combine(AppContext.BaseDirectory, ConfigFolderName);
+            var primaryLogs = Path.Combine(AppContext.BaseDirectory, "logs");
+            var legacyConfig = Path.Combine(legacyRoot, ConfigFolderName);
+            var legacyLogs = Path.Combine(legacyRoot, "logs");
 
-            // Prefer existing next-to-EXE settings (true 1.0.50 data). Only pull from LocalAppData when primary is empty.
-            if (!primaryMissingOrEmpty || !legacyHasSettings)
+            if (Directory.Exists(legacyConfig))
             {
-                // If primary is missing but legacy exists, still migrate; handled above.
-                // If primary already has settings, leave it alone.
-                if (File.Exists(primarySettings) && new FileInfo(primarySettings).Length > 0)
-                {
-                    return;
-                }
-
-                if (!legacyHasSettings)
-                {
-                    return;
-                }
+                MergeDirectory(legacyConfig, primaryConfig);
             }
 
-            Directory.CreateDirectory(primaryConfig);
-            foreach (var sourcePath in Directory.EnumerateFiles(legacyConfig, "*", SearchOption.TopDirectoryOnly))
+            if (Directory.Exists(legacyLogs))
             {
-                var name = Path.GetFileName(sourcePath);
-                var destPath = Path.Combine(primaryConfig, name);
-                if (!File.Exists(destPath) || new FileInfo(destPath).Length == 0)
-                {
-                    File.Copy(sourcePath, destPath, overwrite: true);
-                }
+                MergeDirectory(legacyLogs, primaryLogs);
             }
 
-            var legacyQuarantine = Path.Combine(legacyConfig, QuarantineFolderName);
-            var primaryQuarantine = Path.Combine(primaryConfig, QuarantineFolderName);
-            if (Directory.Exists(legacyQuarantine))
-            {
-                CopyDirectoryIfMissing(legacyQuarantine, primaryQuarantine);
-            }
+            // Remove the entire mistaken LocalAppData\HashGuard tree after merge.
+            // Retries on later launches if a file was locked the first time.
+            TryDeleteDirectory(legacyRoot);
         }
         catch
         {
-            // Migration is best-effort; never block startup.
+            // Migration/cleanup is best-effort; never block startup.
         }
     }
 
-    private static string? GetLegacyLocalAppDataConfigDirectory()
+    private static string? GetLegacyLocalAppDataRoot()
     {
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(localAppData))
@@ -125,21 +89,10 @@ internal static class AppPaths
             return null;
         }
 
-        return Path.Combine(localAppData, "HashGuard", ConfigFolderName);
+        return Path.Combine(localAppData, "HashGuard");
     }
 
-    private static string? GetLegacyLocalAppDataLogsDirectory()
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            return null;
-        }
-
-        return Path.Combine(localAppData, "HashGuard", "logs");
-    }
-
-    private static void CopyDirectoryIfMissing(string sourceDir, string destDir)
+    private static void MergeDirectory(string sourceDir, string destDir)
     {
         Directory.CreateDirectory(destDir);
         foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
@@ -147,10 +100,26 @@ internal static class AppPaths
             var relative = Path.GetRelativePath(sourceDir, file);
             var dest = Path.Combine(destDir, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            if (!File.Exists(dest))
+            // Prefer existing app-local files (true pre-1.0.51 data). Only fill gaps from the bug path.
+            if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
             {
-                File.Copy(file, dest, overwrite: false);
+                File.Copy(file, dest, overwrite: true);
             }
+        }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // Files may be locked; leftover cleanup can retry on next launch.
         }
     }
 }
