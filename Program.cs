@@ -43,7 +43,7 @@ internal static class Program
 
         try
         {
-            using var pipe = new NamedPipeClientStream(".", MainForm.ScanPipeName, PipeDirection.Out);
+            using var pipe = new NamedPipeClientStream(".", AppPaths.ScanPipeName, PipeDirection.Out);
             pipe.Connect(2500);
             using var writer = new StreamWriter(pipe, Encoding.UTF8) { AutoFlush = true };
             writer.WriteLine(scanFile);
@@ -683,7 +683,7 @@ internal static class FirstRunSetup
 
     private static void SaveInitialSettings(string apiKey)
     {
-        var settings = new MainForm.AppSettings
+        var settings = new AppSettings
         {
             ApiKeyEncrypted = MainForm.EncryptApiKey(apiKey),
         };

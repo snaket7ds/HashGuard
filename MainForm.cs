@@ -17,32 +17,12 @@ using Microsoft.Win32;
 
 namespace HashGuardScanner;
 
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
-    internal const string ScanPipeName = "HashGuard.ScanRequest";
-    private const string FileReportUrl = "https://www.virustotal.com/api/v3/files/{0}";
-    private const string FileUploadUrl = "https://www.virustotal.com/api/v3/files";
-    private const string LargeFileUploadUrl = "https://www.virustotal.com/api/v3/files/upload_url";
-    private const string AnalysisUrl = "https://www.virustotal.com/api/v3/analyses/{0}";
-    private const string ReportUrl = "https://www.virustotal.com/gui/file/{0}";
-    private const string MetaDefenderReportUrl = "https://metadefender.com/results/hash/{0}";
-    private const string MetaDefenderHashUrl = "https://api.metadefender.com/v4/hash/{0}";
-    private const string CymruDnsQueryUrl = "https://dns.google/resolve?name={0}&type=TXT";
-    private const long RegularUploadLimitBytes = 32L * 1024L * 1024L;
-    private const string ConfigFolderName = "config";
-    private const string AppSettingsFileName = "settings.json";
-    private const string IgnoredHashesFileName = "ignored-hashes.json";
-    private const string IgnoredPathsFileName = "ignored-paths.json";
-    private const string QuarantineFolderName = "quarantine";
-    private const string QuarantineManifestFileName = "quarantine-manifest.json";
-    private static readonly string CurrentVersion = GetCurrentVersion();
-    private const string GitHubOwner = "snaket7ds";
-    private const string GitHubRepo = "HashGuard";
-    private const string TelemetryEndpointUrl = "https://damp-cloud-4908.rod-81a.workers.dev/events";
-    private static readonly TimeSpan CleanCacheMaxAge = TimeSpan.FromDays(7);
-    private static readonly TimeSpan UnknownCacheMaxAge = TimeSpan.FromHours(12);
-    private static readonly TimeSpan ErrorCacheMaxAge = TimeSpan.FromHours(1);
-    private static readonly TimeSpan DeferredCacheMaxAge = TimeSpan.FromMinutes(30);
+    internal const string ScanPipeName = AppPaths.ScanPipeName;
+
+    private static readonly string CurrentVersion = AppConstants.GetCurrentVersion();
+
     private static readonly string[] ContextMenuRegistryPaths =
     [
         @"Software\Classes\*\shell\HashGuard",
@@ -71,9 +51,7 @@ public sealed class MainForm : Form
     private const int ColPath = 8;
     private const int ColNotes = 9;
     private const string MainResultsViewName = "mainResultsView";
-    private const string ColorModeSystem = "system";
-    private const string ColorModeLight = "light";
-    private const string ColorModeDark = "dark";
+
     // Webroot-inspired SecureAnywhere palette (brand green primary, calm neutrals).
     private static readonly Color BrandGreen = Color.FromArgb(125, 204, 38);      // #7DCC26 Webroot green
     private static readonly Color BrandGreenDark = Color.FromArgb(90, 160, 20);
@@ -153,14 +131,12 @@ public sealed class MainForm : Form
     private AppSettings appSettings = new();
     private CancellationTokenSource? scanCancellation;
     private readonly CancellationTokenSource scanPipeCancellation = new();
-    private bool processMonitorScanRunning;
     private bool trayRunningNotificationShown;
     private bool uploadWarningShown;
     private bool scanAllFilesWarningShown;
     private bool exitRequested;
     private bool suppressSettingEvents;
     private bool updateCheckRunning;
-    private bool allFileScanRunning;
     private bool processBaselineReady;
     private string lastAutoPromptedUpdateVersion = "";
     private string lastSkippedProcessLogSignature = "";
@@ -226,11 +202,6 @@ public sealed class MainForm : Form
         ".x3f",
     };
 
-    private static string GetCurrentVersion()
-    {
-        var version = typeof(MainForm).Assembly.GetName().Version;
-        return version is null ? "1.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
-    }
 
     public MainForm(string[] args)
     {
@@ -540,13 +511,17 @@ public sealed class MainForm : Form
         var openReport = CreateQueueActionButton("Open Report");
         var openLocation = CreateQueueActionButton("Open Location");
         var ignoreSelected = CreateQueueActionButton("Ignore");
+        var ignorePublisher = CreateQueueActionButton("Ignore Publisher");
         var quarantineSelected = CreateQueueActionButton("Quarantine");
         var utilityActions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(12, 0, 0, 0) };
+        var exportReport = CreateQueueActionButton("Export");
         var activityLog = CreateQueueActionButton("Activity Log");
         openReport.Click += (_, _) => OpenSelectedReport(resultsView);
         openLocation.Click += (_, _) => OpenSelectedFileLocation(resultsView);
         ignoreSelected.Click += (_, _) => ToggleSelectedIgnoreFlag(resultsView);
+        ignorePublisher.Click += (_, _) => IgnoreSelectedPublisher(resultsView);
         quarantineSelected.Click += (_, _) => QuarantineSelectedFiles(resultsView);
+        exportReport.Click += (_, _) => ExportScanReport();
         activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
         resultsView.SelectedIndexChanged += (_, _) =>
         {
@@ -555,6 +530,7 @@ public sealed class MainForm : Form
             openReport.Enabled = hasSelection;
             openLocation.Enabled = hasSelection;
             ignoreSelected.Enabled = hasSelection;
+            ignorePublisher.Enabled = hasSelection;
             quarantineSelected.Enabled = hasSelection;
             UpdateIgnoreButtonText(resultsView, ignoreSelected);
         };
@@ -563,11 +539,14 @@ public sealed class MainForm : Form
         openReport.Enabled = false;
         openLocation.Enabled = false;
         ignoreSelected.Enabled = false;
+        ignorePublisher.Enabled = false;
         quarantineSelected.Enabled = false;
         rowActions.Controls.Add(openReport);
         rowActions.Controls.Add(openLocation);
         rowActions.Controls.Add(ignoreSelected);
+        rowActions.Controls.Add(ignorePublisher);
         rowActions.Controls.Add(quarantineSelected);
+        utilityActions.Controls.Add(exportReport);
         utilityActions.Controls.Add(activityLog);
         queueActions.Controls.Add(rowActions, 0, 0);
         queueActions.Controls.Add(utilityActions, 1, 0);
@@ -1024,6 +1003,10 @@ public sealed class MainForm : Form
         var autoProcessScan = new CheckBox { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
         var runElevated = new CheckBox { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
         var scanAllFiles = new CheckBox { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
+        var scheduledDaily = new CheckBox { Text = "Daily scheduled full scan", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
+        var scheduledHour = new NumericUpDown { Minimum = 0, Maximum = 23, Value = Math.Clamp(appSettings.ScheduledScanHour, 0, 23), Width = 70 };
+        var preferDelta = new CheckBox { Text = "Highlight new files since last scan", Checked = appSettings.PreferDeltaScan, AutoSize = true };
+        var suppressTray = new CheckBox { Text = "Suppress repeat tray alerts for same detections", Checked = appSettings.SuppressRepeatTrayAlerts, AutoSize = true };
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
         var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
         var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
@@ -1117,8 +1100,8 @@ public sealed class MainForm : Form
         AddSettingsTab(tabs, "Reputation", reputationPage);
 
         var behaviorPage = CreateSettingsPage(
-            ("Scanning", [hashCache, autoProcessScan, scanAllFiles, runElevated]),
-            ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, CreateSettingRow("Colors", colorMode), autoUpdates]),
+            ("Scanning", [hashCache, autoProcessScan, scanAllFiles, runElevated, preferDelta, scheduledDaily, CreateSettingRow("Scheduled scan hour (0-23)", scheduledHour)]),
+            ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, CreateSettingRow("Colors", colorMode), autoUpdates, suppressTray]),
             ("Privacy", [telemetryEnabled]),
             ("Version and Updates", [updateInfo]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
@@ -1213,6 +1196,10 @@ public sealed class MainForm : Form
         }
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
         telemetryEnabledBox.Checked = telemetryEnabled.Checked;
+        appSettings.ScheduledDailyScan = scheduledDaily.Checked;
+        appSettings.ScheduledScanHour = (int)scheduledHour.Value;
+        appSettings.PreferDeltaScan = preferDelta.Checked;
+        appSettings.SuppressRepeatTrayAlerts = suppressTray.Checked;
         appSettings.TrustedPublishers = trustedPublishers.Lines
             .Select(line => line.Trim())
             .Where(line => !string.IsNullOrWhiteSpace(line))
@@ -1224,6 +1211,14 @@ public sealed class MainForm : Form
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();
         SaveCurrentAppSettings();
+        try
+        {
+            ScheduledScan.Apply(appSettings.ScheduledDailyScan, appSettings.ScheduledScanHour, Application.ExecutablePath);
+        }
+        catch
+        {
+            // Scheduled task registration is best-effort.
+        }
         ApplyAppTheme(this);
     }
 
@@ -1276,7 +1271,7 @@ public sealed class MainForm : Form
 
     private async Task InitializeTelemetryAsync()
     {
-        if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(TelemetryEndpointUrl))
+        if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(AppConstants.TelemetryEndpointUrl))
         {
             telemetryHeartbeatTimer.Stop();
             return;
@@ -1307,7 +1302,7 @@ public sealed class MainForm : Form
 
     private async Task<bool> SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)
     {
-        if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(TelemetryEndpointUrl))
+        if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(AppConstants.TelemetryEndpointUrl))
         {
             return false;
         }
@@ -1318,28 +1313,12 @@ public sealed class MainForm : Form
             SaveCurrentAppSettings();
         }
 
-        try
-        {
-            using var http = AppHttp.Create(TimeSpan.FromSeconds(5));
-            http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{CurrentVersion}");
-            var payload = new
-            {
-                eventType,
-                installId = appSettings.AnonymousInstallId,
-                appVersion = CurrentVersion,
-                osVersion = Environment.OSVersion.VersionString,
-                sentAtUtc = DateTimeOffset.UtcNow,
-                data = data ?? [],
-            };
-            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            using var response = await http.PostAsync(TelemetryEndpointUrl, content);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            // Anonymous telemetry is best-effort and must never interrupt protection.
-            return false;
-        }
+        return await TelemetryClient.SendAsync(
+            AppConstants.TelemetryEndpointUrl,
+            eventType,
+            appSettings.AnonymousInstallId,
+            CurrentVersion,
+            data);
     }
 
     private void ShowFirstRunSetupIfNeeded()
@@ -1353,9 +1332,11 @@ public sealed class MainForm : Form
         SaveCurrentAppSettings();
         var message = string.Join($"{Environment.NewLine}{Environment.NewLine}", new[]
         {
-            "HashGuard can start with local-only protection. It will score unsigned files, risky paths, persistence entries, recent changes, and cached reputation without API keys.",
-            "Cloud reputation is stronger when you add VirusTotal and MetaDefender API keys in Settings.",
-            "Uploading unknown files is optional and privacy-sensitive. Leave uploads off for private, personal, proprietary, or sensitive files.",
+            "Choose your protection mode:",
+            "• Local-only (default): scores unsigned files, risky paths, persistence, recent changes, and the local hash cache — no cloud API keys required.",
+            "• Cloud reputation: add free VirusTotal and/or MetaDefender API keys in Settings for multi-engine hash checks.",
+            "Uploading unknown files to VirusTotal is optional and privacy-sensitive. Keep uploads off for private, personal, proprietary, or sensitive files.",
+            "Anonymous usage reporting is off by default. You can enable scheduled daily scans and export reports later in Settings.",
             "Open Settings now?",
         });
         var openSettings = MessageBox.Show(this, message, "HashGuard first-run setup", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
@@ -1527,8 +1508,8 @@ public sealed class MainForm : Form
     {
         return appSettings.ColorMode switch
         {
-            ColorModeDark => ThemePalette.Dark,
-            ColorModeLight => ThemePalette.Light,
+            AppConstants.ColorModeDark => ThemePalette.Dark,
+            AppConstants.ColorModeLight => ThemePalette.Light,
             _ => IsWindowsDarkAppTheme() ? ThemePalette.Dark : ThemePalette.Light,
         };
     }
@@ -1537,9 +1518,9 @@ public sealed class MainForm : Form
     {
         return colorMode switch
         {
-            ColorModeLight => 1,
-            ColorModeDark => 2,
-            ColorModeSystem => 0,
+            AppConstants.ColorModeLight => 1,
+            AppConstants.ColorModeDark => 2,
+            AppConstants.ColorModeSystem => 0,
             _ => legacyUseSystemDefaultColors ? 0 : 1,
         };
     }
@@ -1548,9 +1529,9 @@ public sealed class MainForm : Form
     {
         return index switch
         {
-            1 => ColorModeLight,
-            2 => ColorModeDark,
-            _ => ColorModeSystem,
+            1 => AppConstants.ColorModeLight,
+            2 => AppConstants.ColorModeDark,
+            _ => AppConstants.ColorModeSystem,
         };
     }
 
@@ -1842,22 +1823,34 @@ public sealed class MainForm : Form
             processMonitorTimer.Start();
 
             var unresolved = results.Where(ResultNeedsAction).ToList();
+            var previousSnapshot = ScanSnapshotStore.Load();
+            ScanSnapshotStore.MarkNewSinceLastScan(results, previousSnapshot);
+            var newSinceLast = results.Count(result => result.IsNewSinceLastScan);
+            ScanSnapshotStore.Save(results);
+            resultsView.BeginUpdate();
+            try
+            {
+                resultsView.Items.Clear();
+                foreach (var result in results)
+                {
+                    AddResultRow(result);
+                }
+            }
+            finally
+            {
+                resultsView.EndUpdate();
+            }
+            ReconcileReviewQueue();
+
             var alerts = unresolved.Where(result => result.IsAlert).ToList();
             var unknown = results.Count(result => result.Status is "unknown" or "uploaded");
             var errors = unresolved.Count(result => result.Status == "error");
             var highRisk = unresolved.Count(result => result.RiskScore >= 70);
-            statusLabel.Text = $"Done. {unresolved.Count} action needed, {alerts.Count} detections, {unknown} unknown/uploaded, {errors} errors. Cache: {hashCache.Count} hashes.";
+            var newText = newSinceLast > 0 ? $", {newSinceLast} new since last scan" : "";
+            statusLabel.Text = $"Done. {unresolved.Count} action needed, {alerts.Count} detections, {unknown} unknown/uploaded, {errors} errors{newText}. Cache: {hashCache.Count} hashes.";
             _ = SendTelemetryEventAsync(
                 "scan_complete",
-                new Dictionary<string, object>
-                {
-                    ["items_scanned"] = results.Count,
-                    ["action_needed"] = unresolved.Count,
-                    ["detections"] = alerts.Count,
-                    ["unknown"] = unknown,
-                    ["errors"] = errors,
-                    ["high_risk"] = highRisk,
-                });
+                HashGuardLogic.BuildScanCompleteTelemetry(results.Count, unresolved.Count, alerts.Count, unknown, errors));
             SetDashboardState(
                 unresolved.Count > 0 ? "Action needed" : "Clean",
                 alerts.Count > 0
@@ -1877,8 +1870,18 @@ public sealed class MainForm : Form
                 }
                 else
                 {
-                    trayIcon.ShowBalloonTip(4000, "HashGuard detections found", sample, ToolTipIcon.Warning);
+                    var signature = HashGuardLogic.BuildTrayAlertSignature(alerts.Select(r => (r.Sha256, r.Path)));
+                    if (HashGuardLogic.ShouldShowTrayAlert(appSettings.SuppressRepeatTrayAlerts, appSettings.LastTrayAlertSignature, signature))
+                    {
+                        appSettings.LastTrayAlertSignature = signature;
+                        SaveCurrentAppSettings();
+                        trayIcon.ShowBalloonTip(4000, "HashGuard detections found", sample, ToolTipIcon.Warning);
+                    }
                 }
+            }
+            else if (unresolved.Count == 0)
+            {
+                appSettings.LastTrayAlertSignature = "";
             }
             else if (errors > 0)
             {
@@ -1925,7 +1928,7 @@ public sealed class MainForm : Form
 
     private async Task ScanNewProcessFilesAsync()
     {
-        if (scanCancellation is not null || processMonitorScanRunning || scanGate.IsBusy)
+        if (scanCancellation is not null || scanGate.IsBusy)
         {
             return;
         }
@@ -1949,7 +1952,6 @@ public sealed class MainForm : Form
             return;
         }
 
-        processMonitorScanRunning = true;
         progressBar.Value = 0;
         progressBar.Maximum = Math.Max(newPaths.Count, 1);
         countLabel.Text = $"0 / {newPaths.Count}";
@@ -2013,7 +2015,6 @@ public sealed class MainForm : Form
         }
         finally
         {
-            processMonitorScanRunning = false;
             scanGate.Exit();
         }
     }
@@ -2339,7 +2340,7 @@ public sealed class MainForm : Form
 
     private async Task ScanQueuedAllFileAsync()
     {
-        if (!scanAllFilesBox.Checked || !processBaselineReady || scanCancellation is not null || processMonitorScanRunning || allFileScanRunning || scanGate.IsBusy)
+        if (!scanAllFilesBox.Checked || !processBaselineReady || scanCancellation is not null || scanGate.IsBusy)
         {
             return;
         }
@@ -2371,7 +2372,6 @@ public sealed class MainForm : Form
             return;
         }
 
-        allFileScanRunning = true;
         statusLabel.Text = $"Idle file scan: {path}";
         SetDashboardState("Scanning", "Process monitoring is idle. Checking file activity.", false);
         try
@@ -2416,7 +2416,6 @@ public sealed class MainForm : Form
         }
         finally
         {
-            allFileScanRunning = false;
             scanGate.Exit();
         }
     }
@@ -2474,12 +2473,13 @@ public sealed class MainForm : Form
                 await pipe.WaitForConnectionAsync(cancellationToken);
                 using var reader = new StreamReader(pipe, Encoding.UTF8);
                 var path = await reader.ReadLineAsync(cancellationToken);
-                if (!string.IsNullOrWhiteSpace(path))
+                var safePath = ScanPathSecurity.TryNormalizeScanPath(path, out _);
+                if (!string.IsNullOrWhiteSpace(safePath))
                 {
                     BeginInvoke(async () =>
                     {
                         RestoreFromTray();
-                        await ScanSingleFileAsync(path);
+                        await ScanSingleFileAsync(safePath);
                     });
                 }
             }
@@ -2967,7 +2967,7 @@ public sealed class MainForm : Form
         }
         try
         {
-            var releasesApiUrl = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases";
+            var releasesApiUrl = $"https://api.github.com/repos/{AppConstants.GitHubOwner}/{AppConstants.GitHubRepo}/releases";
             var latestReleaseApiUrl = $"{releasesApiUrl}/latest";
             using var http = AppHttp.Create(TimeSpan.FromSeconds(30));
             http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{CurrentVersion}");
@@ -3009,11 +3009,11 @@ public sealed class MainForm : Form
             var shaAsset = release.Assets.FirstOrDefault(asset =>
                 string.Equals(asset.Name, "HashGuard.exe.sha256", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(asset.Name, "HashGuard.sha256", StringComparison.OrdinalIgnoreCase));
-            var expectedSha256 = GetReleaseAssetSha256(exeAsset);
+            var expectedSha256 = UpdateVerifier.GetReleaseAssetSha256(exeAsset);
             if (string.IsNullOrWhiteSpace(expectedSha256) && shaAsset is not null && !string.IsNullOrWhiteSpace(shaAsset.BrowserDownloadUrl))
             {
                 var shaText = await DownloadGitHubUrlTextAsync(http, shaAsset.BrowserDownloadUrl, "download the checksum asset");
-                expectedSha256 = ParseSha256Text(shaText);
+                expectedSha256 = UpdateVerifier.ParseSha256Text(shaText);
             }
 
             if (string.IsNullOrWhiteSpace(expectedSha256))
@@ -3061,11 +3061,17 @@ public sealed class MainForm : Form
             }
 
             statusLabel.Text = "Verifying update...";
-            var actualSha256 = await Sha256FileAsync(downloadPath);
+            var actualSha256 = await FileHash.Sha256FileAsync(downloadPath);
             if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(downloadPath);
                 throw new InvalidOperationException("Downloaded update hash did not match the GitHub release checksum. Update was not installed.");
+            }
+
+            if (!UpdateVerifier.PublisherMatchesCurrentBuild(Application.ExecutablePath, downloadPath, out var publisherDetail))
+            {
+                File.Delete(downloadPath);
+                throw new InvalidOperationException($"Update Authenticode publisher check failed. {publisherDetail}");
             }
 
             InstallDownloadedUpdate(downloadPath);
@@ -3116,32 +3122,6 @@ public sealed class MainForm : Form
         exitRequested = true;
         trayIcon.Visible = false;
         Application.Exit();
-    }
-
-    private static string GetReleaseAssetSha256(GitHubAsset asset)
-    {
-        if (string.IsNullOrWhiteSpace(asset.Digest))
-        {
-            return "";
-        }
-
-        const string prefix = "sha256:";
-        return asset.Digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            ? asset.Digest[prefix.Length..].Trim()
-            : "";
-    }
-
-    private static string ParseSha256Text(string text)
-    {
-        foreach (var token in text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            if (token.Length == 64 && token.All(Uri.IsHexDigit))
-            {
-                return token.ToLowerInvariant();
-            }
-        }
-
-        return "";
     }
 
     private static async Task<Stream> GetGitHubStreamAsync(HttpClient http, string url, string action)
@@ -3264,7 +3244,7 @@ public sealed class MainForm : Form
             if (hashCacheEnabledBox.Checked && hashCache.TryGetUnchangedFile(path, out var cachedSha256, out var cachedEntry))
             {
                 result.Sha256 = cachedSha256;
-                result.Link = string.Format(ReportUrl, result.Sha256);
+                result.Link = string.Format(AppConstants.VirusTotalGuiReportUrl, result.Sha256);
                 result.ApplyCache(cachedEntry, "Skipped unchanged file");
                 result.Status = "clean/seen";
                 ApplyIgnoredHash(result);
@@ -3272,8 +3252,8 @@ public sealed class MainForm : Form
                 return result;
             }
 
-            result.Sha256 = await Sha256FileAsync(path, cancellationToken);
-            result.Link = string.Format(ReportUrl, result.Sha256);
+            result.Sha256 = await FileHash.Sha256FileAsync(path, cancellationToken);
+            result.Link = string.Format(AppConstants.VirusTotalGuiReportUrl, result.Sha256);
             if (hashCacheEnabledBox.Checked && hashCache.TryGet(result.Sha256, out var cached))
             {
                 if (HashCache.IsReusableCleanEntry(cached))
@@ -3562,7 +3542,7 @@ public sealed class MainForm : Form
                 return;
             }
 
-            using var reportResponse = await http.GetAsync(string.Format(FileReportUrl, result.Sha256), cancellationToken);
+            using var reportResponse = await http.GetAsync(string.Format(AppConstants.VirusTotalFileReportUrl, result.Sha256), cancellationToken);
             if (reportResponse.StatusCode == HttpStatusCode.NotFound)
             {
                 result.Status = "unknown";
@@ -3593,7 +3573,7 @@ public sealed class MainForm : Form
             reportResponse.EnsureSuccessStatusCode();
             await using var reportStream = await reportResponse.Content.ReadAsStreamAsync(cancellationToken);
             using var reportJson = await JsonDocument.ParseAsync(reportStream, cancellationToken: cancellationToken);
-            ApplyFileReportStats(result, reportJson.RootElement);
+            ProviderStats.ApplyVirusTotalFileReport(result, reportJson.RootElement);
             AddProviderResult(result, "VirusTotal", result.IsDetection ? ProviderState.Detected : ProviderState.Clean,
                 result.IsDetection ? $"{result.Malicious} malicious, {result.Suspicious} suspicious." : "No malicious or suspicious detections.");
             AppendResultNote(result, result.IsDetection
@@ -3636,7 +3616,7 @@ public sealed class MainForm : Form
         {
             using var http = AppHttp.Create(TimeSpan.FromSeconds(30));
             http.DefaultRequestHeaders.Add("apikey", apiKey);
-            using var response = await http.GetAsync(string.Format(MetaDefenderHashUrl, result.Sha256), cancellationToken);
+            using var response = await http.GetAsync(string.Format(AppConstants.MetaDefenderHashUrl, result.Sha256), cancellationToken);
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 AddProviderResult(result, "MetaDefender", ProviderState.Unknown, "Hash not found.");
@@ -3680,13 +3660,13 @@ public sealed class MainForm : Form
                 return;
             }
 
-            using var analysisResponse = await http.GetAsync(string.Format(AnalysisUrl, analysisId), cancellationToken);
+            using var analysisResponse = await http.GetAsync(string.Format(AppConstants.VirusTotalAnalysisUrl, analysisId), cancellationToken);
             analysisResponse.EnsureSuccessStatusCode();
             await using var analysisStream = await analysisResponse.Content.ReadAsStreamAsync();
             using var analysisJson = await JsonDocument.ParseAsync(analysisStream);
-            ApplyAnalysisStats(result, analysisJson.RootElement);
+            ProviderStats.ApplyVirusTotalAnalysis(result, analysisJson.RootElement);
 
-            var status = ReadString(analysisJson.RootElement, "data", "attributes", "status");
+            var status = JsonPath.ReadString(analysisJson.RootElement, "data", "attributes", "status");
             if (status == "completed")
             {
                 AddProviderResult(result, "VirusTotal", result.IsDetection ? ProviderState.Detected : ProviderState.Clean,
@@ -3700,48 +3680,13 @@ public sealed class MainForm : Form
         AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Analysis still running: {analysisId}");
     }
 
-    private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken = default)
-    {
-        await using var stream = File.OpenRead(path);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    private static void ApplyFileReportStats(ScanResult result, JsonElement root)
-    {
-        var stats = ReadElement(root, "data", "attributes", "last_analysis_stats");
-        result.Malicious = ReadInt(stats, "malicious");
-        result.Suspicious = ReadInt(stats, "suspicious");
-        result.Harmless = ReadInt(stats, "harmless");
-        result.Undetected = ReadInt(stats, "undetected");
-        result.Status = result.IsAlert ? "detected" : "clean";
-    }
-
-    private static void ApplyAnalysisStats(ScanResult result, JsonElement root)
-    {
-        var stats = ReadElement(root, "data", "attributes", "stats");
-        result.Malicious = ReadInt(stats, "malicious");
-        result.Suspicious = ReadInt(stats, "suspicious");
-        result.Harmless = ReadInt(stats, "harmless");
-        result.Undetected = ReadInt(stats, "undetected");
-        var status = ReadString(root, "data", "attributes", "status");
-        if (result.IsAlert)
-        {
-            result.Status = "detected";
-        }
-        else if (status == "completed")
-        {
-            result.Status = "clean";
-        }
-    }
-
     private static void ApplyMetaDefenderStats(ScanResult result, JsonElement root)
     {
-        var scanResults = ReadElement(root, "scan_results");
-        var detected = ReadInt(scanResults, "total_detected_avs");
-        var total = ReadInt(scanResults, "total_avs");
-        var verdict = ReadString(scanResults, "scan_all_result_a") ?? ReadString(scanResults, "scan_all_result_i") ?? "";
-        var threatName = ReadString(scanResults, "threat_name") ?? "";
+        var scanResults = JsonPath.ReadElement(root, "scan_results");
+        var detected = JsonPath.ReadInt(scanResults, "total_detected_avs");
+        var total = JsonPath.ReadInt(scanResults, "total_avs");
+        var verdict = JsonPath.ReadString(scanResults, "scan_all_result_a") ?? JsonPath.ReadString(scanResults, "scan_all_result_i") ?? "";
+        var threatName = JsonPath.ReadString(scanResults, "threat_name") ?? "";
 
         if (detected > 0 || verdict.Contains("infected", StringComparison.OrdinalIgnoreCase) || verdict.Contains("malicious", StringComparison.OrdinalIgnoreCase))
         {
@@ -3776,7 +3721,7 @@ public sealed class MainForm : Form
 
         try
         {
-            var reputation = await QueryCymruAsync(result.Sha256, cancellationToken);
+            var reputation = await CymruClient.QueryAsync(result.Sha256, cancellationToken);
             if (reputation is null)
             {
                 AddProviderResult(result, "Cymru MHR", ProviderState.Clean, "No malware match.");
@@ -3803,66 +3748,6 @@ public sealed class MainForm : Form
         }
     }
 
-    private static async Task<CymruReputation?> QueryCymruAsync(string sha256, CancellationToken cancellationToken)
-    {
-        var queryName = BuildCymruQueryName(sha256);
-        using var http = AppHttp.Create(TimeSpan.FromSeconds(10));
-        using var response = await http.GetAsync(string.Format(CymruDnsQueryUrl, Uri.EscapeDataString(queryName)), cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException($"DNS lookup returned {(int)response.StatusCode} {response.StatusCode}.");
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var status = ReadInt(document.RootElement, "Status");
-        if (status == 3)
-        {
-            return null;
-        }
-
-        if (status != 0)
-        {
-            throw new InvalidOperationException($"DNS lookup status {status}.");
-        }
-
-        if (!document.RootElement.TryGetProperty("Answer", out var answers) || answers.ValueKind != JsonValueKind.Array)
-        {
-            return null;
-        }
-
-        foreach (var answer in answers.EnumerateArray())
-        {
-            var data = ReadString(answer, "data");
-            var reputation = ParseCymruTxt(data);
-            if (reputation is not null)
-            {
-                return reputation;
-            }
-        }
-
-        return null;
-    }
-
-    private static CymruReputation? ParseCymruTxt(string? data)
-    {
-        if (string.IsNullOrWhiteSpace(data))
-        {
-            return null;
-        }
-
-        var cleaned = data.Replace("\"", "", StringComparison.Ordinal).Trim();
-        var parts = cleaned.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 2 ||
-            !long.TryParse(parts[0], out var unixSeconds) ||
-            !int.TryParse(parts[1], out var detectionPercent))
-        {
-            return null;
-        }
-
-        return new CymruReputation(DateTimeOffset.FromUnixTimeSeconds(unixSeconds), detectionPercent);
-    }
-
     private static void AppendResultNote(ScanResult result, string note)
     {
         result.Notes = string.IsNullOrWhiteSpace(result.Notes)
@@ -3887,7 +3772,7 @@ public sealed class MainForm : Form
             var ignoreNote = ignoredByHash ? "File hash ignored by user." : "File path ignored by user.";
             result.Notes = string.IsNullOrWhiteSpace(result.Notes)
                 ? ignoreNote
-                : HasIgnoreNote(result.Notes)
+                : HashGuardLogic.HasIgnoreNote(result.Notes)
                     ? result.Notes
                     : $"{result.Notes}; {ignoreNote}";
         }
@@ -3952,20 +3837,20 @@ public sealed class MainForm : Form
 
     private async Task<string?> UploadFileAsync(HttpClient http, string path, ScanResult result, CancellationToken cancellationToken)
     {
-        var uploadUrl = FileUploadUrl;
+        var uploadUrl = AppConstants.VirusTotalFileUploadUrl;
         var info = new FileInfo(path);
-        if (info.Length >= RegularUploadLimitBytes)
+        if (info.Length >= AppConstants.RegularUploadLimitBytes)
         {
             if (!await TryReserveVirusTotalQuotaAsync(result))
             {
                 return null;
             }
 
-            using var uploadUrlResponse = await http.GetAsync(LargeFileUploadUrl, cancellationToken);
+            using var uploadUrlResponse = await http.GetAsync(AppConstants.VirusTotalLargeFileUploadUrl, cancellationToken);
             uploadUrlResponse.EnsureSuccessStatusCode();
             await using var uploadUrlStream = await uploadUrlResponse.Content.ReadAsStreamAsync();
             using var uploadUrlJson = await JsonDocument.ParseAsync(uploadUrlStream);
-            uploadUrl = uploadUrlJson.RootElement.GetProperty("data").GetString() ?? FileUploadUrl;
+            uploadUrl = uploadUrlJson.RootElement.GetProperty("data").GetString() ?? AppConstants.VirusTotalFileUploadUrl;
         }
 
         await using var fileStream = File.OpenRead(path);
@@ -3983,7 +3868,7 @@ public sealed class MainForm : Form
         uploadResponse.EnsureSuccessStatusCode();
         await using var responseStream = await uploadResponse.Content.ReadAsStreamAsync();
         using var responseJson = await JsonDocument.ParseAsync(responseStream);
-        return ReadString(responseJson.RootElement, "data", "id") ?? "submitted";
+        return JsonPath.ReadString(responseJson.RootElement, "data", "id") ?? "submitted";
     }
 
     private void AddResultRow(ScanResult result)
@@ -4017,12 +3902,24 @@ public sealed class MainForm : Form
         item.SubItems.Add(result.Pids);
         item.SubItems.Add(result.Sha256);
         item.SubItems.Add(result.Path);
-        item.SubItems.Add(resultsView.Name == MainResultsViewName ? BuildReviewRecommendation(result) : result.Notes);
+        var recommendation = resultsView.Name == MainResultsViewName ? BuildReviewRecommendation(result) : result.Notes;
+        if (result.IsNewSinceLastScan && appSettings.PreferDeltaScan)
+        {
+            recommendation = string.IsNullOrWhiteSpace(recommendation)
+                ? "New since last scan"
+                : $"New since last scan · {recommendation}";
+        }
+
+        item.SubItems.Add(recommendation);
         item.Tag = result.Link;
 
         if (result.IsAlert)
         {
             item.BackColor = Color.FromArgb(253, 232, 232);
+        }
+        else if (result.IsNewSinceLastScan && appSettings.PreferDeltaScan)
+        {
+            item.BackColor = Color.FromArgb(232, 245, 233);
         }
         else if (result.Status == "ignored")
         {
@@ -4223,7 +4120,7 @@ public sealed class MainForm : Form
         actionLabel.Text = $"Needs review: {actionsNeeded}";
         toolTip.SetToolTip(summaryLabel, $"{results.Count} scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown");
         toolTip.SetToolTip(actionLabel, $"{actionsNeeded} file(s) need action | {alerts} detections | {highRisk} high risk | {errors} errors");
-        if (scanCancellation is not null || processMonitorScanRunning)
+        if (scanCancellation is not null || scanGate.IsBusy)
         {
             return;
         }
@@ -4249,7 +4146,7 @@ public sealed class MainForm : Form
     private static bool ResultIsHandled(ScanResult result)
     {
         return string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase)
-            || HasIgnoreNote(result.Notes)
+            || HashGuardLogic.HasIgnoreNote(result.Notes)
             || result.Notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -4257,7 +4154,7 @@ public sealed class MainForm : Form
     {
         try
         {
-            var logDir = GetLogDirectory();
+            var logDir = AppPaths.GetLogDirectory();
             Directory.CreateDirectory(logDir);
             var logPath = Path.Combine(logDir, $"scan-log-{DateTime.Now:yyyyMMdd}.csv");
             var writeHeader = !File.Exists(logPath);
@@ -4295,14 +4192,14 @@ public sealed class MainForm : Form
 
     private void OpenLogFolder()
     {
-        var logDir = GetLogDirectory();
+        var logDir = AppPaths.GetLogDirectory();
         Directory.CreateDirectory(logDir);
         Process.Start(new ProcessStartInfo(logDir) { UseShellExecute = true });
     }
 
     private void OpenHashCacheFolder()
     {
-        var configDir = GetConfigDirectory();
+        var configDir = AppPaths.GetConfigDirectory();
         Directory.CreateDirectory(configDir);
         Process.Start(new ProcessStartInfo(configDir) { UseShellExecute = true });
     }
@@ -4592,7 +4489,7 @@ public sealed class MainForm : Form
     {
         return string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase)
             || GetSubItemText(item, ColNotes).StartsWith("Handled:", StringComparison.OrdinalIgnoreCase)
-            || HasIgnoreNote(GetSubItemText(item, ColNotes))
+            || HashGuardLogic.HasIgnoreNote(GetSubItemText(item, ColNotes))
             || GetSubItemText(item, ColNotes).Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -4783,14 +4680,12 @@ public sealed class MainForm : Form
             : "";
     }
 
-    private static string GetLogDirectory()
-    {
-        return Path.Combine(AppContext.BaseDirectory, "logs");
-    }
+    private static string GetLogDirectory() => AppPaths.GetLogDirectory();
+
 
     private static IEnumerable<string> GetLogDirectories()
     {
-        yield return GetLogDirectory();
+        yield return AppPaths.GetLogDirectory();
     }
 
     private static string? ParseStartupScanFile(string[] args)
@@ -5099,7 +4994,7 @@ public sealed class MainForm : Form
             appSettings.AnonymousInstallId = Guid.NewGuid().ToString("N");
         }
         appSettings.ColorMode = IndexToColorMode(colorModeBox.SelectedIndex);
-        appSettings.UseSystemDefaultColors = appSettings.ColorMode == ColorModeSystem;
+        appSettings.UseSystemDefaultColors = appSettings.ColorMode == AppConstants.ColorModeSystem;
         appSettings.DelaySeconds = (int)delayBox.Value;
         appSettings.TimeoutSeconds = (int)timeoutBox.Value;
 
@@ -5109,8 +5004,8 @@ public sealed class MainForm : Form
         appSettings.MetaDefenderApiKey = "";
         try
         {
-            Directory.CreateDirectory(GetConfigDirectory());
-            File.WriteAllText(GetAppSettingsPath(), JsonSerializer.Serialize(appSettings, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+            Directory.CreateDirectory(AppPaths.GetConfigDirectory());
+            File.WriteAllText(AppPaths.GetAppSettingsPath(), JsonSerializer.Serialize(appSettings, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
         }
         catch (Exception ex)
         {
@@ -5132,7 +5027,7 @@ public sealed class MainForm : Form
     {
         try
         {
-            var currentPath = GetAppSettingsPath();
+            var currentPath = AppPaths.GetAppSettingsPath();
             if (File.Exists(currentPath))
             {
                 var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(currentPath, Encoding.UTF8)) ?? new AppSettings();
@@ -5302,35 +5197,22 @@ public sealed class MainForm : Form
         key?.DeleteValue(RunRegistryValueName, throwOnMissingValue: false);
     }
 
-    internal static string GetAppSettingsPath()
-    {
-        return Path.Combine(GetConfigDirectory(), AppSettingsFileName);
-    }
+    private static string GetIgnoredHashesPath() => AppPaths.GetIgnoredHashesPath();
 
-    internal static string GetConfigDirectory()
-    {
-        return Path.Combine(AppContext.BaseDirectory, ConfigFolderName);
-    }
 
-    private static string GetIgnoredHashesPath()
-    {
-        return Path.Combine(GetConfigDirectory(), IgnoredHashesFileName);
-    }
+    private static string GetIgnoredPathsPath() => AppPaths.GetIgnoredPathsPath();
 
-    private static string GetIgnoredPathsPath()
-    {
-        return Path.Combine(GetConfigDirectory(), IgnoredPathsFileName);
-    }
 
-    private static string GetQuarantineDirectory()
-    {
-        return Path.Combine(GetConfigDirectory(), QuarantineFolderName);
-    }
+    private static string GetQuarantineDirectory() => AppPaths.GetQuarantineDirectory();
 
-    private static string GetQuarantineManifestPath()
-    {
-        return Path.Combine(GetConfigDirectory(), QuarantineManifestFileName);
-    }
+
+    private static string GetQuarantineManifestPath() => AppPaths.GetQuarantineManifestPath();
+
+
+
+    // Compatibility wrappers for Program.cs / first-run setup.
+    internal static string GetAppSettingsPath() => AppPaths.GetAppSettingsPath();
+    internal static string GetConfigDirectory() => AppPaths.GetConfigDirectory();
 
     private void LoadIgnoredHashes()
     {
@@ -5357,7 +5239,7 @@ public sealed class MainForm : Form
 
     private void SaveIgnoredHashes()
     {
-        Directory.CreateDirectory(GetConfigDirectory());
+        Directory.CreateDirectory(AppPaths.GetConfigDirectory());
         File.WriteAllText(
             GetIgnoredHashesPath(),
             JsonSerializer.Serialize(ignoredHashes.OrderBy(hash => hash, StringComparer.OrdinalIgnoreCase), new JsonSerializerOptions { WriteIndented = true }),
@@ -5389,7 +5271,7 @@ public sealed class MainForm : Form
 
     private void SaveIgnoredPaths()
     {
-        Directory.CreateDirectory(GetConfigDirectory());
+        Directory.CreateDirectory(AppPaths.GetConfigDirectory());
         File.WriteAllText(
             GetIgnoredPathsPath(),
             JsonSerializer.Serialize(ignoredPaths.OrderBy(path => path, StringComparer.OrdinalIgnoreCase), new JsonSerializerOptions { WriteIndented = true }),
@@ -5872,7 +5754,7 @@ public sealed class MainForm : Form
                 if (!string.IsNullOrWhiteSpace(entry.Sha256))
                 {
                     statusLabel.Text = $"Verifying quarantined file: {Path.GetFileName(entry.QuarantinePath)}";
-                    var quarantinedHash = await Sha256FileAsync(entry.QuarantinePath);
+                    var quarantinedHash = await FileHash.Sha256FileAsync(entry.QuarantinePath);
                     if (!string.Equals(quarantinedHash, entry.Sha256, StringComparison.OrdinalIgnoreCase))
                     {
                         throw new InvalidOperationException("Quarantined file hash no longer matches the manifest.");
@@ -6087,7 +5969,7 @@ public sealed class MainForm : Form
 
     private static void SaveQuarantineManifest(List<QuarantineEntry> manifest)
     {
-        Directory.CreateDirectory(GetConfigDirectory());
+        Directory.CreateDirectory(AppPaths.GetConfigDirectory());
         File.WriteAllText(
             GetQuarantineManifestPath(),
             JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
@@ -6098,7 +5980,7 @@ public sealed class MainForm : Form
     {
         try
         {
-            var logDir = GetLogDirectory();
+            var logDir = AppPaths.GetLogDirectory();
             Directory.CreateDirectory(logDir);
             var logPath = Path.Combine(logDir, $"quarantine-log-{DateTime.Now:yyyyMMdd}.csv");
             var writeHeader = !File.Exists(logPath);
@@ -6285,7 +6167,7 @@ public sealed class MainForm : Form
             {
                 result.StatusBeforeIgnore = result.Status;
                 result.Status = "ignored";
-                if (!HasIgnoreNote(result.Notes))
+                if (!HashGuardLogic.HasIgnoreNote(result.Notes))
                 {
                     var ignoreNote = target.Kind == "hash" ? "File hash ignored by user." : "File path ignored by user.";
                     result.Notes = string.IsNullOrWhiteSpace(result.Notes)
@@ -6338,7 +6220,7 @@ public sealed class MainForm : Form
                         ? "detected"
                         : "unknown";
                 result.StatusBeforeIgnore = "";
-                result.Notes = RemoveIgnoreNote(result.Notes);
+                result.Notes = HashGuardLogic.RemoveIgnoreNote(result.Notes);
                 if (ResultNeedsAction(result))
                 {
                     AddReviewQueueRow(result);
@@ -6371,7 +6253,7 @@ public sealed class MainForm : Form
             row.Text = "ignored";
             var notes = GetSubItemText(row, ColNotes);
             var ignoreNote = target.Kind == "hash" ? "File hash ignored by user." : "File path ignored by user.";
-            row.SubItems[ColNotes].Text = HasIgnoreNote(notes)
+            row.SubItems[ColNotes].Text = HashGuardLogic.HasIgnoreNote(notes)
                 ? notes
                 : string.IsNullOrWhiteSpace(notes)
                     ? ignoreNote
@@ -6396,7 +6278,7 @@ public sealed class MainForm : Form
                 ? malicious + suspicious > 0
                     ? $"Review now: {malicious} malicious / {suspicious} suspicious detections"
                     : "No action needed"
-                : RemoveIgnoreNote(GetSubItemText(row, ColNotes));
+                : HashGuardLogic.RemoveIgnoreNote(GetSubItemText(row, ColNotes));
             ApplyResultRowColor(row);
         }
     }
@@ -6424,32 +6306,6 @@ public sealed class MainForm : Form
             (_, > 0) => $"{pathCount} file path(s)",
             _ => "0 files",
         };
-    }
-
-    private static string RemoveIgnoreNote(string notes)
-    {
-        if (string.IsNullOrWhiteSpace(notes))
-        {
-            return "";
-        }
-
-        return string.Join("; ",
-            notes.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Where(note => !IsIgnoreNote(note)));
-    }
-
-    private static bool HasIgnoreNote(string notes)
-    {
-        return notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
-            || notes.Contains("File hash ignored by user.", StringComparison.OrdinalIgnoreCase)
-            || notes.Contains("File path ignored by user.", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsIgnoreNote(string note)
-    {
-        return note.Equals("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
-            || note.Equals("File hash ignored by user.", StringComparison.OrdinalIgnoreCase)
-            || note.Equals("File path ignored by user.", StringComparison.OrdinalIgnoreCase);
     }
 
     private void OpenSelectedReport(ListView sourceView)
@@ -6499,9 +6355,9 @@ public sealed class MainForm : Form
         var mhr = new Button { Text = "Cymru", Width = 108, Height = 34 };
         var cancel = new Button { Text = "Cancel", Width = 92, Height = 34, DialogResult = DialogResult.Cancel };
 
-        virusTotal.Click += (_, _) => OpenReportAndClose(dialog, string.Format(ReportUrl, sha256));
-        metaDefender.Click += (_, _) => OpenReportAndClose(dialog, string.Format(MetaDefenderReportUrl, sha256));
-        mhr.Click += (_, _) => OpenReportAndClose(dialog, string.Format(CymruDnsQueryUrl, Uri.EscapeDataString(BuildCymruQueryName(sha256))));
+        virusTotal.Click += (_, _) => OpenReportAndClose(dialog, string.Format(AppConstants.VirusTotalGuiReportUrl, sha256));
+        metaDefender.Click += (_, _) => OpenReportAndClose(dialog, string.Format(AppConstants.MetaDefenderReportUrl, sha256));
+        mhr.Click += (_, _) => OpenReportAndClose(dialog, string.Format(AppConstants.CymruDnsQueryUrl, Uri.EscapeDataString(ProviderStats.BuildCymruQueryName(sha256))));
 
         toolTip.SetToolTip(virusTotal, "Open VirusTotal report");
         toolTip.SetToolTip(metaDefender, "Open MetaDefender report");
@@ -6541,35 +6397,37 @@ public sealed class MainForm : Form
         dialog.Close();
     }
 
-    private static string BuildCymruQueryName(string sha256)
-    {
-        if (sha256.Length != 64)
-        {
-            return sha256;
-        }
-
-        return $"{sha256[..32]}.{sha256[32..]}.hash.cymru.com";
-    }
-
     private void ExportCsv()
     {
-        ExportCsv(resultsView);
+        ExportScanReport();
     }
 
     private void ExportCsv(ListView sourceView)
     {
-        if (sourceView.Items.Count == 0)
+        // Activity Log still exports the visible rows; main report uses the full in-memory results.
+        if (ReferenceEquals(sourceView, resultsView) || results.Count > 0)
         {
-            MessageBox.Show(this, "There are no rows to export.", "No results", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ExportScanReport();
+            return;
+        }
+
+        MessageBox.Show(this, "There are no rows to export.", "No results", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void ExportScanReport()
+    {
+        if (results.Count == 0)
+        {
+            MessageBox.Show(this, "Run a scan first, then export the report.", "No results", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         using var dialog = new SaveFileDialog
         {
-            Title = "Export scan results",
-            Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+            Title = "Export HashGuard scan report",
+            Filter = "CSV files (*.csv)|*.csv|HTML report (*.html)|*.html|All files (*.*)|*.*",
             DefaultExt = "csv",
-            FileName = $"vt-process-scan-{DateTime.Now:yyyyMMdd-HHmmss}.csv",
+            FileName = $"hashguard-scan-{DateTime.Now:yyyyMMdd-HHmmss}.csv",
         };
 
         if (dialog.ShowDialog(this) != DialogResult.OK)
@@ -6577,33 +6435,88 @@ public sealed class MainForm : Form
             return;
         }
 
-        var lines = new List<string>
+        var extension = Path.GetExtension(dialog.FileName);
+        if (string.Equals(extension, ".html", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(extension, ".htm", StringComparison.OrdinalIgnoreCase))
         {
-            "status,risk,trust,provider_results,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes",
-        };
-        foreach (ListViewItem item in sourceView.Items)
+            File.WriteAllText(dialog.FileName, ScanReportExport.ToHtml(results, CurrentVersion, DateTimeOffset.Now), Encoding.UTF8);
+        }
+        else
         {
-            lines.Add(string.Join(",", new[]
-            {
-                Csv(GetSubItemText(item, 0)),
-                Csv(GetSubItemText(item, ColRisk)),
-                Csv(GetSubItemText(item, ColTrust)),
-                Csv(""),
-                Csv(GetSubItemText(item, ColMalicious)),
-                Csv(GetSubItemText(item, ColSuspicious)),
-                Csv(""),
-                Csv(""),
-                Csv(GetSubItemText(item, ColProcess)),
-                Csv(GetSubItemText(item, ColPids)),
-                Csv(GetSubItemText(item, ColSha256)),
-                Csv(GetSubItemText(item, ColPath)),
-                Csv(item.Tag as string ?? ""),
-                Csv(GetSubItemText(item, ColNotes)),
-            }));
+            File.WriteAllText(dialog.FileName, ScanReportExport.ToCsv(results), Encoding.UTF8);
         }
 
-        File.WriteAllLines(dialog.FileName, lines, Encoding.UTF8);
-        MessageBox.Show(this, $"Saved {sourceView.Items.Count} rows to:{Environment.NewLine}{dialog.FileName}", "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        MessageBox.Show(this, $"Saved {results.Count} item(s) to:{Environment.NewLine}{dialog.FileName}", "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void IgnoreSelectedPublisher(ListView sourceView)
+    {
+        if (sourceView.SelectedItems.Count == 0)
+        {
+            MessageBox.Show(this, "Select a signed file row first.", "No file selected", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var publishers = sourceView.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(FindResultForReviewQueueRow)
+            .Where(result => result is not null)
+            .Select(result => result!.SignaturePublisher)
+            .Where(publisher => !string.IsNullOrWhiteSpace(publisher))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (publishers.Count == 0)
+        {
+            MessageBox.Show(this, "The selected row has no Authenticode publisher to ignore.", "No publisher", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var publisher = publishers[0];
+        var accepted = MessageBox.Show(
+            this,
+            $"Ignore all currently listed review-queue files signed by:{Environment.NewLine}{publisher}{Environment.NewLine}{Environment.NewLine}This adds matching hashes/paths to the ignore list.",
+            "Ignore publisher",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        var matched = results
+            .Where(result => HashGuardLogic.PublisherMatchesForIgnore(result.SignaturePublisher, publisher))
+            .ToList();
+        if (matched.Count == 0)
+        {
+            MessageBox.Show(this, "No matching signed files were found in the current scan.", "Ignore publisher", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        foreach (var result in matched)
+        {
+            if (!string.IsNullOrWhiteSpace(result.Sha256))
+            {
+                ignoredHashes.Add(result.Sha256);
+            }
+            else if (!string.IsNullOrWhiteSpace(result.Path))
+            {
+                ignoredPaths.Add(result.Path);
+            }
+
+            result.StatusBeforeIgnore = string.IsNullOrWhiteSpace(result.StatusBeforeIgnore) ? result.Status : result.StatusBeforeIgnore;
+            result.Status = "ignored";
+            if (!HashGuardLogic.HasIgnoreNote(result.Notes))
+            {
+                AppendResultNote(result, "File hash ignored by user.");
+            }
+        }
+
+        SaveIgnoredHashes();
+        SaveIgnoredPaths();
+        ReconcileReviewQueue();
+        UpdateSummary();
+        statusLabel.Text = $"Ignored {matched.Count} file(s) from publisher {publisher}.";
     }
 
     private static string GetSubItemText(ListViewItem item, int index)
@@ -6621,719 +6534,4 @@ public sealed class MainForm : Form
         return HashGuardLogic.ParseCsvLine(line);
     }
 
-    private static JsonElement ReadElement(JsonElement root, params string[] path)
-    {
-        var current = root;
-        foreach (var segment in path)
-        {
-            if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(segment, out var next))
-            {
-                return default;
-            }
-
-            current = next;
-        }
-
-        return current;
-    }
-
-    private static int ReadInt(JsonElement root, string property)
-    {
-        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty(property, out var value) && value.TryGetInt32(out var number))
-        {
-            return number;
-        }
-
-        return 0;
-    }
-
-    private static string? ReadString(JsonElement root, params string[] path)
-    {
-        var value = ReadElement(root, path);
-        return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-    }
-
-    private sealed record ProcessCollectionResult(Dictionary<string, List<ProcessFile>> Files, List<SkippedProcess> Skipped);
-    private sealed record ProcessFile(int Pid, string Name, string Path);
-    private sealed record SkippedProcess(int Pid, string Name, string Reason);
-    private sealed record PersistenceTarget(string Path, string Source);
-    private sealed record SignatureInfo(string Summary, string Publisher);
-    private sealed record ProviderResult(string Provider, ProviderState State, string Detail);
-    private readonly record struct ProcessFileState(long Length, DateTime LastWriteTimeUtc);
-
-    private sealed class HashCache
-    {
-        private static readonly string PrimaryCachePath = Path.Combine(
-            GetConfigDirectory(),
-            "hash-cache.json");
-        private static readonly string FileStateCachePath = Path.Combine(
-            GetConfigDirectory(),
-            "file-state-cache.json");
-
-        private readonly Dictionary<string, CacheEntry> entries = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, FileStateEntry> fileStates = new(StringComparer.OrdinalIgnoreCase);
-
-        public int Count => entries.Count;
-
-        public async Task LoadAsync()
-        {
-            entries.Clear();
-            fileStates.Clear();
-            foreach (var cachePath in GetCachePaths().Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                await LoadFromPathAsync(cachePath);
-            }
-
-            await LoadFileStatesAsync();
-        }
-
-        public bool TryGet(string sha256, out CacheEntry entry)
-        {
-            return entries.TryGetValue(sha256, out entry!);
-        }
-
-        public bool TryGetUnchangedFile(string path, out string sha256, out CacheEntry entry)
-        {
-            sha256 = "";
-            entry = null!;
-
-            if (!fileStates.TryGetValue(path, out var fileState) || !entries.TryGetValue(fileState.Sha256, out entry!) || !IsReusableCleanEntry(entry))
-            {
-                return false;
-            }
-
-            try
-            {
-                var info = new FileInfo(path);
-                if (!info.Exists
-                    || info.Length != fileState.Length
-                    || info.LastWriteTimeUtc != fileState.LastWriteTimeUtc)
-                {
-                    return false;
-                }
-
-                sha256 = fileState.Sha256;
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public void Set(ScanResult result)
-        {
-            var cacheStatus = string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(result.StatusBeforeIgnore)
-                    ? result.StatusBeforeIgnore
-                    : result.Status;
-            entries[result.Sha256] = new CacheEntry
-            {
-                Status = cacheStatus,
-                Malicious = result.Malicious,
-                Suspicious = result.Suspicious,
-                Harmless = result.Harmless,
-                Undetected = result.Undetected,
-                Link = result.Link,
-                Notes = RemoveIgnoreNote(result.Notes),
-                CheckedAtUtc = DateTimeOffset.UtcNow,
-                VirusTotalDeferred = result.VirusTotalDeferred,
-            };
-            SetFileState(result);
-        }
-
-        public async Task MarkFileCleanAsync(string path, string notes)
-        {
-            if (!File.Exists(path))
-            {
-                return;
-            }
-
-            var sha256 = await Sha256FileAsync(path);
-            entries[sha256] = new CacheEntry
-            {
-                Status = "clean",
-                Link = string.Format(ReportUrl, sha256),
-                Notes = notes,
-                CheckedAtUtc = DateTimeOffset.UtcNow,
-            };
-
-            SetFileState(new ScanResult(path, Path.GetFileName(path), Process.GetCurrentProcess().Id.ToString())
-            {
-                Sha256 = sha256,
-                Status = "clean",
-                Link = string.Format(ReportUrl, sha256),
-                Notes = notes,
-            });
-        }
-
-        public void SetFileState(ScanResult result)
-        {
-            if (string.IsNullOrWhiteSpace(result.Sha256) || !entries.TryGetValue(result.Sha256, out var entry) || !IsReusableCleanEntry(entry))
-            {
-                return;
-            }
-
-            try
-            {
-                var info = new FileInfo(result.Path);
-                if (!info.Exists)
-                {
-                    return;
-                }
-
-                fileStates[result.Path] = new FileStateEntry
-                {
-                    Sha256 = result.Sha256,
-                    Length = info.Length,
-                    LastWriteTimeUtc = info.LastWriteTimeUtc,
-                };
-            }
-            catch
-            {
-                // File state caching is an optimization; scan results are still valid without it.
-            }
-        }
-
-        public void ImportScanLogs(IEnumerable<string> logDirectories)
-        {
-            foreach (var logDirectory in logDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                if (!Directory.Exists(logDirectory))
-                {
-                    continue;
-                }
-
-                foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv"))
-                {
-                    ImportScanLog(logPath);
-                }
-            }
-        }
-
-        private void ImportScanLog(string logPath)
-        {
-            try
-            {
-                var lines = File.ReadLines(logPath).ToList();
-                if (lines.Count < 2)
-                {
-                    return;
-                }
-
-                var headers = ParseCsvLine(lines[0]);
-                var columns = headers
-                    .Select((name, index) => new { Name = name.Trim(), Index = index })
-                    .ToDictionary(item => item.Name, item => item.Index, StringComparer.OrdinalIgnoreCase);
-
-                foreach (var line in lines.Skip(1))
-                {
-                    ImportScanLogRow(ParseCsvLine(line), columns, File.GetLastWriteTimeUtc(logPath));
-                }
-            }
-            catch
-            {
-                // Old or manually edited logs should not block new scans.
-            }
-        }
-
-        private void ImportScanLogRow(List<string> row, Dictionary<string, int> columns, DateTime checkedAtUtc)
-        {
-            var sha256 = GetCsvValue(row, columns, "sha256");
-            if (sha256.Length != 64)
-            {
-                return;
-            }
-
-            var status = NormalizeCachedStatus(GetCsvValue(row, columns, "status"));
-            if (string.IsNullOrWhiteSpace(status) || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
-            {
-                return;
-            }
-
-            var entry = new CacheEntry
-            {
-                Status = status,
-                Malicious = GetCsvInt(row, columns, "malicious"),
-                Suspicious = GetCsvInt(row, columns, "suspicious"),
-                Harmless = GetCsvInt(row, columns, "harmless"),
-                Undetected = GetCsvInt(row, columns, "undetected"),
-                Link = GetCsvValue(row, columns, "link"),
-                Notes = GetCsvValue(row, columns, "notes"),
-                CheckedAtUtc = new DateTimeOffset(DateTime.SpecifyKind(checkedAtUtc, DateTimeKind.Utc)),
-            };
-
-            MergeEntry(sha256, entry, entry.CheckedAtUtc);
-            SetFileStateFromLog(GetCsvValue(row, columns, "path"), sha256, entry);
-        }
-
-        private static string GetCsvValue(List<string> row, Dictionary<string, int> columns, string columnName)
-        {
-            return columns.TryGetValue(columnName, out var index) && index >= 0 && index < row.Count
-                ? row[index]
-                : "";
-        }
-
-        private static int GetCsvInt(List<string> row, Dictionary<string, int> columns, string columnName)
-        {
-            return int.TryParse(GetCsvValue(row, columns, columnName), out var value) ? value : 0;
-        }
-
-        public static bool IsCleanEntry(CacheEntry entry)
-        {
-            return (string.Equals(entry.Status, "clean", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(entry.Status, "clean/seen", StringComparison.OrdinalIgnoreCase))
-                && entry.Malicious == 0
-                && entry.Suspicious == 0;
-        }
-
-        public static bool IsReusableCleanEntry(CacheEntry entry)
-        {
-            return IsCleanEntry(entry)
-                && entry.CheckedAtUtc != default
-                && DateTimeOffset.UtcNow - entry.CheckedAtUtc <= CleanCacheMaxAge;
-        }
-
-        public static bool IsReusablePendingEntry(CacheEntry entry)
-        {
-            return HashGuardLogic.CanReuseProviderCache(entry.Status, entry.VirusTotalDeferred, entry.CheckedAtUtc, DateTimeOffset.UtcNow);
-        }
-
-        private static string NormalizeCachedStatus(string status)
-        {
-            return string.Equals(status, "clean/seen", StringComparison.OrdinalIgnoreCase) ? "clean" : status;
-        }
-
-        private static List<string> ParseCsvLine(string line)
-        {
-            return HashGuardLogic.ParseCsvLine(line);
-        }
-
-        public async Task SaveAsync()
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(PrimaryCachePath)!);
-            await using var stream = File.Create(PrimaryCachePath);
-            await JsonSerializer.SerializeAsync(stream, entries, new JsonSerializerOptions { WriteIndented = true });
-
-            await using var fileStateStream = File.Create(FileStateCachePath);
-            await JsonSerializer.SerializeAsync(fileStateStream, fileStates, new JsonSerializerOptions { WriteIndented = true });
-        }
-
-        private async Task LoadFileStatesAsync()
-        {
-            if (!File.Exists(FileStateCachePath))
-            {
-                return;
-            }
-
-            try
-            {
-                await using var stream = File.OpenRead(FileStateCachePath);
-                var loaded = await JsonSerializer.DeserializeAsync<Dictionary<string, FileStateEntry>>(stream);
-                if (loaded is null)
-                {
-                    return;
-                }
-
-                foreach (var item in loaded)
-                {
-                    if (!string.IsNullOrWhiteSpace(item.Value.Sha256))
-                    {
-                        fileStates[item.Key] = item.Value;
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore stale or malformed file state cache data.
-            }
-        }
-
-        private static IEnumerable<string> GetCachePaths()
-        {
-            yield return PrimaryCachePath;
-            yield return Path.Combine(GetConfigDirectory(), "hash-cache.json");
-            yield return Path.Combine(GetConfigDirectory(), "cache.json");
-            yield return Path.Combine(AppContext.BaseDirectory, "hash-cache.json");
-
-            if (!Directory.Exists(GetConfigDirectory()))
-            {
-                yield break;
-            }
-
-            foreach (var path in Directory.EnumerateFiles(GetConfigDirectory(), "*.json"))
-            {
-                yield return path;
-            }
-        }
-
-        private async Task LoadFromPathAsync(string cachePath)
-        {
-            if (!File.Exists(cachePath))
-            {
-                return;
-            }
-
-            try
-            {
-                await using var stream = File.OpenRead(cachePath);
-                var loaded = await JsonSerializer.DeserializeAsync<Dictionary<string, CacheEntry>>(stream);
-                if (loaded is null)
-                {
-                    return;
-                }
-
-                var fileTime = new DateTimeOffset(File.GetLastWriteTimeUtc(cachePath), TimeSpan.Zero);
-                foreach (var item in loaded)
-                {
-                    MergeEntry(item.Key, item.Value, fileTime);
-                }
-            }
-            catch
-            {
-                // Non-cache JSON files may live in config; ignore anything that is not a cache.
-            }
-        }
-
-        private void MergeEntry(string sha256, CacheEntry entry, DateTimeOffset fallbackCheckedAtUtc)
-        {
-            entry.Status = NormalizeCachedStatus(entry.Status);
-            if (sha256.Length != 64 || string.IsNullOrWhiteSpace(entry.Status))
-            {
-                return;
-            }
-
-            if (entry.CheckedAtUtc == default)
-            {
-                entry.CheckedAtUtc = fallbackCheckedAtUtc;
-            }
-
-            if (!entries.TryGetValue(sha256, out var existing) || entry.CheckedAtUtc > existing.CheckedAtUtc)
-            {
-                entries[sha256] = entry;
-            }
-        }
-
-        private void SetFileStateFromLog(string path, string sha256, CacheEntry entry)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !IsCleanEntry(entry))
-            {
-                return;
-            }
-
-            try
-            {
-                var fullPath = Path.GetFullPath(path);
-                var info = new FileInfo(fullPath);
-                if (!info.Exists)
-                {
-                    return;
-                }
-
-                fileStates[fullPath] = new FileStateEntry
-                {
-                    Sha256 = sha256,
-                    Length = info.Length,
-                    LastWriteTimeUtc = info.LastWriteTimeUtc,
-                };
-            }
-            catch
-            {
-                // Log path metadata is best-effort.
-            }
-        }
-    }
-
-    private sealed class QuotaTracker
-    {
-        private const int DailyLimit = 500;
-        private const int MinuteLimit = 4;
-        private static readonly string QuotaPath = Path.Combine(
-            GetConfigDirectory(),
-            "free-api-quota.json");
-
-        private QuotaState state = new();
-
-        public async Task LoadAsync()
-        {
-            try
-            {
-                if (File.Exists(QuotaPath))
-                {
-                    await using var stream = File.OpenRead(QuotaPath);
-                    state = await JsonSerializer.DeserializeAsync<QuotaState>(stream) ?? new QuotaState();
-                }
-            }
-            catch
-            {
-                // Ignore stale or malformed quota data; it is local rate-limit bookkeeping.
-                state = new QuotaState();
-            }
-
-            ResetIfNewDay();
-            TrimOldMinuteRequests(DateTimeOffset.UtcNow);
-            await SaveAsync();
-        }
-
-        public async Task<QuotaReservation> TryReserveAsync()
-        {
-            ResetIfNewDay();
-            var now = DateTimeOffset.UtcNow;
-            TrimOldMinuteRequests(now);
-
-            if (state.DailyCount >= DailyLimit)
-            {
-                return new QuotaReservation(false, "daily");
-            }
-
-            if (state.MinuteRequestsUtc.Count >= MinuteLimit)
-            {
-                return new QuotaReservation(false, "minute");
-            }
-
-            state.MinuteRequestsUtc.Add(now);
-            state.DailyCount++;
-            await SaveAsync();
-            return new QuotaReservation(true, "");
-        }
-
-        private void ResetIfNewDay()
-        {
-            var today = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd");
-            if (state.UtcDay == today)
-            {
-                return;
-            }
-
-            state.UtcDay = today;
-            state.DailyCount = 0;
-            state.MinuteRequestsUtc.Clear();
-        }
-
-        private void TrimOldMinuteRequests(DateTimeOffset now)
-        {
-            state.MinuteRequestsUtc = state.MinuteRequestsUtc
-                .Where(requestTime => now - requestTime < TimeSpan.FromMinutes(1))
-                .ToList();
-        }
-
-        private async Task SaveAsync()
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(QuotaPath)!);
-            await using var stream = File.Create(QuotaPath);
-            await JsonSerializer.SerializeAsync(stream, state, new JsonSerializerOptions { WriteIndented = true });
-        }
-    }
-
-    private readonly record struct QuotaReservation(bool Available, string LimitName);
-
-    private sealed class CacheEntry
-    {
-        public string Status { get; set; } = "";
-        public int Malicious { get; set; }
-        public int Suspicious { get; set; }
-        public int Harmless { get; set; }
-        public int Undetected { get; set; }
-        public string Link { get; set; } = "";
-        public string Notes { get; set; } = "";
-        public DateTimeOffset CheckedAtUtc { get; set; }
-        public bool VirusTotalDeferred { get; set; }
-    }
-
-    private sealed class FileStateEntry
-    {
-        public string Sha256 { get; set; } = "";
-        public long Length { get; set; }
-        public DateTime LastWriteTimeUtc { get; set; }
-    }
-
-    private sealed class QuotaState
-    {
-        public string UtcDay { get; set; } = "";
-        public int DailyCount { get; set; }
-        public List<DateTimeOffset> MinuteRequestsUtc { get; set; } = [];
-    }
-
-    private sealed class GitHubRelease
-    {
-        [JsonPropertyName("tag_name")]
-        public string TagName { get; set; } = "";
-
-        [JsonPropertyName("body")]
-        public string Body { get; set; } = "";
-
-        [JsonPropertyName("draft")]
-        public bool Draft { get; set; }
-
-        [JsonPropertyName("assets")]
-        public List<GitHubAsset> Assets { get; set; } = [];
-    }
-
-    private sealed class GitHubAsset
-    {
-        [JsonPropertyName("url")]
-        public string Url { get; set; } = "";
-
-        [JsonPropertyName("name")]
-        public string Name { get; set; } = "";
-
-        [JsonPropertyName("browser_download_url")]
-        public string BrowserDownloadUrl { get; set; } = "";
-
-        [JsonPropertyName("digest")]
-        public string Digest { get; set; } = "";
-    }
-
-    private sealed record CymruReputation(DateTimeOffset LastSeenUtc, int DetectionPercent);
-
-    private sealed record IgnoreTarget(string Kind, string Value);
-
-    private enum TrayState
-    {
-        Clean,
-        Scanning,
-        ActionNeeded,
-    }
-
-    internal sealed class AppSettings
-    {
-        public bool FreeApiLimits { get; set; } = true;
-        public bool VirusTotalEnabled { get; set; } = true;
-        public bool MetaDefenderEnabled { get; set; } = true;
-        public bool MhrEnabled { get; set; } = true;
-        public bool HashCacheEnabled { get; set; } = true;
-        public bool UploadUnknown { get; set; }
-        public bool StartMinimized { get; set; }
-        public bool AutoProcessScan { get; set; } = true;
-        public bool RunElevated { get; set; }
-        public bool ScanAllFiles { get; set; }
-        public bool AutoUpdateChecks { get; set; }
-        public bool TelemetryEnabled { get; set; } = false;
-        public string AnonymousInstallId { get; set; } = "";
-        public bool AppInstallReported { get; set; }
-        public bool UseSystemDefaultColors { get; set; }
-        public string ColorMode { get; set; } = ColorModeLight;
-        public bool FirstRunSetupShown { get; set; }
-        public int DelaySeconds { get; set; } = 16;
-        public int TimeoutSeconds { get; set; } = 60;
-        public string ApiKeyEncrypted { get; set; } = "";
-        public string MetaDefenderApiKeyEncrypted { get; set; } = "";
-        public string ApiKey { get; set; } = "";
-        public string MetaDefenderApiKey { get; set; } = "";
-        public List<string> TrustedPublishers { get; set; } =
-        [
-            "Microsoft Corporation",
-            "Microsoft Windows",
-            "NVIDIA Corporation",
-            "Advanced Micro Devices",
-            "Intel Corporation",
-            "Dell Inc.",
-            "HP Inc.",
-            "Lenovo",
-        ];
-    }
-
-    private readonly record struct ThemePalette(
-        Color AppBack,
-        Color Surface,
-        Color PillBack,
-        Color InputBack,
-        Color Text,
-        Color MutedText,
-        Color ButtonBack,
-        Color Border,
-        Color CalloutBack,
-        Color HeaderBack,
-        Color HeaderText,
-        Color HeaderButtonBack,
-        Color HeaderButtonBorder)
-    {
-        // Soft consumer-security light theme (Webroot SecureAnywhere–inspired).
-        public static ThemePalette Light { get; } = new(
-            Color.FromArgb(242, 245, 247),
-            Color.White,
-            Color.FromArgb(236, 245, 230),
-            Color.White,
-            Color.FromArgb(32, 40, 48),
-            Color.FromArgb(100, 110, 120),
-            Color.FromArgb(245, 248, 250),
-            Color.FromArgb(220, 226, 232),
-            Color.FromArgb(248, 252, 245),
-            Color.White,
-            Color.FromArgb(32, 40, 48),
-            Color.FromArgb(245, 248, 250),
-            Color.FromArgb(220, 226, 232));
-
-        public static ThemePalette Dark { get; } = new(
-            Color.FromArgb(22, 28, 26),
-            Color.FromArgb(32, 40, 36),
-            Color.FromArgb(40, 52, 42),
-            Color.FromArgb(28, 34, 30),
-            Color.FromArgb(232, 240, 234),
-            Color.FromArgb(150, 168, 156),
-            Color.FromArgb(44, 54, 48),
-            Color.FromArgb(60, 74, 64),
-            Color.FromArgb(36, 48, 40),
-            Color.FromArgb(28, 36, 32),
-            Color.FromArgb(232, 240, 234),
-            Color.FromArgb(44, 54, 48),
-            Color.FromArgb(70, 86, 74));
-    }
-
-    private sealed class QuarantineEntry
-    {
-        public string OriginalPath { get; set; } = "";
-        public string QuarantinePath { get; set; } = "";
-        public string Sha256 { get; set; } = "";
-        public string Notes { get; set; } = "";
-        public DateTimeOffset QuarantinedAtUtc { get; set; }
-    }
-
-    private sealed class ScanResult(string path, string processNames, string pids)
-    {
-        public string Path { get; } = path;
-        public string ProcessNames { get; } = processNames;
-        public string Pids { get; } = pids;
-        public string Sha256 { get; set; } = "";
-        public string Status { get; set; } = "";
-        public int Malicious { get; set; }
-        public int Suspicious { get; set; }
-        public int Harmless { get; set; }
-        public int Undetected { get; set; }
-        public string Link { get; set; } = "";
-        public string Notes { get; set; } = "";
-        public List<ProviderResult> ProviderResults { get; } = [];
-        public string ProviderSummary => ProviderResults.Count == 0
-            ? ""
-            : string.Join(" | ", ProviderResults.Select(result => $"{result.Provider}: {result.State}{(string.IsNullOrWhiteSpace(result.Detail) ? "" : $" ({result.Detail})")}"));
-        public int RiskScore { get; set; }
-        public string RiskLevel { get; set; } = "Low";
-        public string TrustSummary { get; set; } = "";
-        public string SignatureSummary { get; set; } = "";
-        public string SignaturePublisher { get; set; } = "";
-        public long FileSizeBytes { get; set; }
-        public DateTime LastWriteTimeUtc { get; set; }
-        public double FileAgeDays { get; set; } = -1;
-        public List<string> PersistenceSources { get; set; } = [];
-        public bool VirusTotalDeferred { get; set; }
-        public string StatusBeforeIgnore { get; set; } = "";
-        public bool IsDetection => Malicious > 0 || Suspicious > 0;
-        public bool IsAlert => IsDetection && !string.Equals(Status, "ignored", StringComparison.OrdinalIgnoreCase);
-
-        public void ApplyCache(CacheEntry entry, string prefix = "Cached")
-        {
-            Status = entry.Status;
-            Malicious = entry.Malicious;
-            Suspicious = entry.Suspicious;
-            Harmless = entry.Harmless;
-            Undetected = entry.Undetected;
-            Link = entry.Link;
-            VirusTotalDeferred = entry.VirusTotalDeferred;
-            Notes = $"{prefix} {entry.CheckedAtUtc.LocalDateTime:g}";
-            if (!string.IsNullOrWhiteSpace(entry.Notes))
-            {
-                Notes += $"; {entry.Notes}";
-            }
-        }
-    }
 }

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v1.0.51 - 2026-08-11
+
+- Extracted modules: `Models/`, `Storage/` (HashCache, QuotaTracker, scan snapshot), `Providers/` (JSON helpers, VT/MetaDefender/Cymru stats, Cymru client), `Scanning/` (path security, file hash, report export, scheduled scan), `Telemetry/`, `Updates/`, `Ui/ThemePalette`, plus `AppPaths` and `AppConstants`.
+- Unified scan concurrency on `ScanGate` (removed parallel busy flags for monitor/idle scans).
+- Hardened Explorer named-pipe scan requests with path normalization and rejection of device/oversized/directory paths.
+- Added daily scheduled full-scan option (Task Scheduler), CSV/HTML scan report export, and new-since-last-scan highlighting.
+- Review Queue: Ignore Publisher bulk action; optional suppress-repeat tray alerts for the same detection set.
+- Update installer verifies Authenticode publisher matches the current signed build (after SHA-256 check).
+- First-run copy clarifies local-only vs cloud reputation modes; telemetry defaults remain off for new installs.
+- Expanded unit tests from 13 to 27 (provider mapping, cache age, telemetry payload safety, path security, exports, snapshots).
+- Telemetry worker/dashboard: installs offline >7 days hidden from roster; dashboard cache headers tightened (uncommitted worker polish included).
+
 ## v1.0.50 - 2026-08-11
 
 - Telemetry starts immediately when enabled in Settings (no app restart required); disabling stops the heartbeat timer.

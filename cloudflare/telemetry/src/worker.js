@@ -35,7 +35,8 @@ export default {
       return new Response(renderDashboard(), {
         headers: {
           "content-type": "text/html; charset=utf-8",
-          "cache-control": "private, max-age=60",
+          "cache-control": "no-store, no-cache, must-revalidate",
+          "pragma": "no-cache",
         },
       });
     }
@@ -123,8 +124,12 @@ async function buildSummary(env) {
   const since1Day = isoHoursAgo(24);
   const since7Days = isoHoursAgo(24 * 7);
   const since30Days = isoHoursAgo(24 * 30);
+  // Installs offline longer than this are omitted from the dashboard entirely.
+  const rosterRetentionDays = 7;
+  const sinceRoster = isoHoursAgo(24 * rosterRetentionDays);
 
-  // Presence = any start or heartbeat. Launches = app_start only (session starts).
+  // Presence = any start, heartbeat, or scan. Launches = app_start only.
+  // Installs with no activity in the last 7 days are hidden from the dashboard.
   const [
     totalInstalls,
     liveRunning,
@@ -139,19 +144,10 @@ async function buildSummary(env) {
     scanStats,
     scanStats30,
     daily,
-    eventVolume,
     installRoster,
   ] = await Promise.all([
-    scalar(
-      env,
-      `SELECT COUNT(*) AS value FROM (
-         SELECT install_id FROM events
-         WHERE event_type = 'app_install' AND ${VALID_INSTALL}
-         UNION
-         SELECT install_id FROM events
-         WHERE event_type IN ${PRESENCE_EVENTS} AND ${VALID_INSTALL}
-       )`
-    ),
+    // "Total installs" = unique IDs seen in the last 7 days (not lifetime stale).
+    distinctPresence(env, sinceRoster),
     distinctPresence(env, sinceLive),
     distinctPresence(env, since1Day),
     distinctPresence(env, since7Days),
@@ -173,7 +169,7 @@ async function buildSummary(env) {
        WHERE rn = 1
        GROUP BY app_version
        ORDER BY installs DESC, app_version DESC`,
-      since30Days
+      sinceRoster
     ),
     all(
       env,
@@ -190,7 +186,7 @@ async function buildSummary(env) {
        WHERE rn = 1
        GROUP BY os_version
        ORDER BY installs DESC, os_version ASC`,
-      since30Days
+      sinceRoster
     ),
     all(
       env,
@@ -227,15 +223,6 @@ async function buildSummary(env) {
     ),
     all(
       env,
-      `SELECT event_type, COUNT(*) AS count
-       FROM events
-       WHERE received_at >= ?
-       GROUP BY event_type
-       ORDER BY count DESC`,
-      since30Days
-    ),
-    all(
-      env,
       `SELECT
          substr(install_id, 1, 8) AS install_short,
          MAX(app_version) AS app_version,
@@ -248,22 +235,27 @@ async function buildSummary(env) {
        FROM events
        WHERE ${VALID_INSTALL}
        GROUP BY install_id
+       HAVING MAX(received_at) >= ?
        ORDER BY last_seen DESC
-       LIMIT 50`
+       LIMIT 50`,
+      sinceRoster
     ),
   ]);
 
   const filledDaily = fillDailySeries(daily, 30);
   const now = Date.now();
-  const installs = installRoster.map((row) => {
-    const lastMs = Date.parse(row.last_seen);
-    const ageMin = Number.isFinite(lastMs) ? Math.max(0, (now - lastMs) / 60000) : null;
-    let status = "offline";
-    if (ageMin != null && ageMin <= 10) status = "online";
-    else if (ageMin != null && ageMin <= 60 * 24) status = "recent";
-    else if (ageMin != null && ageMin <= 60 * 24 * 30) status = "idle";
-    return { ...row, status, age_minutes: ageMin == null ? null : Math.round(ageMin) };
-  });
+  const maxRosterAgeMin = rosterRetentionDays * 24 * 60;
+  const installs = installRoster
+    .map((row) => {
+      const lastMs = Date.parse(row.last_seen);
+      const ageMin = Number.isFinite(lastMs) ? Math.max(0, (now - lastMs) / 60000) : null;
+      let status = "idle";
+      if (ageMin != null && ageMin <= 10) status = "online";
+      else if (ageMin != null && ageMin <= 60 * 24) status = "recent";
+      return { ...row, status, age_minutes: ageMin == null ? null : Math.round(ageMin) };
+    })
+    // Defense in depth: drop anything older than 7 days even if SQL timezone quirks.
+    .filter((row) => row.age_minutes == null || row.age_minutes <= maxRosterAgeMin);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -284,8 +276,8 @@ async function buildSummary(env) {
     scanStats: normalizeScanStats(scanStats[0]),
     scanStats30d: normalizeScanStats(scanStats30[0]),
     daily: filledDaily,
-    eventVolume30d: eventVolume,
     installs,
+    retentionDays: rosterRetentionDays,
   };
 }
 
@@ -485,7 +477,6 @@ function renderDashboard() {
       box-shadow: var(--shadow);
       overflow: hidden;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
@@ -628,7 +619,7 @@ function renderDashboard() {
       <div class="card">
         <div class="label">Total Installs</div>
         <div class="value" id="totalInstalls">-</div>
-        <div class="hint">Unique install IDs ever seen</div>
+        <div class="hint">Seen in the last 7 days</div>
       </div>
       <div class="card live">
         <div class="label">Online Now</div>
@@ -689,7 +680,7 @@ function renderDashboard() {
 
     <div class="two-col">
       <div class="section" style="margin-bottom:0">
-        <div class="section-head"><h2>Active Versions</h2><div class="sub">Last 30 days</div></div>
+        <div class="section-head"><h2>Active Versions</h2><div class="sub">Last 7 days</div></div>
         <div class="panel">
           <table>
             <thead><tr><th>Version</th><th style="width:88px">Installs</th><th style="width:180px">Share</th></tr></thead>
@@ -698,7 +689,7 @@ function renderDashboard() {
         </div>
       </div>
       <div class="section" style="margin-bottom:0">
-        <div class="section-head"><h2>Operating Systems</h2><div class="sub">Latest OS per install, 30 d</div></div>
+        <div class="section-head"><h2>Operating Systems</h2><div class="sub">Latest OS per install, 7 d</div></div>
         <div class="panel">
           <table>
             <thead><tr><th>OS Version</th><th style="width:88px">Installs</th><th style="width:180px">Share</th></tr></thead>
@@ -716,7 +707,7 @@ function renderDashboard() {
     <div class="section">
       <div class="section-head">
         <h2>Install Roster</h2>
-        <div class="sub">Each unique install ID &middot; why Online may be less than Total</div>
+        <div class="sub">Unique install IDs &middot; offline &gt; 7 days are hidden</div>
       </div>
       <div class="panel">
         <table>
@@ -737,25 +728,6 @@ function renderDashboard() {
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-head"><h2>Event Volume</h2><div class="sub">Last 30 days</div></div>
-      <div class="panel">
-        <table>
-          <thead><tr><th>Event</th><th style="width:120px">Count</th><th style="width:200px">Share</th></tr></thead>
-          <tbody id="eventVolume"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-head"><h2>Daily Detail</h2><div class="sub">Newest first</div></div>
-      <div class="panel">
-        <table>
-          <thead><tr><th>Date</th><th style="width:100px">Active</th><th style="width:220px">Level</th></tr></thead>
-          <tbody id="daily"></tbody>
-        </table>
-      </div>
-    </div>
   </main>
   <footer>Anonymous aggregate telemetry &mdash; no paths, hashes, process names, or machine identifiers are stored in this view.</footer>
   <script>
@@ -827,22 +799,7 @@ function renderDashboard() {
         formatNumber(row.scans || 0)
       ], "No installs recorded yet");
 
-      const volume = data.eventVolume30d || [];
-      renderRows("eventVolume", volume, row => [
-        escapeHtml(prettyEvent(row.event_type)),
-        formatNumber(row.count),
-        shareBar(volume.map(v => ({ installs: v.count })), row.count)
-      ], "No events in the last 30 days");
-
-      const daily = data.daily || [];
-      renderDailyChart(daily);
-      const dailyDesc = daily.slice().reverse();
-      const maxDaily = Math.max(0, ...daily.map(d => d.running_apps || 0));
-      renderRows("daily", dailyDesc, row => [
-        formatDate(row.day),
-        formatNumber(row.running_apps),
-        levelBar(row.running_apps, maxDaily)
-      ], "No daily activity yet");
+      renderDailyChart(data.daily || []);
     }
 
     function statCard(label, allTime, last30) {
@@ -877,28 +834,13 @@ function renderDashboard() {
         pct + '%;background:var(--accent)"></div></div></div>';
     }
 
-    function levelBar(value, max) {
-      const pct = max > 0 ? (value / max * 100) : 0;
-      return '<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--surface-raised)"><div style="width:' +
-        pct + '%;background:var(--accent)"></div></div>';
-    }
-
     function isRealVersion(v) {
       return typeof v === "string" && /^\\d+\\.\\d+/.test(v);
     }
 
-    function prettyEvent(type) {
-      return ({
-        app_install: "Install",
-        app_start: "App start",
-        app_ping: "Heartbeat",
-        scan_complete: "Scan complete"
-      })[type] || type;
-    }
-
     function statusPill(status) {
-      const label = ({ online: "Online", recent: "24h", idle: "30d", offline: "Stale" })[status] || status;
-      const cls = ({ online: "status-online", recent: "status-recent", idle: "status-idle", offline: "status-offline" })[status] || "status-offline";
+      const label = ({ online: "Online", recent: "24h", idle: "7d" })[status] || status;
+      const cls = ({ online: "status-online", recent: "status-recent", idle: "status-idle" })[status] || "status-idle";
       return '<span class="status-pill ' + cls + '">' + escapeHtml(label) + '</span>';
     }
 

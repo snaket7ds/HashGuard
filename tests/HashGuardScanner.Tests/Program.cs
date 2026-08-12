@@ -1,3 +1,4 @@
+using System.Text.Json;
 using HashGuardScanner;
 
 var tests = new (string Name, Action Test)[]
@@ -91,6 +92,167 @@ var tests = new (string Name, Action Test)[]
         AssertFalse(gate.IsBusy);
         AssertTrue(gate.TryEnter());
         gate.Exit();
+    }),
+    ("ignore note helpers strip and detect", () =>
+    {
+        AssertTrue(HashGuardLogic.HasIgnoreNote("File hash ignored by user."));
+        AssertTrue(HashGuardLogic.HasIgnoreNote("x; Detection ignored by user."));
+        AssertEqual("Risk: unsigned", HashGuardLogic.RemoveIgnoreNote("Risk: unsigned; File hash ignored by user."));
+    }),
+    ("tray alert signature is stable and ordered", () =>
+    {
+        var a = HashGuardLogic.BuildTrayAlertSignature([("bbb", @"C:\b.exe"), ("aaa", @"C:\a.exe")]);
+        var b = HashGuardLogic.BuildTrayAlertSignature([("aaa", @"C:\a.exe"), ("bbb", @"C:\b.exe")]);
+        AssertEqual(a, b);
+        AssertTrue(HashGuardLogic.ShouldShowTrayAlert(true, "", a));
+        AssertFalse(HashGuardLogic.ShouldShowTrayAlert(true, a, a));
+        AssertTrue(HashGuardLogic.ShouldShowTrayAlert(false, a, a));
+    }),
+    ("publisher match for ignore is bidirectional contains", () =>
+    {
+        AssertTrue(HashGuardLogic.PublisherMatchesForIgnore("Microsoft Corporation", "Microsoft"));
+        AssertFalse(HashGuardLogic.PublisherMatchesForIgnore("Adobe Inc.", "Microsoft"));
+    }),
+    ("telemetry scan payload is aggregate-only", () =>
+    {
+        var payload = HashGuardLogic.BuildScanCompleteTelemetry(10, 2, 1, 3, 0);
+        AssertEqual(10, payload["items_scanned"]);
+        AssertEqual(2, payload["action_needed"]);
+        var json = JsonSerializer.Serialize(TelemetryClient.BuildPayload("scan_complete", "install123456", "1.0.51", "Windows", payload));
+        AssertTrue(HashGuardLogic.TelemetryPayloadLooksSafe(json));
+        AssertTrue(TelemetryClient.IsSafeEventType("app_ping"));
+        AssertFalse(TelemetryClient.IsSafeEventType("file_path"));
+    }),
+    ("virus total file report stats map correctly", () =>
+    {
+        using var doc = JsonDocument.Parse("""
+            {"data":{"attributes":{"last_analysis_stats":{"malicious":2,"suspicious":1,"harmless":50,"undetected":10}}}}
+            """);
+        var result = new ScanResult(@"C:\a.exe", "a", "1");
+        ProviderStats.ApplyVirusTotalFileReport(result, doc.RootElement);
+        AssertEqual(2, result.Malicious);
+        AssertEqual(1, result.Suspicious);
+        AssertEqual("detected", result.Status);
+    }),
+    ("virus total analysis completed clean maps correctly", () =>
+    {
+        using var doc = JsonDocument.Parse("""
+            {"data":{"attributes":{"status":"completed","stats":{"malicious":0,"suspicious":0,"harmless":40,"undetected":5}}}}
+            """);
+        var result = new ScanResult(@"C:\a.exe", "a", "1");
+        ProviderStats.ApplyVirusTotalAnalysis(result, doc.RootElement);
+        AssertEqual(0, result.Malicious);
+        AssertEqual("clean", result.Status);
+    }),
+    ("metadefender clean and infected mapping", () =>
+    {
+        using var clean = JsonDocument.Parse("""
+            {"scan_results":{"total_detected_avs":0,"total_avs":30,"scan_all_result_a":"No Threat Detected"}}
+            """);
+        var cleanResult = new ScanResult(@"C:\a.exe", "a", "1") { Status = "unknown" };
+        var cleanMap = ProviderStats.ApplyMetaDefender(cleanResult, clean.RootElement);
+        AssertEqual(ProviderState.Clean, cleanMap.State);
+        AssertEqual("clean", cleanResult.Status);
+
+        using var bad = JsonDocument.Parse("""
+            {"scan_results":{"total_detected_avs":3,"total_avs":30,"scan_all_result_a":"Infected","threat_name":"EICAR"}}
+            """);
+        var badResult = new ScanResult(@"C:\b.exe", "b", "2");
+        var badMap = ProviderStats.ApplyMetaDefender(badResult, bad.RootElement);
+        AssertEqual(ProviderState.Detected, badMap.State);
+        AssertEqual("detected", badResult.Status);
+    }),
+    ("cymru txt and query name parse", () =>
+    {
+        var rep = ProviderStats.ParseCymruTxt("\"1717200000 85\"");
+        AssertTrue(rep is not null);
+        AssertEqual(85, rep!.DetectionPercent);
+        var name = ProviderStats.BuildCymruQueryName(new string('a', 32) + new string('b', 32));
+        AssertTrue(name.EndsWith(".hash.cymru.com", StringComparison.Ordinal));
+        AssertTrue(name.Contains('.', StringComparison.Ordinal));
+    }),
+    ("scan path security rejects unsafe inputs", () =>
+    {
+        AssertTrue(ScanPathSecurity.TryNormalizeScanPath(null, out var reason) is null);
+        AssertEqual("empty path", reason);
+        AssertTrue(ScanPathSecurity.TryNormalizeScanPath(new string('x', 600), out reason) is null);
+        AssertEqual("path length", reason);
+        AssertTrue(ScanPathSecurity.TryNormalizeScanPath(@"\\.\\C:", out reason) is null);
+        AssertEqual("device path", reason);
+    }),
+    ("update verifier parses sha256 text and digest", () =>
+    {
+        AssertEqual("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            UpdateVerifier.ParseSha256Text("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  HashGuard.exe"));
+        var asset = new GitHubAsset { Digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
+        AssertEqual("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UpdateVerifier.GetReleaseAssetSha256(asset));
+    }),
+    ("hash cache reusable clean entry respects age", () =>
+    {
+        var fresh = new CacheEntry
+        {
+            Status = "clean",
+            CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-1),
+        };
+        AssertTrue(HashCache.IsReusableCleanEntry(fresh));
+        var stale = new CacheEntry
+        {
+            Status = "clean",
+            CheckedAtUtc = DateTimeOffset.UtcNow.AddDays(-10),
+        };
+        AssertFalse(HashCache.IsReusableCleanEntry(stale));
+        var pending = new CacheEntry
+        {
+            Status = "unknown",
+            CheckedAtUtc = DateTimeOffset.UtcNow.AddHours(-2),
+        };
+        AssertTrue(HashCache.IsReusablePendingEntry(pending));
+    }),
+    ("scan report export includes rows", () =>
+    {
+        var results = new[]
+        {
+            new ScanResult(@"C:\a.exe", "a", "1")
+            {
+                Status = "clean",
+                Sha256 = new string('a', 64),
+                RiskScore = 5,
+                RiskLevel = "Low",
+            },
+        };
+        var csv = ScanReportExport.ToCsv(results);
+        AssertTrue(csv.Contains("sha256", StringComparison.OrdinalIgnoreCase));
+        AssertTrue(csv.Contains("C:\\a.exe", StringComparison.Ordinal));
+        var html = ScanReportExport.ToHtml(results, "1.0.51", DateTimeOffset.UtcNow);
+        AssertTrue(html.Contains("HashGuard Scan Report", StringComparison.Ordinal));
+    }),
+    ("scan snapshot marks new paths and hashes", () =>
+    {
+        var previous = new ScanSnapshot
+        {
+            Paths = [@"C:\old.exe"],
+            Sha256Hashes = [new string('1', 64)],
+        };
+        var results = new List<ScanResult>
+        {
+            new(@"C:\old.exe", "old", "1") { Sha256 = new string('1', 64) },
+            new(@"C:\new.exe", "new", "2") { Sha256 = new string('2', 64) },
+        };
+        ScanSnapshotStore.MarkNewSinceLastScan(results, previous);
+        AssertFalse(results[0].IsNewSinceLastScan);
+        AssertTrue(results[1].IsNewSinceLastScan);
+    }),
+    ("apply ignored status is handled by needs-action", () =>
+    {
+        var result = new ScanResult(@"C:\x.exe", "x", "1")
+        {
+            Status = "detected",
+            Malicious = 2,
+            StatusBeforeIgnore = "detected",
+        };
+        result.Status = "ignored";
+        AssertFalse(HashGuardLogic.NeedsAction(result.Status, "High 90", result.Malicious, result.Suspicious));
+        AssertTrue(HashGuardLogic.IsIgnoredStatus(result.Status));
     }),
 };
 

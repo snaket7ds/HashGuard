@@ -2,10 +2,10 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>HashGuard</AssemblyName>
-    <Version>1.0.50</Version>
-    <AssemblyVersion>1.0.50.0</AssemblyVersion>
-    <FileVersion>1.0.50.0</FileVersion>
-    <InformationalVersion>1.0.50</InformationalVersion>
+    <Version>1.0.51</Version>
+    <AssemblyVersion>1.0.51.0</AssemblyVersion>
+    <FileVersion>1.0.51.0</FileVersion>
+    <InformationalVersion>1.0.51</InformationalVersion>
     <ApplicationIcon>HashGuard.ico</ApplicationIcon>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWindowsForms>true</UseWindowsForms>

@@ -1,98 +1,57 @@
-# HashGuard code recommendations
+# HashGuard architecture notes
 
-Refactor notes for `HashGuard_source`. These recommendations were implemented
-in a **local-only** branch of the tree for testing before any GitHub push.
+Status as of **v1.0.51**.
 
-**Build label:** `1.0.45` (see `HashGuardScanner.csproj`).
+## Implemented modular layout
 
----
+| Module | Path | Responsibility |
+|--------|------|----------------|
+| Paths / constants | `AppPaths.cs`, `AppConstants.cs` | Config locations, provider URLs, cache ages |
+| HTTP | `AppHttp.cs` | Shared `SocketsHttpHandler` |
+| Concurrency | `ScanGate.cs` | Single non-reentrant scan gate |
+| Models | `Models/ScanModels.cs` | ScanResult, settings, GitHub assets, cache entries |
+| Storage | `Storage/` | HashCache, QuotaTracker, scan snapshot |
+| Providers | `Providers/` | VT/MetaDefender/Cymru JSON mapping + Cymru client |
+| Scanning | `Scanning/` | Path security, SHA-256, report export, scheduled task |
+| Telemetry | `Telemetry/TelemetryClient.cs` | Anonymous event POST |
+| Updates | `Updates/UpdateVerifier.cs` | SHA-256 + publisher checks |
+| UI theme | `Ui/ThemePalette.cs` | Light/dark palettes |
+| Logic helpers | `HashGuardLogic.cs` | Pure filters, ignore notes, tray signatures |
+| Shell UI | `MainForm.cs` (partial), `Program.cs` | WinForms orchestration |
 
-## Goals of this local build
+`MainForm` remains the UI orchestrator (still large) but no longer owns cache/provider/model types or pure JSON parsers.
 
-| Area | Change |
-|------|--------|
-| HTTP | Shared `SocketsHttpHandler` via `AppHttp.Create` (no new connection pool per scan) |
-| Concurrency | `ScanGate` so full / monitor / idle / single-file scans do not overlap |
-| Logic | Extra pure helpers in `HashGuardLogic` for status/quarantine/ignore rules |
-| Tests | Expanded unit tests for those helpers |
-| Privacy | New installs default **telemetry off** (`TelemetryEnabled = false`) |
-| Docs | This file |
+## Product features landed in 1.0.51
 
----
+- Daily scheduled scan (Settings → Behavior)
+- Export CSV/HTML scan report (Review Queue → Export)
+- New-since-last-scan highlighting (snapshot + Prefer delta option)
+- Ignore Publisher on Review Queue
+- Suppress repeat tray alerts for the same action-needed set
+- Pipe path validation for Explorer right-click scans
+- Update Authenticode publisher match when current EXE is signed
 
-## Architecture (still recommended next)
+## Still optional later
 
-`MainForm.cs` remains large (~7k lines). Longer-term peel into:
-
-| Module | Responsibility |
-|--------|----------------|
-| `Scanning/` | process collection, monitor, single-file |
-| `Providers/` | VirusTotal, MetaDefender, Cymru |
-| `Storage/` | settings, cache, ignore, quarantine |
-| `Updates/` | GitHub releases |
-| `Telemetry/` | worker events |
-| `Ui/` | form + dialogs only |
-
-This local build takes the **high-ROI stabilizers** first without a full rewrite.
-
----
-
-## What already was solid
-
-- DPAPI for API keys
-- Named-pipe ACL for Explorer `--scan-file`
-- Hash cache, quota tracker, quarantine with hash verify
-- Small pure helpers + tests (`HashGuardLogic`)
-- Cancellation on full scans
-
----
+- Further peel WinForms scan/UI methods into `MainForm.*.cs` partials by feature area
+- YARA / SmartScreen optional signals
+- Graphite-style CI publish from Linux (WindowsForms still targets `win-x64`)
 
 ## How to test
 
-### Prebuilt (from this machine)
-
-Self-contained Windows EXE (local QA only, **not** pushed to GitHub):
-
-- `/home/administrator/hashguard-build-local/dist/HashGuard.exe`
-- symlink: `~/HashGuard-dist-local/HashGuard.exe`
-- also under source: `dist-local/HashGuard.exe` (if NAS copy succeeded)
-
-Copy `HashGuard.exe` to a Windows PC and run it. Version shows as **1.0.44-local**.
-
-### Rebuild on Windows
-
-```powershell
-cd path\to\HashGuard_source
-dotnet run --project tests\HashGuardScanner.Tests\HashGuardScanner.Tests.csproj -c Release
-dotnet publish HashGuardScanner.csproj -c Release -r win-x64 --self-contained true -o dist-local
+```bash
+export PATH="$HOME/.dotnet:$PATH"
+dotnet run --project tests/HashGuardScanner.Tests/HashGuardScanner.Tests.csproj -c Release
+dotnet build HashGuardScanner.csproj -c Release -r win-x64
 ```
 
-Unit tests: **13 passed** on the AI box (logic + `ScanGate`; no WinForms required).
+On Windows:
 
-Manual checks:
+```powershell
+dotnet publish HashGuardScanner.csproj -c Release -r win-x64 --self-contained true -o dist
+```
 
-1. Run Scan while process monitor is active — monitor should skip, not double-scan.
-2. Right-click scan during a full scan — should report busy / skip cleanly.
-3. Settings still save/load encrypted VT + MetaDefender keys.
-4. Telemetry checkbox defaults off on a **fresh** settings file.
-5. Activity filters still treat `ignored` as handled, not action-needed.
+## Repo hygiene
 
----
-
-## Repo hygiene (not forced in this change)
-
-- Keep `release/*.exe` out of git (already gitignored).
-- Do not commit `cloudflare/telemetry/node_modules`.
-- Prefer GitHub Releases for binaries.
-
----
-
-## Decision cheat sheet
-
-| Goal | Prefer |
-|------|--------|
-| Stability under monitor + full scan | This local build (`ScanGate` + `AppHttp`) |
-| Faster future features | Continue extracting providers from `MainForm` |
-| Publish publicly | Revisit telemetry default, pipe ACL, privacy copy |
-
-When satisfied, commit and push from the Windows or AI box intentionally — this work was left **unpushed** for local QA.
+- Keep `release/*.exe` and `cloudflare/telemetry/node_modules` out of git (gitignored).
+- Prefer GitHub Releases for binaries (`HashGuard.exe` + `.sha256`).

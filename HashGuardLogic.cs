@@ -206,6 +206,104 @@ internal static class HashGuardLogic
         _ => "Low",
     };
 
+    public const string IgnoreNote = "File hash ignored by user.";
+    public const string IgnorePathNote = "File path ignored by user.";
+
+    public static bool HasIgnoreNote(string? notes) =>
+        !string.IsNullOrWhiteSpace(notes)
+        && (notes.Contains(IgnoreNote, StringComparison.OrdinalIgnoreCase)
+            || notes.Contains(IgnorePathNote, StringComparison.OrdinalIgnoreCase)
+            || notes.Contains("Detection ignored by user.", StringComparison.OrdinalIgnoreCase)
+            || notes.Contains("ignored by user", StringComparison.OrdinalIgnoreCase));
+
+    public static string RemoveIgnoreNote(string? notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            return "";
+        }
+
+        var parts = notes.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Where(part =>
+                !part.Contains("ignored by user", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(part, IgnoreNote, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(part, IgnorePathNote, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(part, "Detection ignored by user.", StringComparison.OrdinalIgnoreCase));
+        return string.Join("; ", parts);
+    }
+
+    public static string BuildTrayAlertSignature(IEnumerable<(string Sha256, string Path)> actionNeededItems)
+    {
+        return string.Join("|", actionNeededItems
+            .Select(item => !string.IsNullOrWhiteSpace(item.Sha256) ? item.Sha256.ToLowerInvariant() : item.Path.ToLowerInvariant())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+    }
+
+    public static bool ShouldShowTrayAlert(bool suppressRepeat, string previousSignature, string currentSignature)
+    {
+        if (string.IsNullOrWhiteSpace(currentSignature))
+        {
+            return false;
+        }
+
+        if (!suppressRepeat)
+        {
+            return true;
+        }
+
+        return !string.Equals(previousSignature, currentSignature, StringComparison.Ordinal);
+    }
+
+    public static bool PublisherMatchesForIgnore(string? signaturePublisher, string? trustedOrSelectedPublisher)
+    {
+        if (string.IsNullOrWhiteSpace(signaturePublisher) || string.IsNullOrWhiteSpace(trustedOrSelectedPublisher))
+        {
+            return false;
+        }
+
+        return signaturePublisher.Contains(trustedOrSelectedPublisher, StringComparison.OrdinalIgnoreCase)
+            || trustedOrSelectedPublisher.Contains(signaturePublisher, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Builds an anonymous telemetry payload shape without file paths, hashes, or process names.
+    /// </summary>
+    public static Dictionary<string, object> BuildScanCompleteTelemetry(
+        int itemsScanned,
+        int actionNeeded,
+        int detections,
+        int unknown,
+        int errors)
+    {
+        return new Dictionary<string, object>
+        {
+            ["items_scanned"] = itemsScanned,
+            ["action_needed"] = actionNeeded,
+            ["detections"] = detections,
+            ["unknown"] = unknown,
+            ["errors"] = errors,
+        };
+    }
+
+    public static bool TelemetryPayloadLooksSafe(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return false;
+        }
+
+        // Guard against accidental inclusion of sensitive fields in serialized payloads.
+        var lower = json.ToLowerInvariant();
+        return !lower.Contains("\"path\"")
+            && !lower.Contains("sha256")
+            && !lower.Contains("apikey")
+            && !lower.Contains("process_name")
+            && !lower.Contains("username")
+            && !lower.Contains("machine");
+    }
+
     private static string? NormalizeExecutablePath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))

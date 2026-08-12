@@ -18,7 +18,9 @@ The dashboard uses these events:
 - `app_ping`: heartbeat every five minutes while the app is open; counts as presence for Online Now / Active 24h / 7d / 30d / daily charts.
 - `scan_complete`: optional scan totals (items, action needed, detections, high risk).
 
-Presence metrics count unique install IDs that sent either `app_start` or `app_ping` in the window (so tray apps that stay open still show as active). Launch metrics count only `app_start`. Duplicate `app_ping` events within ~4 minutes from the same install are accepted but not stored, to keep D1 write volume low.
+Presence metrics count unique install IDs that sent `app_start`, `app_ping`, or `scan_complete` in the window (so tray apps that stay open still show as active). Launch metrics count only `app_start`. Duplicate `app_ping` events within ~4 minutes from the same install are accepted but not stored, to keep D1 write volume low.
+
+Installs with **no activity for more than 7 days** are hidden from the dashboard (total installs, roster, versions, and OS tables). Their historical events remain in D1 but are not shown.
 
 ## Deploy
 

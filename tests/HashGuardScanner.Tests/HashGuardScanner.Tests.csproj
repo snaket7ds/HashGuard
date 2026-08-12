@@ -8,5 +8,18 @@
   <ItemGroup>
     <Compile Include="../../HashGuardLogic.cs" Link="HashGuardLogic.cs" />
     <Compile Include="../../ScanGate.cs" Link="ScanGate.cs" />
+    <Compile Include="../../AppConstants.cs" Link="AppConstants.cs" />
+    <Compile Include="../../AppPaths.cs" Link="AppPaths.cs" />
+    <Compile Include="../../AppHttp.cs" Link="AppHttp.cs" />
+    <Compile Include="../../Models/ScanModels.cs" Link="Models/ScanModels.cs" />
+    <Compile Include="../../Providers/JsonPath.cs" Link="Providers/JsonPath.cs" />
+    <Compile Include="../../Providers/ProviderStats.cs" Link="Providers/ProviderStats.cs" />
+    <Compile Include="../../Scanning/FileHash.cs" Link="Scanning/FileHash.cs" />
+    <Compile Include="../../Scanning/ScanPathSecurity.cs" Link="Scanning/ScanPathSecurity.cs" />
+    <Compile Include="../../Scanning/ScanReportExport.cs" Link="Scanning/ScanReportExport.cs" />
+    <Compile Include="../../Storage/HashCache.cs" Link="Storage/HashCache.cs" />
+    <Compile Include="../../Storage/ScanSnapshotStore.cs" Link="Storage/ScanSnapshotStore.cs" />
+    <Compile Include="../../Telemetry/TelemetryClient.cs" Link="Telemetry/TelemetryClient.cs" />
+    <Compile Include="../../Updates/UpdateVerifier.cs" Link="Updates/UpdateVerifier.cs" />
   </ItemGroup>
 </Project>

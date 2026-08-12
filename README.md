@@ -16,6 +16,8 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 - Tracks per-provider reputation state, supports local triage without API keys, and can restore/delete quarantined files from a manifest.
 - Provides Activity Log filters, selected-row reason summaries, and quarantine repair/restore-to-Desktop recovery controls.
 - Supports startup scanning, tray minimization, Windows startup registration, and update checks from GitHub Releases.
+- Can schedule a daily full scan, export CSV/HTML reports, highlight files new since the last scan, and bulk-ignore a publisher from the Review Queue.
+- Verifies update downloads with SHA-256 and, when the current build is signed, matching Authenticode publisher.
 
 ## How Scanning Works
 
@@ -53,6 +55,10 @@ Settings are stored in the local `config` folder. Scan logs are stored in `logs`
 HashGuard can send optional anonymous usage events when enabled in Settings. The payload is limited to a random install ID, app version, OS version, event type, and scan summary counts. It does not include file paths, file hashes, process names, usernames, machine names, API keys, or provider report links.
 
 The Cloudflare Worker and D1 dashboard scaffold lives in `cloudflare/telemetry`. Deploy it first, then set `TelemetryEndpointUrl` in `MainForm.cs` to the deployed `/events` URL before publishing a release.
+
+## Project Layout
+
+Core logic is split under `Models/`, `Storage/`, `Providers/`, `Scanning/`, `Telemetry/`, `Updates/`, and `Ui/`. WinForms orchestration lives in `MainForm.cs` and `Program.cs`. Pure helpers and unit tests are in `HashGuardLogic.cs` and `tests/`.
 
 ## Build
 
