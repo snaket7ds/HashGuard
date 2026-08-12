@@ -60,6 +60,8 @@ The Cloudflare Worker and D1 dashboard scaffold lives in `cloudflare/telemetry`.
 
 Core logic is split under `Models/`, `Storage/`, `Providers/`, `Scanning/`, `Telemetry/`, `Updates/`, and `Ui/`. WinForms orchestration lives in `MainForm.cs` and `Program.cs`. Pure helpers and unit tests are in `HashGuardLogic.cs` and `tests/`.
 
+Future ideas (YARA, true delta scan, more MainForm peels, etc.) are tracked in [ROADMAP.md](ROADMAP.md) — not committed work unless picked up intentionally.
+
 ## Build
 
 HashGuard targets Windows and uses .NET 8 Windows Forms.
