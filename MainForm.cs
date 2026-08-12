@@ -1789,9 +1789,9 @@ public sealed partial class MainForm : Form
 
         try
         {
-            var processCollection = CollectProcessFiles();
+            // Process enumeration + persistence registry reads are expensive — keep UI responsive.
+            var processCollection = await CollectProcessFilesWithPersistenceAsync(token).ConfigureAwait(true);
             var grouped = processCollection.Files;
-            AddPersistenceTargets(grouped);
             var paths = grouped.Keys.OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToList();
             RefreshMonitoredProcessFiles(grouped.Keys);
             AddSkippedProcessLogIfNeeded(processCollection, force: true);
@@ -1805,11 +1805,8 @@ public sealed partial class MainForm : Form
                 http.DefaultRequestHeaders.Add("x-apikey", apiKey);
             }
 
-            await hashCache.LoadAsync();
-            hashCache.ImportScanLogs(GetLogDirectories());
-            await hashCache.MarkFileCleanAsync(Application.ExecutablePath, "HashGuard executable trusted locally.");
-            await hashCache.SaveAsync();
-            await quotaTracker.LoadAsync();
+            statusLabel.Text = "Preparing reputation cache...";
+            await EnsureScanStorageReadyAsync(token).ConfigureAwait(true);
 
             for (var index = 0; index < paths.Count; index++)
             {
@@ -1944,7 +1941,7 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        var processCollection = CollectProcessFiles();
+        var processCollection = await CollectProcessFilesAsync().ConfigureAwait(true);
         var grouped = processCollection.Files;
         var newPaths = grouped.Keys
             .Where(ShouldMonitorScanPath)
@@ -1978,11 +1975,7 @@ public sealed partial class MainForm : Form
                 http.DefaultRequestHeaders.Add("x-apikey", apiKey);
             }
 
-            await hashCache.LoadAsync();
-            hashCache.ImportScanLogs(GetLogDirectories());
-            await hashCache.MarkFileCleanAsync(Application.ExecutablePath, "HashGuard executable trusted locally.");
-            await hashCache.SaveAsync();
-            await quotaTracker.LoadAsync();
+            await EnsureScanStorageReadyAsync().ConfigureAwait(true);
 
             for (var index = 0; index < newPaths.Count; index++)
             {
@@ -2394,9 +2387,7 @@ public sealed partial class MainForm : Form
                 http.DefaultRequestHeaders.Add("x-apikey", apiKey);
             }
 
-            await hashCache.LoadAsync();
-            hashCache.ImportScanLogs(GetLogDirectories());
-            await quotaTracker.LoadAsync();
+            await EnsureScanStorageReadyAsync(markSelfTrusted: false).ConfigureAwait(true);
 
             var result = await ScanPathAsync(
                 http,
@@ -2567,10 +2558,7 @@ public sealed partial class MainForm : Form
             {
                 http.DefaultRequestHeaders.Add("x-apikey", apiKey);
             }
-            await hashCache.LoadAsync();
-            hashCache.ImportScanLogs(GetLogDirectories());
-            await hashCache.SaveAsync();
-            await quotaTracker.LoadAsync();
+            await EnsureScanStorageReadyAsync().ConfigureAwait(true);
 
             var processFile = new ProcessFile(0, Path.GetFileName(path), path);
             var result = await ScanPathAsync(http, path, [processFile]);
@@ -2661,6 +2649,47 @@ public sealed partial class MainForm : Form
             Notes = $"Windows protected {skippedProcesses.Count} running process(es) from inspection, or the process exited during collection. This is not a threat by itself. Run HashGuard elevated for more complete coverage, though some protected system/security processes may still be blocked.{skippedText}",
         };
     }
+
+    /// <summary>
+    /// Warm hash cache + quota in memory. Reload/import only when needed; skip re-hashing
+    /// HashGuard.exe when it is already known clean.
+    /// </summary>
+    private async Task EnsureScanStorageReadyAsync(
+        CancellationToken cancellationToken = default,
+        bool markSelfTrusted = true)
+    {
+        // Capture WinForms state before any await / thread hop.
+        var exePath = Application.ExecutablePath;
+        var logDirectories = GetLogDirectories().ToList();
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await hashCache.EnsureLoadedAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        hashCache.ImportScanLogsIfChanged(logDirectories);
+
+        if (markSelfTrusted && !hashCache.IsTrustedCleanPath(exePath))
+        {
+            await hashCache.MarkFileCleanAsync(exePath, "HashGuard executable trusted locally.").ConfigureAwait(false);
+            await hashCache.SaveAsync().ConfigureAwait(false);
+        }
+
+        await quotaTracker.EnsureLoadedAsync().ConfigureAwait(false);
+    }
+
+    private static Task<ProcessCollectionResult> CollectProcessFilesAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(CollectProcessFiles, cancellationToken);
+
+    private static Task<ProcessCollectionResult> CollectProcessFilesWithPersistenceAsync(CancellationToken cancellationToken = default) =>
+        Task.Run(
+            () =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var collection = CollectProcessFiles();
+                cancellationToken.ThrowIfCancellationRequested();
+                AddPersistenceTargets(collection.Files);
+                return collection;
+            },
+            cancellationToken);
 
     private static ProcessCollectionResult CollectProcessFiles()
     {

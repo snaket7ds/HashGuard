@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.57 - 2026-08-12
+
+- Keep hash cache and free-API quota warm in memory across scans; re-import scan logs only when files change.
+- Skip re-hashing HashGuard.exe every scan when it is already known clean.
+- Collect running processes (and persistence targets on full scan) off the UI thread so the window stays responsive while preparing a scan.
+
 ## v1.0.56 - 2026-08-12
 
 - Settings: removed the large header strip (subtitle/white chrome) to free vertical space.

@@ -7,8 +7,22 @@ internal sealed class HashCache
 {
     private readonly Dictionary<string, CacheEntry> entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FileStateEntry> fileStates = new(StringComparer.OrdinalIgnoreCase);
+    private bool loaded;
+    private string scanLogImportSignature = "";
 
     public int Count => entries.Count;
+    public bool IsLoaded => loaded;
+
+    /// <summary>Load cache from disk once; keep it warm in memory for the process lifetime.</summary>
+    public async Task EnsureLoadedAsync()
+    {
+        if (loaded)
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
 
     public async Task LoadAsync()
     {
@@ -20,6 +34,9 @@ internal sealed class HashCache
         }
 
         await LoadFileStatesAsync();
+        loaded = true;
+        // Force a log re-import after a full reload so disk-backed state is complete.
+        scanLogImportSignature = "";
     }
 
     public bool TryGet(string sha256, out CacheEntry entry) => entries.TryGetValue(sha256, out entry!);
@@ -127,6 +144,23 @@ internal sealed class HashCache
         }
     }
 
+    /// <summary>
+    /// Import scan CSVs only when log files have changed since the last import.
+    /// Caps how many recent files are read so startup/scan prep stays cheap.
+    /// </summary>
+    public void ImportScanLogsIfChanged(IEnumerable<string> logDirectories)
+    {
+        var directories = logDirectories.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var signature = BuildScanLogSignature(directories);
+        if (string.Equals(scanLogImportSignature, signature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ImportScanLogs(directories);
+        scanLogImportSignature = signature;
+    }
+
     public void ImportScanLogs(IEnumerable<string> logDirectories)
     {
         foreach (var logDirectory in logDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
@@ -136,11 +170,47 @@ internal sealed class HashCache
                 continue;
             }
 
-            foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv"))
+            // Newest first; only a bounded set is needed to seed the cache.
+            foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv")
+                         .OrderByDescending(File.GetLastWriteTimeUtc)
+                         .Take(14))
             {
                 ImportScanLog(logPath);
             }
         }
+    }
+
+    /// <summary>True when this path is already known clean and unchanged on disk.</summary>
+    public bool IsTrustedCleanPath(string path) =>
+        !string.IsNullOrWhiteSpace(path) && TryGetUnchangedFile(path, out _, out _);
+
+    private static string BuildScanLogSignature(IEnumerable<string> logDirectories)
+    {
+        var parts = new List<string>();
+        foreach (var logDirectory in logDirectories)
+        {
+            if (!Directory.Exists(logDirectory))
+            {
+                continue;
+            }
+
+            foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv")
+                         .OrderByDescending(File.GetLastWriteTimeUtc)
+                         .Take(14))
+            {
+                try
+                {
+                    var info = new FileInfo(logPath);
+                    parts.Add($"{logPath}|{info.Length}|{info.LastWriteTimeUtc.Ticks}");
+                }
+                catch
+                {
+                    parts.Add(logPath);
+                }
+            }
+        }
+
+        return string.Join(";", parts);
     }
 
     private void ImportScanLog(string logPath)

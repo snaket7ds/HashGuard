@@ -238,6 +238,30 @@ var tests = new (string Name, Action Test)[]
         };
         AssertTrue(HashCache.IsReusablePendingEntry(pending));
     }),
+    ("hash cache stays warm and skips redundant log import", () =>
+    {
+        var cache = new HashCache();
+        AssertFalse(cache.IsLoaded);
+        cache.EnsureLoadedAsync().GetAwaiter().GetResult();
+        AssertTrue(cache.IsLoaded);
+        var countAfterLoad = cache.Count;
+        // Second ensure must not clear in-memory entries.
+        cache.EnsureLoadedAsync().GetAwaiter().GetResult();
+        AssertEqual(countAfterLoad, cache.Count);
+
+        var emptyDir = Path.Combine(Path.GetTempPath(), "hashguard-empty-logs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(emptyDir);
+        try
+        {
+            cache.ImportScanLogsIfChanged([emptyDir]);
+            cache.ImportScanLogsIfChanged([emptyDir]); // no-op when signature unchanged
+            AssertTrue(cache.IsLoaded);
+        }
+        finally
+        {
+            try { Directory.Delete(emptyDir, recursive: true); } catch { /* ignore */ }
+        }
+    }),
     ("scan report export includes rows", () =>
     {
         var results = new[]

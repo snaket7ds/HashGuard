@@ -7,6 +7,18 @@ internal sealed class QuotaTracker
     private const int DailyLimit = 500;
     private const int MinuteLimit = 4;
     private QuotaState state = new();
+    private bool loaded;
+
+    /// <summary>Load free-API quota state once per process; keep updates in memory.</summary>
+    public async Task EnsureLoadedAsync()
+    {
+        if (loaded)
+        {
+            return;
+        }
+
+        await LoadAsync();
+    }
 
     public async Task LoadAsync()
     {
@@ -27,6 +39,7 @@ internal sealed class QuotaTracker
 
         ResetIfNewDay();
         TrimOldMinuteRequests(DateTimeOffset.UtcNow);
+        loaded = true;
         await SaveAsync();
     }
 
