@@ -489,7 +489,7 @@ public sealed partial class MainForm : Form
         var resultsLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        // Tall enough for two button rows when the window is narrow (Activity Log must stay visible).
+        // Room for two wrapped button rows; buttons are bottom-aligned inside this strip.
         resultsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
         resultsLayout.Controls.Add(new Label
         {
@@ -505,14 +505,26 @@ public sealed partial class MainForm : Form
         resultsHost.Controls.Add(resultsView);
         resultsEmptyLabel.BringToFront();
         resultsLayout.Controls.Add(resultsHost, 0, 1);
-        var queueActions = new FlowLayoutPanel
+        // Host fills the footer strip; button flow docks to the bottom so a single row
+        // sits on the card edge instead of floating in the middle of the tall strip.
+        var queueActionsHost = new Panel
         {
             Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+            Padding = new Padding(0),
+            BackColor = Color.Transparent,
+        };
+        var queueActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
             AutoScroll = false,
-            Margin = new Padding(0, 4, 0, 0),
-            Padding = new Padding(0),
+            Margin = new Padding(0),
+            Padding = new Padding(0, 6, 0, 0),
+            BackColor = Color.Transparent,
         };
         var openReport = CreateQueueActionButton("Open Report");
         var openLocation = CreateQueueActionButton("Open Location");
@@ -554,7 +566,8 @@ public sealed partial class MainForm : Form
         queueActions.Controls.Add(quarantineSelected);
         queueActions.Controls.Add(exportReport);
         queueActions.Controls.Add(activityLog);
-        resultsLayout.Controls.Add(queueActions, 0, 2);
+        queueActionsHost.Controls.Add(queueActions);
+        resultsLayout.Controls.Add(queueActionsHost, 0, 2);
         resultsPanel.Controls.Add(resultsLayout);
         main.Controls.Add(resultsPanel, 0, 1);
 
@@ -700,7 +713,7 @@ public sealed partial class MainForm : Form
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             MinimumSize = new Size(88, 30),
             Height = 30,
-            Margin = new Padding(0, 2, 6, 2),
+            Margin = new Padding(0, 0, 6, 0),
             Padding = new Padding(10, 2, 10, 2),
             FlatStyle = FlatStyle.Flat,
             BackColor = Color.FromArgb(245, 248, 250),

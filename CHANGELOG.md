@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.54 - 2026-08-12
+
+- Review Queue action buttons are bottom-aligned in the footer strip (no longer floating mid-card when only one row is needed).
+
 ## v1.0.53 - 2026-08-12
 
 - Review Queue action bar: wrap buttons onto a second row so Export and Activity Log are no longer clipped.
