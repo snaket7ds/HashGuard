@@ -4203,6 +4203,9 @@ public sealed partial class MainForm : Form
                 Csv(result.Link),
                 Csv(result.Notes),
             }));
+            // New scan rows must not be hidden behind a stale Activity Log cache.
+            activityLogCache = null;
+            activityLogCacheSignature = "";
         }
         catch (Exception ex)
         {
@@ -4235,15 +4238,25 @@ public sealed partial class MainForm : Form
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
-        var detailView = new ListView { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
+        var detailView = new ListView
+        {
+            View = View.Details,
+            FullRowSelect = true,
+            GridLines = false,
+            HideSelection = false,
+            BorderStyle = BorderStyle.FixedSingle,
+            // Virtual-ish feel: keep drawing off while bulk-inserting rows.
+            VirtualMode = false,
+        };
         ConfigureResultsView(detailView);
         detailView.Columns[ColProcess].Width = 150;
         detailView.Columns[ColSha256].Width = 300;
         detailView.Columns[ColPath].Width = 360;
         detailView.Columns[ColNotes].Width = 300;
-        FitResultColumns(detailView);
         detailView.Dock = DockStyle.Fill;
-        var allItems = LoadActivityLogItems();
+        // Load rows after the window is visible so open feels instant.
+        var allRows = new List<ActivityLogRow>();
+        var loadGeneration = 0;
 
         var summaryLabel = new Label
         {
@@ -4252,6 +4265,7 @@ public sealed partial class MainForm : Form
             Font = new Font("Segoe UI", 9, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
             AutoEllipsis = true,
+            Text = "Loading activity log…",
         };
         var searchBox = new TextBox
         {
@@ -4362,7 +4376,7 @@ public sealed partial class MainForm : Form
             reasonLabel.Text = detailView.SelectedItems.Count > 0
                 ? BuildSelectedReasonSummary(detailView)
                 : detailView.Items.Count == 0
-                    ? "No scan rows match the current filter."
+                    ? (allRows.Count == 0 ? "Loading activity log…" : "No scan rows match the current filter.")
                     : "Select a row to review the reason, trust signal, file path, and available actions.";
             var hasSelection = detailView.SelectedItems.Count > 0;
             openReport.Enabled = hasSelection;
@@ -4379,20 +4393,23 @@ public sealed partial class MainForm : Form
             var palette = GetCurrentPalette();
             activeFilter = filter;
             var searchText = searchBox.Text.Trim();
-            var visibleItems = allItems
-                .Where(item => MatchesActivityFilter(filter, item))
-                .Where(item => MatchesActivitySearch(item, searchText))
+            var visibleRows = allRows
+                .Where(row => MatchesActivityFilter(filter, row))
+                .Where(row => MatchesActivitySearch(row, searchText))
                 .ToList();
 
             detailView.BeginUpdate();
-            detailView.Items.Clear();
-            foreach (var item in visibleItems)
+            try
             {
-                detailView.Items.Add(CloneActivityItem(item));
+                detailView.Items.Clear();
+                // Pre-size capacity reduces realloc churn on large logs.
+                detailView.Items.AddRange(visibleRows.Select(CreateActivityListViewItem).ToArray());
+            }
+            finally
+            {
+                detailView.EndUpdate();
             }
 
-            detailView.EndUpdate();
-            FitResultColumns(detailView);
             foreach (var button in filterButtons)
             {
                 var selected = button.Tag is ActivityFilter current && current == filter;
@@ -4400,7 +4417,7 @@ public sealed partial class MainForm : Form
                 button.ForeColor = selected ? palette.Surface : palette.Text;
             }
 
-            summaryLabel.Text = BuildActivityLogSummary(visibleItems, allItems, searchText);
+            summaryLabel.Text = BuildActivityLogSummary(visibleRows, allRows, searchText);
             RefreshSelectionUi();
         }
 
@@ -4415,7 +4432,18 @@ public sealed partial class MainForm : Form
             };
         }
 
-        searchBox.TextChanged += (_, _) => ApplyFilter(activeFilter);
+        // Debounce search so typing does not rebuild thousands of rows on every keystroke.
+        var searchDebounce = new System.Windows.Forms.Timer { Interval = 200 };
+        searchDebounce.Tick += (_, _) =>
+        {
+            searchDebounce.Stop();
+            ApplyFilter(activeFilter);
+        };
+        searchBox.TextChanged += (_, _) =>
+        {
+            searchDebounce.Stop();
+            searchDebounce.Start();
+        };
         detailView.SelectedIndexChanged += (_, _) => RefreshSelectionUi();
         detailView.DoubleClick += (_, _) => OpenSelectedReport(detailView);
         UpdateIgnoreButtonText(detailView, ignoreSelected);
@@ -4457,7 +4485,31 @@ public sealed partial class MainForm : Form
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
         ApplyAppTheme(dialog);
-        ApplyFilter(ActivityFilter.All);
+        dialog.Shown += async (_, _) =>
+        {
+            var generation = ++loadGeneration;
+            summaryLabel.Text = "Loading activity log…";
+            try
+            {
+                var rows = await Task.Run(LoadActivityLogRows).ConfigureAwait(true);
+                if (dialog.IsDisposed || generation != loadGeneration)
+                {
+                    return;
+                }
+
+                allRows.Clear();
+                allRows.AddRange(rows);
+                ApplyFilter(activeFilter);
+            }
+            catch (Exception ex)
+            {
+                if (!dialog.IsDisposed)
+                {
+                    summaryLabel.Text = $"Could not load activity log: {ex.Message}";
+                }
+            }
+        };
+        dialog.FormClosed += (_, _) => searchDebounce.Dispose();
         dialog.ShowDialog(this);
     }
 
@@ -4493,6 +4545,16 @@ public sealed partial class MainForm : Form
         };
     }
 
+    private static bool MatchesActivityFilter(ActivityFilter filter, ActivityLogRow row)
+    {
+        if (filter == ActivityFilter.ActionNeeded && IsHandledActivityRow(row))
+        {
+            return false;
+        }
+
+        return HashGuardLogic.MatchesActivityFilter(filter, row.Status, row.Risk, row.Malicious, row.Suspicious);
+    }
+
     private static bool MatchesActivityFilter(ActivityFilter filter, ListViewItem item)
     {
         if (filter == ActivityFilter.ActionNeeded && IsHandledActivityItem(item))
@@ -4505,12 +4567,35 @@ public sealed partial class MainForm : Form
         return HashGuardLogic.MatchesActivityFilter(filter, item.Text, GetSubItemText(item, ColRisk), malicious, suspicious);
     }
 
+    private static bool IsHandledActivityRow(ActivityLogRow row) =>
+        string.Equals(row.Status, "ignored", StringComparison.OrdinalIgnoreCase)
+        || row.Notes.StartsWith("Handled:", StringComparison.OrdinalIgnoreCase)
+        || HashGuardLogic.HasIgnoreNote(row.Notes)
+        || row.Notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsHandledActivityItem(ListViewItem item)
     {
         return string.Equals(item.Text, "ignored", StringComparison.OrdinalIgnoreCase)
             || GetSubItemText(item, ColNotes).StartsWith("Handled:", StringComparison.OrdinalIgnoreCase)
             || HashGuardLogic.HasIgnoreNote(GetSubItemText(item, ColNotes))
             || GetSubItemText(item, ColNotes).Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesActivitySearch(ActivityLogRow row, string searchText)
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            return true;
+        }
+
+        return row.Status.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.Risk.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.Trust.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.ProcessNames.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.Pids.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.Sha256.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.Path.Contains(searchText, StringComparison.OrdinalIgnoreCase)
+            || row.Notes.Contains(searchText, StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool MatchesActivitySearch(ListViewItem item, string searchText)
@@ -4525,33 +4610,55 @@ public sealed partial class MainForm : Form
             .Any(subItem => subItem.Text.Contains(searchText, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string BuildActivityLogSummary(IReadOnlyCollection<ListViewItem> visibleItems, IReadOnlyCollection<ListViewItem> allItems, string searchText)
+    private static string BuildActivityLogSummary(
+        IReadOnlyCollection<ActivityLogRow> visibleRows,
+        IReadOnlyCollection<ActivityLogRow> allRows,
+        string searchText)
     {
-        var actionNeeded = allItems.Count(item => MatchesActivityFilter(ActivityFilter.ActionNeeded, item));
-        var unknown = allItems.Count(item => MatchesActivityFilter(ActivityFilter.Unknown, item));
-        var errors = allItems.Count(item => MatchesActivityFilter(ActivityFilter.Errors, item));
-        var filtered = visibleItems.Count == allItems.Count && string.IsNullOrWhiteSpace(searchText)
-            ? $"{visibleItems.Count} rows"
-            : $"{visibleItems.Count} of {allItems.Count} rows";
-        var searchSuffix = string.IsNullOrWhiteSpace(searchText) ? "" : $" | Search: {searchText}";
-        return $"{filtered} | Action needed: {actionNeeded} | Unknown: {unknown} | Errors: {errors}{searchSuffix}";
-    }
-
-    private static ListViewItem CloneActivityItem(ListViewItem source)
-    {
-        var clone = new ListViewItem(source.Text)
+        var actionNeeded = 0;
+        var unknown = 0;
+        var errors = 0;
+        foreach (var row in allRows)
         {
-            BackColor = source.BackColor,
-            ForeColor = source.ForeColor,
-            Tag = source.Tag,
-        };
+            if (MatchesActivityFilter(ActivityFilter.ActionNeeded, row))
+            {
+                actionNeeded++;
+            }
 
-        for (var index = 1; index < source.SubItems.Count; index++)
-        {
-            clone.SubItems.Add(source.SubItems[index].Text);
+            if (MatchesActivityFilter(ActivityFilter.Unknown, row))
+            {
+                unknown++;
+            }
+
+            if (MatchesActivityFilter(ActivityFilter.Errors, row))
+            {
+                errors++;
+            }
         }
 
-        return clone;
+        var filtered = visibleRows.Count == allRows.Count && string.IsNullOrWhiteSpace(searchText)
+            ? $"{visibleRows.Count} rows"
+            : $"{visibleRows.Count} of {allRows.Count} rows";
+        var searchSuffix = string.IsNullOrWhiteSpace(searchText) ? "" : $" | Search: {searchText}";
+        var capNote = allRows.Count >= ActivityLogMaxRows ? $" | showing latest {ActivityLogMaxRows}" : "";
+        return $"{filtered}{capNote} | Action needed: {actionNeeded} | Unknown: {unknown} | Errors: {errors}{searchSuffix}";
+    }
+
+    private static ListViewItem CreateActivityListViewItem(ActivityLogRow row)
+    {
+        var item = new ListViewItem(row.Status);
+        item.SubItems.Add(row.Risk);
+        item.SubItems.Add(row.Trust);
+        item.SubItems.Add(row.Malicious.ToString());
+        item.SubItems.Add(row.Suspicious.ToString());
+        item.SubItems.Add(row.ProcessNames);
+        item.SubItems.Add(row.Pids);
+        item.SubItems.Add(row.Sha256);
+        item.SubItems.Add(row.Path);
+        item.SubItems.Add(row.Notes);
+        item.Tag = row.Link;
+        ApplyResultRowColor(item);
+        return item;
     }
 
     private static string BuildSelectedReasonSummary(ListView sourceView)
@@ -4631,9 +4738,23 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static List<ListViewItem> LoadActivityLogItems()
+    // Keep Activity Log snappy: only recent files / latest rows, and cache between opens.
+    private const int ActivityLogMaxFiles = 14;
+    private const int ActivityLogMaxRows = 2500;
+    private const long ActivityLogMaxBytesPerFile = 2L * 1024L * 1024L;
+    private List<ActivityLogRow>? activityLogCache;
+    private string activityLogCacheSignature = "";
+
+    private List<ActivityLogRow> LoadActivityLogRows()
     {
-        var items = new List<ListViewItem>();
+        var signature = BuildActivityLogCacheSignature();
+        if (activityLogCache is not null
+            && string.Equals(activityLogCacheSignature, signature, StringComparison.Ordinal))
+        {
+            return activityLogCache;
+        }
+
+        var rows = new List<ActivityLogRow>(Math.Min(ActivityLogMaxRows, 512));
         foreach (var logDirectory in GetLogDirectories().Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (!Directory.Exists(logDirectory))
@@ -4641,57 +4762,179 @@ public sealed partial class MainForm : Form
                 continue;
             }
 
-            foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv").OrderByDescending(File.GetLastWriteTimeUtc))
+            foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv")
+                         .OrderByDescending(File.GetLastWriteTimeUtc)
+                         .Take(ActivityLogMaxFiles))
             {
-                items.AddRange(LoadActivityLogItems(logPath));
+                if (rows.Count >= ActivityLogMaxRows)
+                {
+                    break;
+                }
+
+                rows.AddRange(LoadActivityLogRowsFromFile(logPath, ActivityLogMaxRows - rows.Count));
+            }
+
+            if (rows.Count >= ActivityLogMaxRows)
+            {
+                break;
             }
         }
 
-        return items;
+        activityLogCache = rows;
+        activityLogCacheSignature = signature;
+        return rows;
     }
 
-    private static IEnumerable<ListViewItem> LoadActivityLogItems(string logPath)
+    private static string BuildActivityLogCacheSignature()
     {
-        var lines = File.ReadLines(logPath).ToList();
-        if (lines.Count < 2)
+        var parts = new List<string>();
+        foreach (var logDirectory in GetLogDirectories().Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            yield break;
-        }
-
-        var headers = ParseCsvLine(lines[0]);
-        var columns = headers
-            .Select((name, index) => new { Name = name.Trim(), Index = index })
-            .ToDictionary(item => item.Name, item => item.Index, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var line in lines.Skip(1).Reverse())
-        {
-            var row = ParseCsvLine(line);
-            var timestamp = GetCsvValue(row, columns, "timestamp");
-            var notes = GetCsvValue(row, columns, "notes");
-            if (!string.IsNullOrWhiteSpace(timestamp))
+            if (!Directory.Exists(logDirectory))
             {
-                notes = string.IsNullOrWhiteSpace(notes) ? timestamp : $"{timestamp}; {notes}";
+                continue;
             }
 
-            var item = new ListViewItem(GetCsvValue(row, columns, "status"));
-            var riskLevel = GetCsvValue(row, columns, "risk_level");
-            var riskScore = GetCsvValue(row, columns, "risk_score");
-            item.SubItems.Add(string.IsNullOrWhiteSpace(riskLevel) && string.IsNullOrWhiteSpace(riskScore)
-                ? ""
-                : $"{riskLevel} {riskScore}".Trim());
-            item.SubItems.Add(GetCsvValue(row, columns, "trust"));
-            item.SubItems.Add(GetCsvValue(row, columns, "malicious"));
-            item.SubItems.Add(GetCsvValue(row, columns, "suspicious"));
-            item.SubItems.Add(GetCsvValue(row, columns, "process_names"));
-            item.SubItems.Add(GetCsvValue(row, columns, "pids"));
-            item.SubItems.Add(GetCsvValue(row, columns, "sha256"));
-            item.SubItems.Add(GetCsvValue(row, columns, "path"));
-            item.SubItems.Add(notes);
-            item.Tag = GetCsvValue(row, columns, "link");
-            ApplyResultRowColor(item);
-            yield return item;
+            foreach (var logPath in Directory.EnumerateFiles(logDirectory, "scan-log-*.csv")
+                         .OrderByDescending(File.GetLastWriteTimeUtc)
+                         .Take(ActivityLogMaxFiles))
+            {
+                try
+                {
+                    var info = new FileInfo(logPath);
+                    parts.Add($"{logPath}|{info.Length}|{info.LastWriteTimeUtc.Ticks}");
+                }
+                catch
+                {
+                    parts.Add(logPath);
+                }
+            }
         }
+
+        return string.Join(";", parts);
     }
+
+    private static List<ActivityLogRow> LoadActivityLogRowsFromFile(string logPath, int maxRows)
+    {
+        var results = new List<ActivityLogRow>();
+        if (maxRows <= 0)
+        {
+            return results;
+        }
+
+        try
+        {
+            var lines = ReadActivityLogLines(logPath);
+            if (lines.Count < 2)
+            {
+                return results;
+            }
+
+            var headers = ParseCsvLine(lines[0]);
+            var columns = headers
+                .Select((name, index) => new { Name = name.Trim(), Index = index })
+                .ToDictionary(item => item.Name, item => item.Index, StringComparer.OrdinalIgnoreCase);
+
+            // Newest first: walk body lines from the end.
+            for (var index = lines.Count - 1; index >= 1 && results.Count < maxRows; index--)
+            {
+                var line = lines[index];
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                var row = ParseCsvLine(line);
+                var timestamp = GetCsvValue(row, columns, "timestamp");
+                var notes = GetCsvValue(row, columns, "notes");
+                if (!string.IsNullOrWhiteSpace(timestamp))
+                {
+                    notes = string.IsNullOrWhiteSpace(notes) ? timestamp : $"{timestamp}; {notes}";
+                }
+
+                var riskLevel = GetCsvValue(row, columns, "risk_level");
+                var riskScore = GetCsvValue(row, columns, "risk_score");
+                var risk = string.IsNullOrWhiteSpace(riskLevel) && string.IsNullOrWhiteSpace(riskScore)
+                    ? ""
+                    : $"{riskLevel} {riskScore}".Trim();
+                _ = int.TryParse(GetCsvValue(row, columns, "malicious"), out var malicious);
+                _ = int.TryParse(GetCsvValue(row, columns, "suspicious"), out var suspicious);
+
+                results.Add(new ActivityLogRow(
+                    GetCsvValue(row, columns, "status"),
+                    risk,
+                    GetCsvValue(row, columns, "trust"),
+                    malicious,
+                    suspicious,
+                    GetCsvValue(row, columns, "process_names"),
+                    GetCsvValue(row, columns, "pids"),
+                    GetCsvValue(row, columns, "sha256"),
+                    GetCsvValue(row, columns, "path"),
+                    notes,
+                    GetCsvValue(row, columns, "link")));
+            }
+        }
+        catch
+        {
+            // A corrupt or locked log should not prevent opening the Activity Log.
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Reads CSV lines efficiently. For large logs, only the tail is loaded so open stays fast.
+    /// </summary>
+    private static List<string> ReadActivityLogLines(string logPath)
+    {
+        var info = new FileInfo(logPath);
+        if (!info.Exists || info.Length == 0)
+        {
+            return [];
+        }
+
+        if (info.Length <= ActivityLogMaxBytesPerFile)
+        {
+            return File.ReadAllLines(logPath).ToList();
+        }
+
+        // Tail-read large files: keep header + trailing chunk.
+        using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var header = reader.ReadLine() ?? "";
+        var start = Math.Max(0, info.Length - ActivityLogMaxBytesPerFile);
+        stream.Seek(start, SeekOrigin.Begin);
+        // Discard partial first line after seek.
+        if (start > 0)
+        {
+            _ = reader.ReadLine();
+        }
+
+        var tail = new List<string> { header };
+        while (!reader.EndOfStream)
+        {
+            var line = reader.ReadLine();
+            if (line is not null)
+            {
+                tail.Add(line);
+            }
+        }
+
+        return tail;
+    }
+
+    private sealed record ActivityLogRow(
+        string Status,
+        string Risk,
+        string Trust,
+        int Malicious,
+        int Suspicious,
+        string ProcessNames,
+        string Pids,
+        string Sha256,
+        string Path,
+        string Notes,
+        string Link);
 
     private static string GetCsvValue(List<string> row, Dictionary<string, int> columns, string columnName)
     {

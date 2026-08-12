@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.55 - 2026-08-12
+
+- Activity Log opens immediately and loads rows in the background (no multi-second UI freeze).
+- Activity Log loads only recent log files / latest rows, tail-reads large CSVs, caches between opens, and debounces search filtering.
+
 ## v1.0.54 - 2026-08-12
 
 - Review Queue action buttons are bottom-aligned in the footer strip (no longer floating mid-card when only one row is needed).
