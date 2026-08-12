@@ -998,13 +998,14 @@ public sealed partial class MainForm : Form
     {
         using var dialog = new Form
         {
-            Text = "Settings",
+            Text = $"HashGuard Settings  |  Version {CurrentVersion}",
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.Sizable,
             MaximizeBox = true,
             MinimizeBox = false,
-            ClientSize = new Size(1180, 860),
-            MinimumSize = new Size(1080, 800),
+            // Slightly taller default so Behavior (Version and Updates) fits without clipping.
+            ClientSize = new Size(1180, 920),
+            MinimumSize = new Size(1080, 820),
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
@@ -1058,59 +1059,29 @@ public sealed partial class MainForm : Form
         {
             Text = BuildVersionAndUpdateInfo(),
             Dock = DockStyle.Top,
-            Height = 82,
+            AutoSize = false,
+            Height = 96,
             Padding = new Padding(10),
-            BackColor = Color.White,
+            BackColor = Color.FromArgb(248, 250, 252),
             ForeColor = Color.FromArgb(35, 35, 35),
-            TextAlign = ContentAlignment.MiddleLeft,
+            TextAlign = ContentAlignment.TopLeft,
             BorderStyle = BorderStyle.FixedSingle,
             Tag = "callout",
         };
 
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Padding = new Padding(0) };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        // Tabs + footer only (no large header strip — frees vertical space for Behavior/Version content).
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(0) };
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         dialog.Controls.Add(root);
 
-        var settingsHeader = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 1,
-            RowCount = 2,
-            Height = 68,
-            Padding = new Padding(22, 10, 22, 8),
-            BackColor = Color.FromArgb(28, 28, 28),
-            Tag = "header",
-        };
-        settingsHeader.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-        settingsHeader.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        settingsHeader.Controls.Add(new Label
-        {
-            Text = $"HashGuard Settings  |  Version {CurrentVersion}",
-            Dock = DockStyle.Fill,
-            Font = new Font("Segoe UI", 14, FontStyle.Bold),
-            ForeColor = Color.White,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0),
-        }, 0, 0);
-        settingsHeader.Controls.Add(new Label
-        {
-            Text = "Provider keys, scan behavior, Windows integration, and trusted publishers",
-            Dock = DockStyle.Fill,
-            ForeColor = Color.FromArgb(205, 205, 205),
-            TextAlign = ContentAlignment.TopLeft,
-            Margin = new Padding(0),
-        }, 0, 1);
-        root.Controls.Add(settingsHeader, 0, 0);
-
         var tabs = new TabControl
         {
             Dock = DockStyle.Fill,
-            Margin = new Padding(16, 12, 16, 10),
+            Margin = new Padding(12, 10, 12, 6),
             Font = new Font("Segoe UI", 9, FontStyle.Regular),
         };
-        root.Controls.Add(tabs, 0, 1);
+        root.Controls.Add(tabs, 0, 0);
 
         var reputationPage = CreateSettingsPage(
             ("Reputation Providers", [vtEnabled, mdEnabled, mhrEnabled, freeLimit, uploadUnknown]),
@@ -1156,7 +1127,7 @@ public sealed partial class MainForm : Form
         cancel.FlatAppearance.BorderSize = 1;
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
-        root.Controls.Add(buttons, 0, 2);
+        root.Controls.Add(buttons, 0, 1);
         dialog.AcceptButton = ok;
         dialog.CancelButton = cancel;
         ApplyAppTheme(dialog);
@@ -1381,8 +1352,9 @@ public sealed partial class MainForm : Form
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            AutoScroll = false,
-            Padding = new Padding(14, 12, 14, 8),
+            // Allow scroll when a tab has many sections (Behavior / Version and Updates).
+            AutoScroll = true,
+            Padding = new Padding(12, 10, 12, 10),
             BackColor = Color.FromArgb(246, 247, 249),
         };
         page.ControlAdded += (_, e) =>
@@ -1414,15 +1386,16 @@ public sealed partial class MainForm : Form
             Width = 720,
             Height = 10,
             BackColor = Color.White,
-            Padding = new Padding(12, 8, 12, 8),
+            Padding = new Padding(12, 8, 12, 10),
             Margin = new Padding(0, 0, 0, 8),
             BorderStyle = BorderStyle.FixedSingle,
         };
 
         var layout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
             RowCount = 1,
             Padding = new Padding(0),
@@ -1448,8 +1421,8 @@ public sealed partial class MainForm : Form
             layout.Controls.Add(control);
         }
 
-        section.Height = Math.Max(58, layout.PreferredSize.Height + section.Padding.Vertical);
         section.Controls.Add(layout);
+        MeasureSettingsSectionHeight(section, layout);
         return section;
     }
 
@@ -1472,8 +1445,26 @@ public sealed partial class MainForm : Form
 
     private static void ResizeSettingsSection(FlowLayoutPanel page, Control section)
     {
-        var availableWidth = page.ClientSize.Width - page.Padding.Horizontal;
+        var availableWidth = page.ClientSize.Width - page.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth;
         section.Width = Math.Max(560, availableWidth - section.Margin.Horizontal);
+        if (section is Panel panel
+            && panel.Controls.Count > 0
+            && panel.Controls[0] is TableLayoutPanel layout)
+        {
+            MeasureSettingsSectionHeight(panel, layout);
+        }
+    }
+
+    private static void MeasureSettingsSectionHeight(Panel section, TableLayoutPanel layout)
+    {
+        layout.PerformLayout();
+        var contentHeight = layout.PreferredSize.Height;
+        if (contentHeight <= 0)
+        {
+            contentHeight = layout.Height;
+        }
+
+        section.Height = Math.Max(58, contentHeight + section.Padding.Vertical + 6);
     }
 
     private static Control CreateSettingRow(string labelText, Control editor)

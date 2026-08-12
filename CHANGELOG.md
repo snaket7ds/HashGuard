@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v1.0.56 - 2026-08-12
+
+- Settings: removed the large header strip (subtitle/white chrome) to free vertical space.
+- Settings Behavior tab: enable scrolling and remeasure section heights so Version and Updates is no longer clipped.
+- Settings dialog default height increased slightly; version shown in the window title.
+
 ## v1.0.55 - 2026-08-12
 
 - Activity Log opens immediately and loads rows in the background (no multi-second UI freeze).
