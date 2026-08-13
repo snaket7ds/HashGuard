@@ -1177,19 +1177,34 @@ public sealed partial class MainForm : Form
         metaDefenderEnabledBox.Checked = mdEnabled.Checked;
         mhrEnabledBox.Checked = mhrEnabled.Checked;
         freeApiLimitBox.Checked = freeLimit.Checked;
-        uploadUnknownBox.Checked = uploadUnknown.Checked && !scanAllFiles.Checked && EnableVirusTotalUploadsWithWarning();
-        hashCacheEnabledBox.Checked = hashCache.Checked;
-        rightClickScanBox.Checked = rightClickScan.Checked;
-        startWithWindowsBox.Checked = startWithWindows.Checked;
-        startMinimizedBox.Checked = startMinimized.Checked;
-        colorModeBox.SelectedIndex = colorMode.SelectedIndex;
-        autoProcessScanBox.Checked = autoProcessScan.Checked;
-        runElevatedBox.Checked = runElevated.Checked;
-        scanAllFilesBox.Checked = scanAllFiles.Checked && EnableAllFileScanningWithWarning();
-        if (scanAllFilesBox.Checked)
+        var wantUpload = uploadUnknown.Checked && !scanAllFiles.Checked;
+        if (wantUpload && !uploadUnknownBox.Checked && !EnableVirusTotalUploadsWithWarning())
         {
-            DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
+            wantUpload = false;
         }
+
+        suppressSettingEvents = true;
+        try
+        {
+            uploadUnknownBox.Checked = wantUpload;
+            hashCacheEnabledBox.Checked = hashCache.Checked;
+            rightClickScanBox.Checked = rightClickScan.Checked;
+            startWithWindowsBox.Checked = startWithWindows.Checked;
+            startMinimizedBox.Checked = startMinimized.Checked;
+            colorModeBox.SelectedIndex = colorMode.SelectedIndex;
+            autoProcessScanBox.Checked = autoProcessScan.Checked;
+            runElevatedBox.Checked = runElevated.Checked;
+            scanAllFilesBox.Checked = scanAllFiles.Checked && EnableAllFileScanningWithWarning();
+            if (scanAllFilesBox.Checked)
+            {
+                DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
+            }
+        }
+        finally
+        {
+            suppressSettingEvents = false;
+        }
+
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
         telemetryEnabledBox.Checked = telemetryEnabled.Checked;
         appSettings.ScheduledDailyScan = scheduledDaily.Checked;
@@ -3302,11 +3317,17 @@ public sealed partial class MainForm : Form
         var pids = string.Join(", ", processFiles.Select(p => p.Pid).OrderBy(pid => pid));
         var result = new ScanResult(path, names, pids);
         ApplyLocalFileIntelligence(result, processFiles);
+        // Capture WinForms state before any await — later continuations may be off the UI thread.
+        var hashCacheEnabled = hashCacheEnabledBox.Checked;
+        var metaEnabled = metaDefenderEnabledBox.Checked;
+        var virusTotalEnabled = virusTotalEnabledBox.Checked;
+        var mhrEnabled = mhrEnabledBox.Checked;
+        var uploadUnknown = uploadUnknownBox.Checked;
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (hashCacheEnabledBox.Checked && hashCache.TryGetUnchangedFile(path, out var cachedSha256, out var cachedEntry))
+            if (hashCacheEnabled && hashCache.TryGetUnchangedFile(path, out var cachedSha256, out var cachedEntry))
             {
                 result.Sha256 = cachedSha256;
                 result.Link = string.Format(AppConstants.VirusTotalGuiReportUrl, result.Sha256);
@@ -3319,7 +3340,7 @@ public sealed partial class MainForm : Form
 
             result.Sha256 = await FileHash.Sha256FileAsync(path, cancellationToken);
             result.Link = string.Format(AppConstants.VirusTotalGuiReportUrl, result.Sha256);
-            if (hashCacheEnabledBox.Checked && hashCache.TryGet(result.Sha256, out var cached))
+            if (hashCacheEnabled && hashCache.TryGet(result.Sha256, out var cached))
             {
                 if (HashCache.IsReusableCleanEntry(cached))
                 {
@@ -3332,7 +3353,7 @@ public sealed partial class MainForm : Form
                     return result;
                 }
 
-                if (HashCache.IsReusablePendingEntry(cached))
+                if (HashCache.IsReusablePendingEntry(cached, uploadUnknown && allowVirusTotalUploads))
                 {
                     result.ApplyCache(cached, "Recent cached provider state");
                     result.Status = cached.Status;
@@ -3344,19 +3365,19 @@ public sealed partial class MainForm : Form
             }
 
             var checkedAnyService = false;
-            if (metaDefenderEnabledBox.Checked)
+            if (metaEnabled)
             {
                 checkedAnyService = true;
                 await ApplyMetaDefenderReportAsync(result, cancellationToken);
             }
 
-            if (virusTotalEnabledBox.Checked)
+            if (virusTotalEnabled)
             {
                 checkedAnyService = true;
-                await ApplyVirusTotalReportAsync(http, result, path, allowVirusTotalUploads, cancellationToken);
+                await ApplyVirusTotalReportAsync(http, result, path, allowVirusTotalUploads, uploadUnknown, cancellationToken);
             }
 
-            if (mhrEnabledBox.Checked)
+            if (mhrEnabled)
             {
                 checkedAnyService = true;
                 await ApplyCymruReputationAsync(result, cancellationToken);
@@ -3590,7 +3611,13 @@ public sealed partial class MainForm : Form
         return ex.Message;
     }
 
-    private async Task ApplyVirusTotalReportAsync(HttpClient http, ScanResult result, string path, bool allowUploads, CancellationToken cancellationToken)
+    private async Task ApplyVirusTotalReportAsync(
+        HttpClient http,
+        ScanResult result,
+        string path,
+        bool allowUploads,
+        bool uploadUnknown,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -3601,41 +3628,27 @@ public sealed partial class MainForm : Form
                 return;
             }
 
-            if (!await TryReserveVirusTotalQuotaAsync(result))
+            if (!await TryReserveVirusTotalQuotaAsync(result, cancellationToken, waitForMinuteSlot: false))
             {
                 AddProviderResult(result, "VirusTotal", ProviderState.Deferred, "Free API quota reached.");
                 return;
             }
 
             using var reportResponse = await http.GetAsync(string.Format(AppConstants.VirusTotalFileReportUrl, result.Sha256), cancellationToken);
-            if (reportResponse.StatusCode == HttpStatusCode.NotFound)
+            if (reportResponse.StatusCode != HttpStatusCode.OK)
             {
-                result.Status = "unknown";
-                AddProviderResult(result, "VirusTotal", ProviderState.Unknown, "Hash not found.");
-                AppendResultNote(result, "VirusTotal: hash not found.");
-                if (uploadUnknownBox.Checked && allowUploads)
+                var errorBody = await reportResponse.Content.ReadAsStringAsync(cancellationToken);
+                if (HashGuardLogic.IsVirusTotalNotFound((int)reportResponse.StatusCode, errorBody))
                 {
-                    AppendResultNote(result, "VirusTotal: uploading unknown file for analysis.");
-                    var analysisId = await UploadFileAsync(http, path, result, cancellationToken);
-                    if (string.IsNullOrWhiteSpace(analysisId))
-                    {
-                        return;
-                    }
-
-                    result.Status = "uploaded";
-                    AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Uploaded for analysis: {analysisId}");
-                    AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
-                    await PollAnalysisAsync(http, analysisId, result, path, cancellationToken);
-                }
-                else if (uploadUnknownBox.Checked && !allowUploads)
-                {
-                    AppendResultNote(result, "VirusTotal: full-file upload skipped for background active-file scanning.");
+                    await HandleVirusTotalHashNotFoundAsync(
+                        http, result, path, allowUploads, uploadUnknown, cancellationToken);
+                    return;
                 }
 
-                return;
+                throw new HttpRequestException(
+                    $"VirusTotal returned {(int)reportResponse.StatusCode} {reportResponse.StatusCode}. {TrimVirusTotalError(errorBody)}");
             }
 
-            reportResponse.EnsureSuccessStatusCode();
             await using var reportStream = await reportResponse.Content.ReadAsStreamAsync(cancellationToken);
             using var reportJson = await JsonDocument.ParseAsync(reportStream, cancellationToken: cancellationToken);
             ProviderStats.ApplyVirusTotalFileReport(result, reportJson.RootElement);
@@ -3653,11 +3666,97 @@ public sealed partial class MainForm : Form
         {
             AppendResultNote(result, $"VirusTotal lookup failed: {FormatScanError(ex)}");
             AddProviderResult(result, "VirusTotal", ProviderState.Error, FormatScanError(ex));
-            if (uploadUnknownBox.Checked && allowUploads && string.Equals(result.Status, "unknown", StringComparison.OrdinalIgnoreCase))
+            if (uploadUnknown && allowUploads && string.Equals(result.Status, "unknown", StringComparison.OrdinalIgnoreCase))
             {
                 result.Status = "error";
             }
         }
+    }
+
+    private async Task HandleVirusTotalHashNotFoundAsync(
+        HttpClient http,
+        ScanResult result,
+        string path,
+        bool allowUploads,
+        bool uploadUnknown,
+        CancellationToken cancellationToken)
+    {
+        result.Status = "unknown";
+        AddProviderResult(result, "VirusTotal", ProviderState.Unknown, "Hash not found.");
+        AppendResultNote(result, "VirusTotal: hash not found.");
+        if (uploadUnknown && allowUploads)
+        {
+            AppendResultNote(result, "VirusTotal: uploading unknown file for analysis.");
+            var analysisId = await UploadFileAsync(http, path, result, cancellationToken);
+            if (string.IsNullOrWhiteSpace(analysisId))
+            {
+                return;
+            }
+
+            result.Status = "uploaded";
+            AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Uploaded for analysis: {analysisId}");
+            AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
+            if (analysisId is "submitted" or "already-exists")
+            {
+                await TryApplyExistingVirusTotalReportAsync(http, result, cancellationToken);
+                return;
+            }
+
+            await PollAnalysisAsync(http, analysisId, result, path, cancellationToken);
+            return;
+        }
+
+        if (uploadUnknown && !allowUploads)
+        {
+            AppendResultNote(result, "VirusTotal: full-file upload skipped for background active-file scanning.");
+        }
+    }
+
+    private async Task TryApplyExistingVirusTotalReportAsync(
+        HttpClient http,
+        ScanResult result,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!await TryReserveVirusTotalQuotaAsync(result, cancellationToken, waitForMinuteSlot: true))
+            {
+                return;
+            }
+
+            using var reportResponse = await http.GetAsync(
+                string.Format(AppConstants.VirusTotalFileReportUrl, result.Sha256),
+                cancellationToken);
+            if (!reportResponse.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            await using var reportStream = await reportResponse.Content.ReadAsStreamAsync(cancellationToken);
+            using var reportJson = await JsonDocument.ParseAsync(reportStream, cancellationToken: cancellationToken);
+            ProviderStats.ApplyVirusTotalFileReport(result, reportJson.RootElement);
+            AddProviderResult(result, "VirusTotal", result.IsDetection ? ProviderState.Detected : ProviderState.Clean,
+                result.IsDetection ? $"{result.Malicious} malicious, {result.Suspicious} suspicious." : "No malicious or suspicious detections.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Upload already succeeded; a follow-up report fetch is best-effort.
+        }
+    }
+
+    private static string TrimVirusTotalError(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return "";
+        }
+
+        var trimmed = body.ReplaceLineEndings(" ").Trim();
+        return trimmed.Length <= 240 ? trimmed : trimmed[..240] + "…";
     }
 
     private async Task ApplyMetaDefenderReportAsync(ScanResult result, CancellationToken cancellationToken)
@@ -3719,7 +3818,7 @@ public sealed partial class MainForm : Form
             statusLabel.Text = $"Waiting for VirusTotal analysis {attempt} of 6: {FormatDisplayPath(path)}";
             await Task.Delay(TimeSpan.FromSeconds(Math.Max((double)delayBox.Value, 15.0)), cancellationToken);
 
-            if (!await TryReserveVirusTotalQuotaAsync(result))
+            if (!await TryReserveVirusTotalQuotaAsync(result, cancellationToken, waitForMinuteSlot: true))
             {
                 AddProviderResult(result, "VirusTotal", ProviderState.Deferred, "Free API quota reached while polling analysis.");
                 return;
@@ -3843,7 +3942,10 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private async Task<bool> TryReserveVirusTotalQuotaAsync(ScanResult? result = null)
+    private async Task<bool> TryReserveVirusTotalQuotaAsync(
+        ScanResult? result,
+        CancellationToken cancellationToken,
+        bool waitForMinuteSlot)
     {
         if (!freeApiLimitBox.Checked)
         {
@@ -3851,6 +3953,14 @@ public sealed partial class MainForm : Form
         }
 
         var reservation = await quotaTracker.TryReserveAsync();
+        if (!reservation.Available
+            && waitForMinuteSlot
+            && string.Equals(reservation.LimitName, "minute", StringComparison.OrdinalIgnoreCase))
+        {
+            await Task.Delay(TimeSpan.FromSeconds(16), cancellationToken);
+            reservation = await quotaTracker.TryReserveAsync();
+        }
+
         if (reservation.Available)
         {
             return true;
@@ -3902,38 +4012,81 @@ public sealed partial class MainForm : Form
 
     private async Task<string?> UploadFileAsync(HttpClient http, string path, ScanResult result, CancellationToken cancellationToken)
     {
-        var uploadUrl = AppConstants.VirusTotalFileUploadUrl;
-        var info = new FileInfo(path);
-        if (info.Length >= AppConstants.RegularUploadLimitBytes)
+        try
         {
-            if (!await TryReserveVirusTotalQuotaAsync(result))
+            if (!File.Exists(path))
+            {
+                AppendResultNote(result, "VirusTotal upload skipped: file no longer exists.");
+                return null;
+            }
+
+            var uploadUrl = AppConstants.VirusTotalFileUploadUrl;
+            var info = new FileInfo(path);
+            if (info.Length == 0)
+            {
+                AppendResultNote(result, "VirusTotal upload skipped: file is empty.");
+                return null;
+            }
+
+            if (info.Length >= AppConstants.RegularUploadLimitBytes)
+            {
+                if (!await TryReserveVirusTotalQuotaAsync(result, cancellationToken, waitForMinuteSlot: true))
+                {
+                    return null;
+                }
+
+                using var uploadUrlResponse = await http.GetAsync(AppConstants.VirusTotalLargeFileUploadUrl, cancellationToken);
+                var uploadUrlBody = await uploadUrlResponse.Content.ReadAsStringAsync(cancellationToken);
+                if (!uploadUrlResponse.IsSuccessStatusCode)
+                {
+                    AppendResultNote(result, $"VirusTotal large-file upload URL failed: {(int)uploadUrlResponse.StatusCode}. {TrimVirusTotalError(uploadUrlBody)}");
+                    return null;
+                }
+
+                using var uploadUrlJson = JsonDocument.Parse(uploadUrlBody);
+                uploadUrl = uploadUrlJson.RootElement.TryGetProperty("data", out var dataEl) && dataEl.ValueKind == JsonValueKind.String
+                    ? dataEl.GetString() ?? AppConstants.VirusTotalFileUploadUrl
+                    : AppConstants.VirusTotalFileUploadUrl;
+            }
+
+            await using var fileStream = File.OpenRead(path);
+            using var form = new MultipartFormDataContent();
+            var fileContent = new StreamContent(fileStream);
+            fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+            form.Add(fileContent, "file", Path.GetFileName(path));
+
+            if (!await TryReserveVirusTotalQuotaAsync(result, cancellationToken, waitForMinuteSlot: true))
             {
                 return null;
             }
 
-            using var uploadUrlResponse = await http.GetAsync(AppConstants.VirusTotalLargeFileUploadUrl, cancellationToken);
-            uploadUrlResponse.EnsureSuccessStatusCode();
-            await using var uploadUrlStream = await uploadUrlResponse.Content.ReadAsStreamAsync();
-            using var uploadUrlJson = await JsonDocument.ParseAsync(uploadUrlStream);
-            uploadUrl = uploadUrlJson.RootElement.GetProperty("data").GetString() ?? AppConstants.VirusTotalFileUploadUrl;
+            using var uploadResponse = await http.PostAsync(uploadUrl, form, cancellationToken);
+            var responseText = await uploadResponse.Content.ReadAsStringAsync(cancellationToken);
+            if (HashGuardLogic.IsVirusTotalAlreadyExists((int)uploadResponse.StatusCode, responseText))
+            {
+                AppendResultNote(result, "VirusTotal: file already present; using submitted analysis id if available.");
+                return HashGuardLogic.TryReadVirusTotalAnalysisId(responseText) ?? "already-exists";
+            }
+
+            if (!uploadResponse.IsSuccessStatusCode)
+            {
+                AppendResultNote(
+                    result,
+                    $"VirusTotal upload failed: {(int)uploadResponse.StatusCode} {uploadResponse.StatusCode}. {TrimVirusTotalError(responseText)}");
+                return null;
+            }
+
+            return HashGuardLogic.TryReadVirusTotalAnalysisId(responseText) ?? "submitted";
         }
-
-        await using var fileStream = File.OpenRead(path);
-        using var form = new MultipartFormDataContent();
-        var fileContent = new StreamContent(fileStream);
-        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
-        form.Add(fileContent, "file", Path.GetFileName(path));
-
-        if (!await TryReserveVirusTotalQuotaAsync(result))
+        catch (OperationCanceledException)
         {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppendResultNote(result, $"VirusTotal upload failed: {FormatScanError(ex)}");
             return null;
         }
-
-        using var uploadResponse = await http.PostAsync(uploadUrl, form, cancellationToken);
-        uploadResponse.EnsureSuccessStatusCode();
-        await using var responseStream = await uploadResponse.Content.ReadAsStreamAsync();
-        using var responseJson = await JsonDocument.ParseAsync(responseStream);
-        return JsonPath.ReadString(responseJson.RootElement, "data", "id") ?? "submitted";
     }
 
     private void AddResultRow(ScanResult result)

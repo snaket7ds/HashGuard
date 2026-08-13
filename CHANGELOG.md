@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.59 - 2026-08-13
+
+- Fix VirusTotal upload when a hash is not found and "Upload files missing from VirusTotal" is enabled: do not skip those files from a cached unknown result, keep the setting on when saving Settings, read the checkbox before background awaits, treat VT NotFoundError bodies as not-found, and surface upload/quota failures instead of failing silently.
+
 ## v1.0.58 - 2026-08-12
 
 - Keep the hash cache dirty in memory during a scan and flush it every 25 mutations or 5 seconds, plus once when the scan ends — no more rewriting both JSON cache files after every file.

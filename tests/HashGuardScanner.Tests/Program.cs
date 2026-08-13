@@ -32,6 +32,17 @@ var tests = new (string Name, Action Test)[]
         var now = DateTimeOffset.Parse("2026-06-04T12:00:00Z");
         AssertTrue(HashGuardLogic.CanReuseProviderCache("unknown", false, now.AddHours(-2), now));
         AssertFalse(HashGuardLogic.CanReuseProviderCache("unknown", false, now.AddHours(-13), now));
+        AssertFalse(HashGuardLogic.CanReuseProviderCache("unknown", false, now.AddHours(-2), now, uploadUnknownEnabled: true));
+        AssertFalse(HashGuardLogic.CanReuseProviderCache("uploaded", false, now.AddHours(-1), now, uploadUnknownEnabled: true));
+    }),
+    ("detects virus total not-found and analysis id", () =>
+    {
+        AssertTrue(HashGuardLogic.IsVirusTotalNotFound(404, null));
+        AssertTrue(HashGuardLogic.IsVirusTotalNotFound(400, """{"error":{"code":"NotFoundError"}}"""));
+        AssertFalse(HashGuardLogic.IsVirusTotalNotFound(401, """{"error":{"code":"AuthenticationRequiredError"}}"""));
+        AssertTrue(HashGuardLogic.IsVirusTotalAlreadyExists(409, null));
+        AssertEqual("abc123", HashGuardLogic.TryReadVirusTotalAnalysisId("""{"data":{"type":"analysis","id":"abc123"}}"""));
+        AssertTrue(HashGuardLogic.TryReadVirusTotalAnalysisId("not-json") is null);
     }),
     ("reuses deferred cache for shorter window", () =>
     {

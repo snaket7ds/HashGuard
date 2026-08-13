@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 
 namespace HashGuardScanner;
 
@@ -107,9 +108,20 @@ internal static class HashGuardLogic
         return string.Join(Environment.NewLine, lines[start..end]).TrimEnd() + Environment.NewLine;
     }
 
-    public static bool CanReuseProviderCache(string status, bool virusTotalDeferred, DateTimeOffset checkedAtUtc, DateTimeOffset now)
+    public static bool CanReuseProviderCache(
+        string status,
+        bool virusTotalDeferred,
+        DateTimeOffset checkedAtUtc,
+        DateTimeOffset now,
+        bool uploadUnknownEnabled = false)
     {
         if (checkedAtUtc == default)
+        {
+            return false;
+        }
+
+        // Cached "unknown"/"uploaded" must not block a live VirusTotal upload.
+        if (uploadUnknownEnabled && IsPendingVirusTotalUploadStatus(status))
         {
             return false;
         }
@@ -124,6 +136,48 @@ internal static class HashGuardLogic
             || virusTotalDeferred
                 && age <= TimeSpan.FromMinutes(30);
     }
+
+    public static bool IsPendingVirusTotalUploadStatus(string? status) =>
+        string.Equals(status, "unknown", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "uploaded", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsVirusTotalNotFound(int statusCode, string? body)
+    {
+        if (statusCode == 404)
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        return body.Contains("NotFoundError", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("\"NotFound\"", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string? TryReadVirusTotalAnalysisId(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return JsonPath.ReadString(doc.RootElement, "data", "id");
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static bool IsVirusTotalAlreadyExists(int statusCode, string? body) =>
+        statusCode == 409
+        || (!string.IsNullOrWhiteSpace(body) && body.Contains("AlreadyExistsError", StringComparison.OrdinalIgnoreCase));
 
     public static bool MatchesActivityFilter(ActivityFilter filter, string status, string riskText, int malicious, int suspicious)
     {

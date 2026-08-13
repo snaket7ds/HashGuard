@@ -323,8 +323,13 @@ internal sealed class HashCache
         && entry.CheckedAtUtc != default
         && DateTimeOffset.UtcNow - entry.CheckedAtUtc <= AppConstants.CleanCacheMaxAge;
 
-    public static bool IsReusablePendingEntry(CacheEntry entry) =>
-        HashGuardLogic.CanReuseProviderCache(entry.Status, entry.VirusTotalDeferred, entry.CheckedAtUtc, DateTimeOffset.UtcNow);
+    public static bool IsReusablePendingEntry(CacheEntry entry, bool uploadUnknownEnabled = false) =>
+        HashGuardLogic.CanReuseProviderCache(
+            entry.Status,
+            entry.VirusTotalDeferred,
+            entry.CheckedAtUtc,
+            DateTimeOffset.UtcNow,
+            uploadUnknownEnabled);
 
     private static string NormalizeCachedStatus(string status) =>
         string.Equals(status, "clean/seen", StringComparison.OrdinalIgnoreCase) ? "clean" : status;
