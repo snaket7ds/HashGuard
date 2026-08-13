@@ -209,14 +209,20 @@ internal static class HashGuardLogic
         || string.Equals(status, "uploaded", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "limited access", StringComparison.OrdinalIgnoreCase);
 
-    public static bool NeedsAction(string? status, string? riskText, int malicious, int suspicious)
+    public static bool NeedsAction(
+        string? status,
+        string? riskText,
+        int malicious,
+        int suspicious,
+        bool needsVirusTotalUpload = false)
     {
         if (IsIgnoredStatus(status))
         {
             return false;
         }
 
-        return malicious + suspicious > 0
+        return needsVirusTotalUpload
+            || malicious + suspicious > 0
             || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase)
             || (riskText?.StartsWith("High", StringComparison.OrdinalIgnoreCase) ?? false);
     }

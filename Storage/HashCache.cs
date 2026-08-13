@@ -113,6 +113,7 @@ internal sealed class HashCache
             Notes = HashGuardLogic.RemoveIgnoreNote(result.Notes),
             CheckedAtUtc = DateTimeOffset.UtcNow,
             VirusTotalDeferred = result.VirusTotalDeferred,
+            NeedsVirusTotalUpload = result.NeedsVirusTotalUpload,
         };
         SetFileState(result);
         MarkDirty();

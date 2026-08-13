@@ -70,6 +70,12 @@ var tests = new (string Name, Action Test)[]
         AssertTrue(HashGuardLogic.NeedsAction("clean", "High 80", 0, 0));
         AssertFalse(HashGuardLogic.NeedsAction("clean", "Low 5", 0, 0));
     }),
+    ("needs action when virus total upload is pending", () =>
+    {
+        AssertTrue(HashGuardLogic.NeedsAction("unknown", "Low 20", 0, 0, needsVirusTotalUpload: true));
+        AssertFalse(HashGuardLogic.NeedsAction("unknown", "Low 20", 0, 0, needsVirusTotalUpload: false));
+        AssertFalse(HashGuardLogic.NeedsAction("ignored", "Low 20", 0, 0, needsVirusTotalUpload: true));
+    }),
     ("quarantine notes are detected", () =>
     {
         AssertTrue(HashGuardLogic.NoteIndicatesQuarantined("Quarantined to C:\\q\\file.bin"));

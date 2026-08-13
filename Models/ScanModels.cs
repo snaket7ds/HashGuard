@@ -31,6 +31,7 @@ internal sealed class CacheEntry
     public string Notes { get; set; } = "";
     public DateTimeOffset CheckedAtUtc { get; set; }
     public bool VirusTotalDeferred { get; set; }
+    public bool NeedsVirusTotalUpload { get; set; }
 }
 
 internal sealed class FileStateEntry
@@ -113,6 +114,7 @@ internal sealed class ScanResult(string path, string processNames, string pids)
     public double FileAgeDays { get; set; } = -1;
     public List<string> PersistenceSources { get; set; } = [];
     public bool VirusTotalDeferred { get; set; }
+    public bool NeedsVirusTotalUpload { get; set; }
     public string StatusBeforeIgnore { get; set; } = "";
     public bool IsNewSinceLastScan { get; set; }
     public bool IsDetection => Malicious > 0 || Suspicious > 0;
@@ -127,6 +129,7 @@ internal sealed class ScanResult(string path, string processNames, string pids)
         Undetected = entry.Undetected;
         Link = entry.Link;
         VirusTotalDeferred = entry.VirusTotalDeferred;
+        NeedsVirusTotalUpload = entry.NeedsVirusTotalUpload;
         Notes = $"{prefix} {entry.CheckedAtUtc.LocalDateTime:g}";
         if (!string.IsNullOrWhiteSpace(entry.Notes))
         {

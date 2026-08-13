@@ -75,7 +75,7 @@ public sealed partial class MainForm : Form
     private readonly CheckBox runElevatedBox = new() { Text = "Run Elevated (Windows UAC permissions)", AutoSize = true };
     private readonly CheckBox scanAllFilesBox = new() { Text = "Scan files I open or select", AutoSize = true };
     private readonly ComboBox colorModeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
-    private readonly CheckBox uploadUnknownBox = new() { Text = "Upload files missing from VirusTotal", AutoSize = true };
+    private readonly CheckBox uploadUnknownBox = new() { Text = "Allow VirusTotal uploads (approve each file in Review Queue)", AutoSize = true };
     private readonly CheckBox virusTotalEnabledBox = new() { Text = "Use VirusTotal", AutoSize = true, Checked = true };
     private readonly CheckBox metaDefenderEnabledBox = new() { Text = "Use MetaDefender Cloud", AutoSize = true, Checked = true };
     private readonly CheckBox mhrEnabledBox = new() { Text = "Use Team Cymru MHR", AutoSize = true, Checked = true };
@@ -87,7 +87,7 @@ public sealed partial class MainForm : Form
     private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
     private readonly Label resultsEmptyLabel = new()
     {
-        Text = "No items need review. Run a scan or open Activity Log for full scan history.",
+        Text = "No items need review. Unknown VirusTotal hashes appear here so you can approve an upload.",
         Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleCenter,
         ForeColor = Color.DimGray,
@@ -536,6 +536,7 @@ public sealed partial class MainForm : Form
         var ignoreSelected = CreateQueueActionButton("Ignore");
         var ignorePublisher = CreateQueueActionButton("Ignore Publisher");
         var quarantineSelected = CreateQueueActionButton("Quarantine");
+        var approveUpload = CreateQueueActionButton("Approve Upload");
         var exportReport = CreateQueueActionButton("Export");
         var activityLog = CreateQueueActionButton("Activity Log");
         openReport.Click += (_, _) => OpenSelectedReport(resultsView);
@@ -543,6 +544,7 @@ public sealed partial class MainForm : Form
         ignoreSelected.Click += (_, _) => ToggleSelectedIgnoreFlag(resultsView);
         ignorePublisher.Click += (_, _) => IgnoreSelectedPublisher(resultsView);
         quarantineSelected.Click += (_, _) => QuarantineSelectedFiles(resultsView);
+        approveUpload.Click += async (_, _) => await ApproveSelectedVirusTotalUploadsAsync(resultsView);
         exportReport.Click += (_, _) => ExportScanReport();
         activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
         resultsView.SelectedIndexChanged += (_, _) =>
@@ -554,6 +556,7 @@ public sealed partial class MainForm : Form
             ignoreSelected.Enabled = hasSelection;
             ignorePublisher.Enabled = hasSelection;
             quarantineSelected.Enabled = hasSelection;
+            approveUpload.Enabled = hasSelection && GetSelectedVirusTotalUploadTargets(resultsView).Count > 0;
             UpdateIgnoreButtonText(resultsView, ignoreSelected);
         };
         resultsView.Enter += (_, _) => ReconcileReviewQueue();
@@ -563,12 +566,14 @@ public sealed partial class MainForm : Form
         ignoreSelected.Enabled = false;
         ignorePublisher.Enabled = false;
         quarantineSelected.Enabled = false;
+        approveUpload.Enabled = false;
         // Order: triage actions first, then always-available utilities (never clipped off the right edge).
         queueActions.Controls.Add(openReport);
         queueActions.Controls.Add(openLocation);
         queueActions.Controls.Add(ignoreSelected);
         queueActions.Controls.Add(ignorePublisher);
         queueActions.Controls.Add(quarantineSelected);
+        queueActions.Controls.Add(approveUpload);
         queueActions.Controls.Add(exportReport);
         queueActions.Controls.Add(activityLog);
         queueActionsHost.Controls.Add(queueActions);
@@ -1036,7 +1041,7 @@ public sealed partial class MainForm : Form
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
         var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
         var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
-        var uploadUnknown = new CheckBox { Text = "Upload files missing from VirusTotal", Checked = uploadUnknownBox.Checked, AutoSize = true };
+        var uploadUnknown = new CheckBox { Text = "Allow VirusTotal uploads (approve each file in Review Queue)", Checked = uploadUnknownBox.Checked, AutoSize = true };
         var trustedPublishers = new TextBox
         {
             Text = string.Join(Environment.NewLine, appSettings.TrustedPublishers),
@@ -3374,10 +3379,17 @@ public sealed partial class MainForm : Form
                     return result;
                 }
 
-                if (HashCache.IsReusablePendingEntry(cached, uploadUnknown && allowVirusTotalUploads))
+                if (HashCache.IsReusablePendingEntry(cached))
                 {
                     result.ApplyCache(cached, "Recent cached provider state");
                     result.Status = cached.Status;
+                    if (virusTotalEnabled
+                        && HashGuardLogic.IsPendingVirusTotalUploadStatus(cached.Status)
+                        && File.Exists(path))
+                    {
+                        result.NeedsVirusTotalUpload = true;
+                    }
+
                     AppendResultNote(result, "Provider lookups skipped temporarily to reduce repeat API usage.");
                     ApplyIgnoredHash(result);
                     ApplyRiskAndTrust(result);
@@ -3661,8 +3673,7 @@ public sealed partial class MainForm : Form
                 var errorBody = await reportResponse.Content.ReadAsStringAsync(cancellationToken);
                 if (HashGuardLogic.IsVirusTotalNotFound((int)reportResponse.StatusCode, errorBody))
                 {
-                    await HandleVirusTotalHashNotFoundAsync(
-                        http, result, path, allowUploads, uploadUnknown, cancellationToken);
+                    HandleVirusTotalHashNotFound(result, path);
                     return;
                 }
 
@@ -3694,43 +3705,16 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private async Task HandleVirusTotalHashNotFoundAsync(
-        HttpClient http,
-        ScanResult result,
-        string path,
-        bool allowUploads,
-        bool uploadUnknown,
-        CancellationToken cancellationToken)
+    private static void HandleVirusTotalHashNotFound(ScanResult result, string path)
     {
         result.Status = "unknown";
         AddProviderResult(result, "VirusTotal", ProviderState.Unknown, "Hash not found.");
-        AppendResultNote(result, "VirusTotal: hash not found.");
-        if (uploadUnknown && allowUploads)
-        {
-            AppendResultNote(result, "VirusTotal: uploading unknown file for analysis.");
-            var analysisId = await UploadFileAsync(http, path, result, cancellationToken);
-            if (string.IsNullOrWhiteSpace(analysisId))
-            {
-                return;
-            }
-
-            result.Status = "uploaded";
-            AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Uploaded for analysis: {analysisId}");
-            AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
-            if (analysisId is "submitted" or "already-exists")
-            {
-                await TryApplyExistingVirusTotalReportAsync(http, result, cancellationToken);
-                return;
-            }
-
-            await PollAnalysisAsync(http, analysisId, result, path, cancellationToken);
-            return;
-        }
-
-        if (uploadUnknown && !allowUploads)
-        {
-            AppendResultNote(result, "VirusTotal: full-file upload skipped for background active-file scanning.");
-        }
+        result.NeedsVirusTotalUpload = File.Exists(path);
+        AppendResultNote(
+            result,
+            result.NeedsVirusTotalUpload
+                ? "VirusTotal: hash not found. Approve upload from the Review Queue to send this file."
+                : "VirusTotal: hash not found.");
     }
 
     private async Task TryApplyExistingVirusTotalReportAsync(
@@ -4273,6 +4257,11 @@ public sealed partial class MainForm : Form
             return "Review high local risk signals";
         }
 
+        if (result.NeedsVirusTotalUpload)
+        {
+            return "Approve VirusTotal upload — hash not in VirusTotal";
+        }
+
         if (result.Status is "unknown" or "uploaded" or "limited access")
         {
             return "Monitor: reputation incomplete";
@@ -4430,9 +4419,12 @@ public sealed partial class MainForm : Form
     private static bool ResultNeedsAction(ScanResult result)
     {
         return !ResultIsHandled(result)
-            && (result.IsAlert
-                || result.RiskScore >= 70
-                || string.Equals(result.Status, "error", StringComparison.OrdinalIgnoreCase));
+            && HashGuardLogic.NeedsAction(
+                result.Status,
+                $"{result.RiskLevel} {result.RiskScore}",
+                result.Malicious,
+                result.Suspicious,
+                result.NeedsVirusTotalUpload);
     }
 
     private static bool ResultIsHandled(ScanResult result)
@@ -5406,7 +5398,7 @@ public sealed partial class MainForm : Form
     {
         var accepted = MessageBox.Show(
             this,
-            "When VirusTotal has not seen a file hash, HashGuard will upload the full file to VirusTotal for analysis. Do not enable this for private, proprietary, personal, or sensitive files unless you are comfortable sharing the file with VirusTotal. Enable uploads?",
+            "When VirusTotal has not seen a file hash, HashGuard lists it in the Review Queue. You approve each upload with Approve Upload. Do not enable this for private, proprietary, personal, or sensitive files unless you are comfortable sharing the file with VirusTotal. Allow uploads?",
             "Confirm VirusTotal uploads",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
@@ -6956,6 +6948,126 @@ public sealed partial class MainForm : Form
         }
 
         MessageBox.Show(this, $"Saved {results.Count} item(s) to:{Environment.NewLine}{dialog.FileName}", "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private List<ScanResult> GetSelectedVirusTotalUploadTargets(ListView sourceView)
+    {
+        return sourceView.SelectedItems
+            .Cast<ListViewItem>()
+            .Select(FindResultForReviewQueueRow)
+            .Where(result => result is not null && result.NeedsVirusTotalUpload && File.Exists(result.Path))
+            .Select(result => result!)
+            .GroupBy(result => result.Sha256, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private async Task ApproveSelectedVirusTotalUploadsAsync(ListView sourceView)
+    {
+        var targets = GetSelectedVirusTotalUploadTargets(sourceView);
+        if (targets.Count == 0)
+        {
+            MessageBox.Show(
+                this,
+                "Select a Review Queue row whose hash is not in VirusTotal. The file must still exist on disk.",
+                "No upload pending",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
+        if (!virusTotalEnabledBox.Checked)
+        {
+            MessageBox.Show(this, "Enable VirusTotal in Settings first.", "VirusTotal off", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (!uploadUnknownBox.Checked && !EnableVirusTotalUploadsWithWarning())
+        {
+            return;
+        }
+
+        suppressSettingEvents = true;
+        uploadUnknownBox.Checked = true;
+        suppressSettingEvents = false;
+        SaveCurrentAppSettings();
+
+        var names = string.Join(Environment.NewLine, targets.Take(8).Select(result => Path.GetFileName(result.Path)));
+        var extra = targets.Count > 8 ? $"{Environment.NewLine}(+{targets.Count - 8} more)" : "";
+        var accepted = MessageBox.Show(
+            this,
+            $"Upload {targets.Count} file(s) to VirusTotal for analysis?{Environment.NewLine}{Environment.NewLine}{names}{extra}{Environment.NewLine}{Environment.NewLine}The full file is sent to VirusTotal.",
+            "Approve VirusTotal upload",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning);
+        if (accepted != DialogResult.Yes)
+        {
+            return;
+        }
+
+        if (!scanGate.TryEnter())
+        {
+            MessageBox.Show(this, "A scan is already running. Approve the upload after it finishes.", "Busy", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        try
+        {
+            using var http = AppHttp.Create((int)timeoutBox.Value);
+            var apiKey = apiKeyBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                MessageBox.Show(this, "Add a VirusTotal API key in Settings before uploading.", "API key required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            http.DefaultRequestHeaders.Add("x-apikey", apiKey);
+            var uploaded = 0;
+            var failed = 0;
+            for (var index = 0; index < targets.Count; index++)
+            {
+                var result = targets[index];
+                statusLabel.Text = $"Uploading {index + 1} of {targets.Count}: {FormatDisplayPath(result.Path)}";
+                AppendResultNote(result, "VirusTotal: upload approved from Review Queue.");
+                var analysisId = await UploadFileAsync(http, result.Path, result, CancellationToken.None);
+                if (string.IsNullOrWhiteSpace(analysisId))
+                {
+                    failed++;
+                    continue;
+                }
+
+                result.NeedsVirusTotalUpload = false;
+                result.Status = "uploaded";
+                AddProviderResult(result, "VirusTotal", ProviderState.Deferred, $"Uploaded for analysis: {analysisId}");
+                AppendResultNote(result, $"VirusTotal analysis ID: {analysisId}");
+                if (analysisId is "submitted" or "already-exists")
+                {
+                    await TryApplyExistingVirusTotalReportAsync(http, result, CancellationToken.None);
+                }
+                else
+                {
+                    await PollAnalysisAsync(http, analysisId, result, result.Path, CancellationToken.None);
+                }
+
+                ApplyRiskAndTrust(result);
+                await SaveResultToCacheAsync(result);
+                uploaded++;
+            }
+
+            ReconcileReviewQueue();
+            statusLabel.Text = failed == 0
+                ? $"VirusTotal upload complete. {uploaded} file(s) submitted."
+                : $"VirusTotal upload finished. {uploaded} submitted, {failed} failed.";
+        }
+        catch (Exception ex)
+        {
+            statusLabel.Text = "VirusTotal upload failed";
+            MessageBox.Show(this, FormatScanError(ex), "VirusTotal upload failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            scanGate.Exit();
+        }
     }
 
     private void IgnoreSelectedPublisher(ListView sourceView)
