@@ -280,6 +280,14 @@ var tests = new (string Name, Action Test)[]
         var html = ScanReportExport.ToHtml(results, "1.0.51", DateTimeOffset.UtcNow);
         AssertTrue(html.Contains("HashGuard Scan Report", StringComparison.Ordinal));
     }),
+    ("hash cache flush is due after 25 mutations or 5 seconds", () =>
+    {
+        var saved = DateTimeOffset.Parse("2026-08-12T12:00:00Z");
+        AssertFalse(HashCache.IsFlushDue(false, 25, saved, saved));
+        AssertFalse(HashCache.IsFlushDue(true, 24, saved, saved.AddSeconds(4)));
+        AssertTrue(HashCache.IsFlushDue(true, 25, saved, saved.AddSeconds(1)));
+        AssertTrue(HashCache.IsFlushDue(true, 1, saved, saved.AddSeconds(5)));
+    }),
     ("scan snapshot marks new paths and hashes", () =>
     {
         var previous = new ScanSnapshot

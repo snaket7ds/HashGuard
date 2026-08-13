@@ -1,7 +1,7 @@
 # HashGuard future roadmap
 
 Living list of improvement ideas that are **not** scheduled for immediate work.
-Last updated: 2026-08-12 (post v1.0.57).
+Last updated: 2026-08-12 (post v1.0.58).
 
 When picking work up again, prefer the **Next up** section unless product priorities change.
 
@@ -18,8 +18,7 @@ When picking work up again, prefer the **Next up** section unless product priori
 ## Next up (best remaining ROI)
 
 1. **True delta scan** — Skip re-query for unchanged known-clean paths (size/mtime + cache). Builds on “new since last scan” highlighting; biggest remaining full-scan time and API-quota win.
-2. **Batch UI updates during full scan** — Debounce ListView/summary refreshes (e.g. every N files or ~100–200 ms) so progress stays smooth on large process sets.
-3. **Bounded provider concurrency** — Small parallel pool for MetaDefender/Cymru (and VT when quota allows) across different files, still respecting free-tier delays.
+2. **Bounded provider concurrency** — Small parallel pool for MetaDefender/Cymru (and VT when quota allows) across different files, still respecting free-tier delays.
 
 ---
 
@@ -78,6 +77,11 @@ When picking work up again, prefer the **Next up** section unless product priori
 ---
 
 ## Already shipped (context — do not re-open without reason)
+
+Through **v1.0.58** roughly includes:
+
+- Deferred hash-cache disk writes (flush every 25 mutations / 5s / scan end)
+- Batched Review Queue + summary UI during full and monitoring scans
 
 Through **v1.0.57** roughly includes:
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.58 - 2026-08-12
+
+- Keep the hash cache dirty in memory during a scan and flush it every 25 mutations or 5 seconds, plus once when the scan ends — no more rewriting both JSON cache files after every file.
+- Batch Review Queue / summary refreshes during full and monitoring scans (every 12 files or ~150 ms). Column autosize and empty-state work wait until the batch ends so large process sets stay smooth.
+
 ## v1.0.57 - 2026-08-12
 
 - Keep hash cache and free-API quota warm in memory across scans; re-import scan logs only when files change.

@@ -8,10 +8,17 @@ internal sealed class HashCache
     private readonly Dictionary<string, CacheEntry> entries = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, FileStateEntry> fileStates = new(StringComparer.OrdinalIgnoreCase);
     private bool loaded;
+    private bool dirty;
+    private int unsavedMutations;
+    private DateTimeOffset lastSaveUtc = DateTimeOffset.MinValue;
     private string scanLogImportSignature = "";
+
+    public const int FlushEveryMutations = 25;
+    public static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(5);
 
     public int Count => entries.Count;
     public bool IsLoaded => loaded;
+    public bool IsDirty => dirty;
 
     /// <summary>Load cache from disk once; keep it warm in memory for the process lifetime.</summary>
     public async Task EnsureLoadedAsync()
@@ -35,8 +42,27 @@ internal sealed class HashCache
 
         await LoadFileStatesAsync();
         loaded = true;
+        dirty = false;
+        unsavedMutations = 0;
         // Force a log re-import after a full reload so disk-backed state is complete.
         scanLogImportSignature = "";
+    }
+
+    public static bool IsFlushDue(
+        bool isDirty,
+        int unsaved,
+        DateTimeOffset lastSave,
+        DateTimeOffset now,
+        int everyMutations = FlushEveryMutations,
+        TimeSpan? interval = null)
+    {
+        if (!isDirty)
+        {
+            return false;
+        }
+
+        var maxAge = interval ?? FlushInterval;
+        return unsaved >= everyMutations || now - lastSave >= maxAge;
     }
 
     public bool TryGet(string sha256, out CacheEntry entry) => entries.TryGetValue(sha256, out entry!);
@@ -89,6 +115,7 @@ internal sealed class HashCache
             VirusTotalDeferred = result.VirusTotalDeferred,
         };
         SetFileState(result);
+        MarkDirty();
     }
 
     public async Task MarkFileCleanAsync(string path, string notes)
@@ -106,6 +133,7 @@ internal sealed class HashCache
             Notes = notes,
             CheckedAtUtc = DateTimeOffset.UtcNow,
         };
+        MarkDirty();
 
         SetFileState(new ScanResult(path, Path.GetFileName(path), Process.GetCurrentProcess().Id.ToString())
         {
@@ -137,11 +165,18 @@ internal sealed class HashCache
                 Length = info.Length,
                 LastWriteTimeUtc = info.LastWriteTimeUtc,
             };
+            MarkDirty();
         }
         catch
         {
             // File state caching is an optimization; scan results are still valid without it.
         }
+    }
+
+    private void MarkDirty()
+    {
+        dirty = true;
+        unsavedMutations++;
     }
 
     /// <summary>
@@ -302,6 +337,35 @@ internal sealed class HashCache
 
         await using var fileStateStream = File.Create(AppPaths.GetFileStateCachePath());
         await JsonSerializer.SerializeAsync(fileStateStream, fileStates, new JsonSerializerOptions { WriteIndented = true });
+
+        dirty = false;
+        unsavedMutations = 0;
+        lastSaveUtc = DateTimeOffset.UtcNow;
+    }
+
+    public async Task SaveIfDirtyAsync()
+    {
+        if (!dirty)
+        {
+            return;
+        }
+
+        await SaveAsync();
+    }
+
+    public async Task FlushIfDueAsync(bool force = false)
+    {
+        if (!dirty)
+        {
+            return;
+        }
+
+        if (!force && !IsFlushDue(dirty, unsavedMutations, lastSaveUtc, DateTimeOffset.UtcNow))
+        {
+            return;
+        }
+
+        await SaveAsync();
     }
 
     private async Task LoadFileStatesAsync()

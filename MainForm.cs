@@ -140,6 +140,11 @@ public sealed partial class MainForm : Form
     private bool processBaselineReady;
     private string lastAutoPromptedUpdateVersion = "";
     private string lastSkippedProcessLogSignature = "";
+    private bool batchScanUi;
+    private int scanUiDirty;
+    private DateTime scanUiLastFlushUtc;
+    private const int ScanUiFlushEvery = 12;
+    private static readonly TimeSpan ScanUiFlushInterval = TimeSpan.FromMilliseconds(150);
     private const int MaxAllFileScanQueueSize = 200;
     private static readonly HashSet<string> SensitiveFileScanExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -1808,18 +1813,17 @@ public sealed partial class MainForm : Form
             statusLabel.Text = "Preparing reputation cache...";
             await EnsureScanStorageReadyAsync(token).ConfigureAwait(true);
 
+            BeginScanUiBatch();
             for (var index = 0; index < paths.Count; index++)
             {
                 token.ThrowIfCancellationRequested();
                 var path = paths[index];
-                statusLabel.Text = $"Scanning {index + 1} of {paths.Count}: {FormatDisplayPath(path)}";
-                countLabel.Text = $"{index + 1} / {paths.Count}";
                 var result = await ScanPathAsync(http, path, grouped[path], token);
                 results.Add(result);
                 AddResultRow(result);
-                UpdateSummary();
-                progressBar.Value = index + 1;
                 scannedCount = index + 1;
+                PulseScanUi(scannedCount, paths.Count, path);
+                await hashCache.FlushIfDueAsync().ConfigureAwait(true);
 
                 if (virusTotalEnabledBox.Checked && index + 1 < paths.Count && delayBox.Value > 0 && result.Status != "clean/seen")
                 {
@@ -1921,6 +1925,16 @@ public sealed partial class MainForm : Form
         }
         finally
         {
+            try
+            {
+                await hashCache.SaveIfDirtyAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // Cache flush is best-effort; scan results are already in memory.
+            }
+
+            EndScanUiBatch();
             scanCancellation = null;
             SetScanButtonReadyStyle();
             scanButton.Enabled = true;
@@ -1977,16 +1991,15 @@ public sealed partial class MainForm : Form
 
             await EnsureScanStorageReadyAsync().ConfigureAwait(true);
 
+            BeginScanUiBatch();
             for (var index = 0; index < newPaths.Count; index++)
             {
                 var path = newPaths[index];
-                statusLabel.Text = $"Monitoring scan {index + 1} of {newPaths.Count}: {FormatDisplayPath(path)}";
-                countLabel.Text = $"{index + 1} / {newPaths.Count}";
                 var result = await ScanPathAsync(http, path, grouped[path]);
                 results.Add(result);
                 AddResultRow(result);
-                UpdateSummary();
-                progressBar.Value = index + 1;
+                PulseScanUi(index + 1, newPaths.Count, path, "Monitoring scan");
+                await hashCache.FlushIfDueAsync().ConfigureAwait(true);
 
                 if (virusTotalEnabledBox.Checked && index + 1 < newPaths.Count && delayBox.Value > 0 && result.Status != "clean/seen")
                 {
@@ -2019,6 +2032,16 @@ public sealed partial class MainForm : Form
         }
         finally
         {
+            try
+            {
+                await hashCache.SaveIfDirtyAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // Cache flush is best-effort; monitoring results stay in memory.
+            }
+
+            EndScanUiBatch();
             scanGate.Exit();
         }
     }
@@ -2397,6 +2420,7 @@ public sealed partial class MainForm : Form
             results.Add(result);
             AddResultRow(result);
             UpdateSummary();
+            await hashCache.SaveIfDirtyAsync().ConfigureAwait(true);
 
             int queued;
             lock (allFileScanLock)
@@ -2566,6 +2590,7 @@ public sealed partial class MainForm : Form
             AddResultRow(result);
             UpdateSummary();
             progressBar.Value = 1;
+            await hashCache.SaveIfDirtyAsync().ConfigureAwait(true);
             var unresolved = results.Where(ResultNeedsAction).ToList();
             var alerts = unresolved.Where(result => result.IsAlert).ToList();
             SetDashboardState(
@@ -2670,7 +2695,7 @@ public sealed partial class MainForm : Form
         if (markSelfTrusted && !hashCache.IsTrustedCleanPath(exePath))
         {
             await hashCache.MarkFileCleanAsync(exePath, "HashGuard executable trusted locally.").ConfigureAwait(false);
-            await hashCache.SaveAsync().ConfigureAwait(false);
+            await hashCache.SaveIfDirtyAsync().ConfigureAwait(false);
         }
 
         await quotaTracker.EnsureLoadedAsync().ConfigureAwait(false);
@@ -3301,7 +3326,7 @@ public sealed partial class MainForm : Form
                     result.ApplyCache(cached);
                     result.Status = "clean/seen";
                     hashCache.SetFileState(result);
-                    await hashCache.SaveAsync();
+                    await hashCache.FlushIfDueAsync();
                     ApplyIgnoredHash(result);
                     ApplyRiskAndTrust(result);
                     return result;
@@ -3872,7 +3897,7 @@ public sealed partial class MainForm : Form
         }
 
         hashCache.Set(result);
-        await hashCache.SaveAsync();
+        await hashCache.FlushIfDueAsync();
     }
 
     private async Task<string?> UploadFileAsync(HttpClient http, string path, ScanResult result, CancellationToken cancellationToken)
@@ -3916,7 +3941,10 @@ public sealed partial class MainForm : Form
         AppendScanLog(result);
         if (!ResultNeedsAction(result))
         {
-            UpdateResultsEmptyState();
+            if (!batchScanUi)
+            {
+                UpdateResultsEmptyState();
+            }
             return;
         }
 
@@ -3979,8 +4007,11 @@ public sealed partial class MainForm : Form
         }
 
         resultsView.Items.Add(item);
-        UpdateResultsEmptyState();
-        FitResultColumns(resultsView);
+        if (!batchScanUi)
+        {
+            UpdateResultsEmptyState();
+            FitResultColumns(resultsView);
+        }
     }
 
     private void ReconcileReviewQueue(bool updateSummary = true)
@@ -4145,6 +4176,53 @@ public sealed partial class MainForm : Form
         {
             item.BackColor = Color.FromArgb(248, 215, 218);
         }
+    }
+
+    private void BeginScanUiBatch()
+    {
+        batchScanUi = true;
+        scanUiDirty = 0;
+        scanUiLastFlushUtc = DateTime.UtcNow;
+    }
+
+    private void PulseScanUi(int completed, int total, string path, string verb = "Scanning")
+    {
+        statusLabel.Text = $"{verb} {completed} of {total}: {FormatDisplayPath(path)}";
+        countLabel.Text = $"{completed} / {total}";
+        if (completed >= 0 && completed <= progressBar.Maximum)
+        {
+            progressBar.Value = completed;
+        }
+
+        scanUiDirty++;
+        if (scanUiDirty >= ScanUiFlushEvery || DateTime.UtcNow - scanUiLastFlushUtc >= ScanUiFlushInterval)
+        {
+            FlushScanUi(fitColumns: false);
+        }
+    }
+
+    private void FlushScanUi(bool fitColumns)
+    {
+        UpdateSummary();
+        if (fitColumns)
+        {
+            FitResultColumns(resultsView);
+            UpdateResultsEmptyState();
+        }
+
+        scanUiDirty = 0;
+        scanUiLastFlushUtc = DateTime.UtcNow;
+    }
+
+    private void EndScanUiBatch()
+    {
+        if (!batchScanUi)
+        {
+            return;
+        }
+
+        batchScanUi = false;
+        FlushScanUi(fitColumns: true);
     }
 
     private void UpdateSummary()
