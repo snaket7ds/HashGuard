@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.62 - 2026-08-13
+
+- Fix Approve Upload crashing with "Value of '-1' is not valid for 'index'" when the Review Queue clears the selected row after a successful submit.
+
 ## v1.0.61 - 2026-08-13
 
 - Files whose hash is not in VirusTotal now appear in the Review Queue with "Approve VirusTotal upload".

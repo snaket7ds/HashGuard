@@ -141,6 +141,8 @@ public sealed partial class MainForm : Form
     private string lastAutoPromptedUpdateVersion = "";
     private string lastSkippedProcessLogSignature = "";
     private bool batchScanUi;
+    private bool reviewQueueBusy;
+    private Button? approveUploadButton;
     private int scanUiDirty;
     private DateTime scanUiLastFlushUtc;
     private const int ScanUiFlushEvery = 12;
@@ -544,20 +546,20 @@ public sealed partial class MainForm : Form
         ignoreSelected.Click += (_, _) => ToggleSelectedIgnoreFlag(resultsView);
         ignorePublisher.Click += (_, _) => IgnoreSelectedPublisher(resultsView);
         quarantineSelected.Click += (_, _) => QuarantineSelectedFiles(resultsView);
+        approveUploadButton = approveUpload;
         approveUpload.Click += async (_, _) => await ApproveSelectedVirusTotalUploadsAsync(resultsView);
         exportReport.Click += (_, _) => ExportScanReport();
         activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
         resultsView.SelectedIndexChanged += (_, _) =>
         {
+            if (reviewQueueBusy)
+            {
+                return;
+            }
+
             ReconcileReviewQueue(updateSummary: false);
-            var hasSelection = resultsView.SelectedItems.Count > 0;
-            openReport.Enabled = hasSelection;
-            openLocation.Enabled = hasSelection;
-            ignoreSelected.Enabled = hasSelection;
-            ignorePublisher.Enabled = hasSelection;
-            quarantineSelected.Enabled = hasSelection;
-            approveUpload.Enabled = hasSelection && GetSelectedVirusTotalUploadTargets(resultsView).Count > 0;
-            UpdateIgnoreButtonText(resultsView, ignoreSelected);
+            UpdateReviewQueueActionButtons(
+                openReport, openLocation, ignoreSelected, ignorePublisher, quarantineSelected);
         };
         resultsView.Enter += (_, _) => ReconcileReviewQueue();
         resultsView.MouseDown += (_, _) => ReconcileReviewQueue();
@@ -4174,52 +4176,124 @@ public sealed partial class MainForm : Form
 
     private void ReconcileReviewQueue(bool updateSummary = true)
     {
-        if (results.Count == 0)
+        if (reviewQueueBusy)
         {
-            UpdateResultsEmptyState();
             return;
         }
 
-        resultsView.BeginUpdate();
+        reviewQueueBusy = true;
         try
         {
-            foreach (var item in resultsView.Items.Cast<ListViewItem>().ToList())
+            if (results.Count == 0)
             {
-                var result = FindResultForReviewQueueRow(item);
-                if (result is null || !ResultNeedsAction(result))
-                {
-                    resultsView.Items.Remove(item);
-                    continue;
-                }
-
-                item.Text = result.Status;
-                item.SubItems[ColRisk].Text = $"{result.RiskLevel} {result.RiskScore}";
-                item.SubItems[ColTrust].Text = result.TrustSummary;
-                item.SubItems[ColMalicious].Text = result.Malicious.ToString();
-                item.SubItems[ColSuspicious].Text = result.Suspicious.ToString();
-                item.SubItems[ColProcess].Text = result.ProcessNames;
-                item.SubItems[ColPids].Text = result.Pids;
-                item.SubItems[ColSha256].Text = result.Sha256;
-                item.SubItems[ColPath].Text = result.Path;
-                item.SubItems[ColNotes].Text = BuildReviewRecommendation(result);
-                ApplyResultRowColor(item);
+                resultsView.Items.Clear();
+                UpdateResultsEmptyState();
+                return;
             }
 
-            foreach (var result in results.Where(ResultNeedsAction))
+            resultsView.BeginUpdate();
+            try
             {
-                AddReviewQueueRow(result);
+                foreach (var item in resultsView.Items.Cast<ListViewItem>().ToList())
+                {
+                    var result = FindResultForReviewQueueRow(item);
+                    if (result is null || !ResultNeedsAction(result))
+                    {
+                        item.Selected = false;
+                        item.Focused = false;
+                        resultsView.Items.Remove(item);
+                        continue;
+                    }
+
+                    if (item.SubItems.Count <= ColNotes)
+                    {
+                        continue;
+                    }
+
+                    item.Text = result.Status;
+                    item.SubItems[ColRisk].Text = $"{result.RiskLevel} {result.RiskScore}";
+                    item.SubItems[ColTrust].Text = result.TrustSummary;
+                    item.SubItems[ColMalicious].Text = result.Malicious.ToString();
+                    item.SubItems[ColSuspicious].Text = result.Suspicious.ToString();
+                    item.SubItems[ColProcess].Text = result.ProcessNames;
+                    item.SubItems[ColPids].Text = result.Pids;
+                    item.SubItems[ColSha256].Text = result.Sha256;
+                    item.SubItems[ColPath].Text = result.Path;
+                    item.SubItems[ColNotes].Text = BuildReviewRecommendation(result);
+                    ApplyResultRowColor(item);
+                }
+
+                foreach (var result in results.Where(ResultNeedsAction))
+                {
+                    AddReviewQueueRow(result);
+                }
+            }
+            finally
+            {
+                resultsView.EndUpdate();
+            }
+
+            UpdateResultsEmptyState();
+            FitResultColumns(resultsView);
+            if (updateSummary)
+            {
+                UpdateSummary();
             }
         }
         finally
         {
-            resultsView.EndUpdate();
+            reviewQueueBusy = false;
+        }
+    }
+
+    private static List<ListViewItem> SafeSelectedItems(ListView view)
+    {
+        if (view.SelectedIndices.Count == 0)
+        {
+            return [];
         }
 
-        UpdateResultsEmptyState();
-        FitResultColumns(resultsView);
-        if (updateSummary)
+        try
         {
-            UpdateSummary();
+            if (view.SelectedIndices.Cast<int>().Any(index => index < 0))
+            {
+                return [];
+            }
+
+            return [.. view.SelectedItems.Cast<ListViewItem>()];
+        }
+        catch (ArgumentException)
+        {
+            return [];
+        }
+        catch (InvalidOperationException)
+        {
+            return [];
+        }
+    }
+
+    private void UpdateReviewQueueActionButtons(
+        Button openReport,
+        Button openLocation,
+        Button ignoreSelected,
+        Button ignorePublisher,
+        Button quarantineSelected)
+    {
+        var selected = SafeSelectedItems(resultsView);
+        var hasSelection = selected.Count > 0;
+        openReport.Enabled = hasSelection;
+        openLocation.Enabled = hasSelection;
+        ignoreSelected.Enabled = hasSelection;
+        ignorePublisher.Enabled = hasSelection;
+        quarantineSelected.Enabled = hasSelection;
+        if (approveUploadButton is not null)
+        {
+            approveUploadButton.Enabled = GetVirusTotalUploadTargets(selected).Count > 0;
+        }
+
+        if (hasSelection)
+        {
+            UpdateIgnoreButtonText(resultsView, ignoreSelected);
         }
     }
 
@@ -6950,10 +7024,12 @@ public sealed partial class MainForm : Form
         MessageBox.Show(this, $"Saved {results.Count} item(s) to:{Environment.NewLine}{dialog.FileName}", "Export complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
-    private List<ScanResult> GetSelectedVirusTotalUploadTargets(ListView sourceView)
+    private List<ScanResult> GetSelectedVirusTotalUploadTargets(ListView sourceView) =>
+        GetVirusTotalUploadTargets(SafeSelectedItems(sourceView));
+
+    private List<ScanResult> GetVirusTotalUploadTargets(IEnumerable<ListViewItem> items)
     {
-        return sourceView.SelectedItems
-            .Cast<ListViewItem>()
+        return items
             .Select(FindResultForReviewQueueRow)
             .Where(result => result is not null && result.NeedsVirusTotalUpload && File.Exists(result.Path))
             .Select(result => result!)
@@ -7054,7 +7130,6 @@ public sealed partial class MainForm : Form
                 uploaded++;
             }
 
-            ReconcileReviewQueue();
             statusLabel.Text = failed == 0
                 ? $"VirusTotal upload complete. {uploaded} file(s) submitted."
                 : $"VirusTotal upload finished. {uploaded} submitted, {failed} failed.";
@@ -7066,6 +7141,21 @@ public sealed partial class MainForm : Form
         }
         finally
         {
+            try
+            {
+                ReconcileReviewQueue();
+            }
+            catch (ArgumentException)
+            {
+                // ListView can throw "Value of '-1' is not valid for 'index'" when
+                // the uploaded row is removed and selection is cleared.
+            }
+
+            if (approveUploadButton is not null)
+            {
+                approveUploadButton.Enabled = GetSelectedVirusTotalUploadTargets(resultsView).Count > 0;
+            }
+
             scanGate.Exit();
         }
     }
