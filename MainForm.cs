@@ -1155,11 +1155,35 @@ public sealed partial class MainForm : Form
                 : Color.FromArgb(80, 60, 0);
         }
 
-        foreach (var checkBox in new[] { vtEnabled, mdEnabled, mhrEnabled, uploadUnknown, scanAllFiles })
+        var confirmingUpload = false;
+        void OnUploadUnknownChanged(object? sender, EventArgs args)
+        {
+            RefreshValidation();
+            if (!uploadUnknown.Checked || confirmingUpload)
+            {
+                return;
+            }
+
+            confirmingUpload = true;
+            try
+            {
+                if (!EnableVirusTotalUploadsWithWarning())
+                {
+                    uploadUnknown.Checked = false;
+                }
+            }
+            finally
+            {
+                confirmingUpload = false;
+            }
+        }
+
+        foreach (var checkBox in new[] { vtEnabled, mdEnabled, mhrEnabled, scanAllFiles })
         {
             checkBox.CheckedChanged += (_, _) => RefreshValidation();
         }
 
+        uploadUnknown.CheckedChanged += OnUploadUnknownChanged;
         apiKey.TextChanged += (_, _) => RefreshValidation();
         metaDefenderApiKey.TextChanged += (_, _) => RefreshValidation();
         RefreshValidation();
@@ -1177,16 +1201,17 @@ public sealed partial class MainForm : Form
         metaDefenderEnabledBox.Checked = mdEnabled.Checked;
         mhrEnabledBox.Checked = mhrEnabled.Checked;
         freeApiLimitBox.Checked = freeLimit.Checked;
-        var wantUpload = uploadUnknown.Checked && !scanAllFiles.Checked;
-        if (wantUpload && !uploadUnknownBox.Checked && !EnableVirusTotalUploadsWithWarning())
+
+        var enableScanAllFiles = scanAllFiles.Checked;
+        if (enableScanAllFiles && !scanAllFilesBox.Checked && !EnableAllFileScanningWithWarning())
         {
-            wantUpload = false;
+            enableScanAllFiles = false;
         }
 
         suppressSettingEvents = true;
         try
         {
-            uploadUnknownBox.Checked = wantUpload;
+            uploadUnknownBox.Checked = uploadUnknown.Checked;
             hashCacheEnabledBox.Checked = hashCache.Checked;
             rightClickScanBox.Checked = rightClickScan.Checked;
             startWithWindowsBox.Checked = startWithWindows.Checked;
@@ -1194,11 +1219,7 @@ public sealed partial class MainForm : Form
             colorModeBox.SelectedIndex = colorMode.SelectedIndex;
             autoProcessScanBox.Checked = autoProcessScan.Checked;
             runElevatedBox.Checked = runElevated.Checked;
-            scanAllFilesBox.Checked = scanAllFiles.Checked && EnableAllFileScanningWithWarning();
-            if (scanAllFilesBox.Checked)
-            {
-                DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
-            }
+            scanAllFilesBox.Checked = enableScanAllFiles;
         }
         finally
         {
@@ -1260,7 +1281,7 @@ public sealed partial class MainForm : Form
 
         if (uploadUnknown && scanAllFiles)
         {
-            notes.Add("Uploads cannot be enabled while open/selected file scanning is enabled.");
+            notes.Add("Open/selected file scanning never uploads full files. Scan Now and right-click still upload unknown hashes.");
         }
 
         return notes.Count == 0
@@ -5317,13 +5338,6 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        if (uploadUnknownBox.Checked && scanAllFilesBox.Checked)
-        {
-            DisableVirusTotalUploadsForActiveFileScanning(showMessage: true);
-            SaveCurrentAppSettings();
-            return;
-        }
-
         if (uploadUnknownBox.Checked && !EnableVirusTotalUploadsWithWarning())
         {
             suppressSettingEvents = true;
@@ -5336,13 +5350,17 @@ public sealed partial class MainForm : Form
 
     private bool EnableVirusTotalUploadsWithWarning()
     {
-        if (uploadWarningShown)
+        if (uploadWarningShown || appSettings.UploadUnknownAcknowledged)
         {
+            uploadWarningShown = true;
+            appSettings.UploadUnknownAcknowledged = true;
             return true;
         }
 
-        uploadWarningShown = ConfirmVirusTotalUploads();
-        return uploadWarningShown;
+        var accepted = ConfirmVirusTotalUploads();
+        uploadWarningShown = accepted;
+        appSettings.UploadUnknownAcknowledged = accepted;
+        return accepted;
     }
 
     private void ScanAllFilesPreferenceChanged()
@@ -5359,52 +5377,29 @@ public sealed partial class MainForm : Form
             suppressSettingEvents = false;
         }
 
-        if (scanAllFilesBox.Checked)
-        {
-            DisableVirusTotalUploadsForActiveFileScanning(showMessage: false);
-        }
-
         SaveCurrentAppSettings();
         UpdateAllFileScanner();
     }
 
     private bool EnableAllFileScanningWithWarning()
     {
-        if (scanAllFilesWarningShown)
+        if (scanAllFilesWarningShown || appSettings.ScanAllFilesAcknowledged)
         {
+            scanAllFilesWarningShown = true;
+            appSettings.ScanAllFilesAcknowledged = true;
             return true;
         }
 
         var accepted = MessageBox.Show(
             this,
-            $"HashGuard will watch Windows Recent files and poll open File Explorer windows for selected or focused files, excluding common pictures, videos, audio files, and camera/raw media. It no longer performs a drive-wide discovery sweep or watches every folder. Scanning starts only when process scans are idle.{Environment.NewLine}{Environment.NewLine}To prevent background file uploads, enabling this will turn off \"Upload files missing from VirusTotal\". Open/selected file scanning uses hash lookups only and never uploads full files automatically.{Environment.NewLine}{Environment.NewLine}Enable open/selected file scanning?",
+            $"HashGuard will watch Windows Recent files and poll open File Explorer windows for selected or focused files, excluding common pictures, videos, audio files, and camera/raw media. Scanning starts only when process scans are idle.{Environment.NewLine}{Environment.NewLine}Open/selected file scanning uses hash lookups only and never uploads full files. Scan Now and Explorer right-click still upload if that option is enabled.{Environment.NewLine}{Environment.NewLine}Enable open/selected file scanning?",
             "Confirm open/selected file scanning",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning);
-        scanAllFilesWarningShown = accepted == DialogResult.Yes;
-        return scanAllFilesWarningShown;
-    }
-
-    private void DisableVirusTotalUploadsForActiveFileScanning(bool showMessage)
-    {
-        if (!uploadUnknownBox.Checked)
-        {
-            return;
-        }
-
-        suppressSettingEvents = true;
-        uploadUnknownBox.Checked = false;
-        suppressSettingEvents = false;
-        uploadWarningShown = false;
-        if (showMessage)
-        {
-            MessageBox.Show(
-                this,
-                "Upload files missing from VirusTotal was turned off because open/selected file scanning never uploads full files automatically.",
-                "VirusTotal uploads disabled",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
-        }
+        var yes = accepted == DialogResult.Yes;
+        scanAllFilesWarningShown = yes;
+        appSettings.ScanAllFilesAcknowledged = yes;
+        return yes;
     }
 
     private bool ConfirmVirusTotalUploads()
@@ -5467,14 +5462,12 @@ public sealed partial class MainForm : Form
         UpdateHashCacheTile();
         freeApiLimitBox.Checked = appSettings.FreeApiLimits;
         uploadUnknownBox.Checked = appSettings.UploadUnknown;
+        uploadWarningShown = appSettings.UploadUnknownAcknowledged;
         startMinimizedBox.Checked = appSettings.StartMinimized;
         autoProcessScanBox.Checked = appSettings.AutoProcessScan;
         runElevatedBox.Checked = appSettings.RunElevated;
         scanAllFilesBox.Checked = appSettings.ScanAllFiles;
-        if (scanAllFilesBox.Checked)
-        {
-            uploadUnknownBox.Checked = false;
-        }
+        scanAllFilesWarningShown = appSettings.ScanAllFilesAcknowledged;
 
         autoUpdateChecksBox.Checked = appSettings.AutoUpdateChecks;
         telemetryEnabledBox.Checked = appSettings.TelemetryEnabled;
@@ -5496,6 +5489,8 @@ public sealed partial class MainForm : Form
         appSettings.MhrEnabled = mhrEnabledBox.Checked;
         appSettings.HashCacheEnabled = hashCacheEnabledBox.Checked;
         appSettings.UploadUnknown = uploadUnknownBox.Checked;
+        appSettings.UploadUnknownAcknowledged = uploadWarningShown || appSettings.UploadUnknownAcknowledged;
+        appSettings.ScanAllFilesAcknowledged = scanAllFilesWarningShown || appSettings.ScanAllFilesAcknowledged;
         appSettings.StartMinimized = startMinimizedBox.Checked;
         appSettings.AutoProcessScan = autoProcessScanBox.Checked;
         appSettings.RunElevated = runElevatedBox.Checked;

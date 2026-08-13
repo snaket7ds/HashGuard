@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.60 - 2026-08-13
+
+- Fix the VirusTotal upload checkbox: accepting the warning now leaves the option enabled. Uploads are no longer turned off because "Scan files I open or select" is also on (that mode still never uploads files). The confirmation is remembered so Save does not re-prompt and clear the box.
+
 ## v1.0.59 - 2026-08-13
 
 - Fix VirusTotal upload when a hash is not found and "Upload files missing from VirusTotal" is enabled: do not skip those files from a cached unknown result, keep the setting on when saving Settings, read the checkbox before background awaits, treat VT NotFoundError bodies as not-found, and surface upload/quota failures instead of failing silently.

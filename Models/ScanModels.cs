@@ -150,6 +150,10 @@ internal sealed class AppSettings
     public bool MhrEnabled { get; set; } = true;
     public bool HashCacheEnabled { get; set; } = true;
     public bool UploadUnknown { get; set; }
+    /// <summary>User accepted the VirusTotal full-file upload warning.</summary>
+    public bool UploadUnknownAcknowledged { get; set; }
+    /// <summary>User accepted the open/selected file scanning warning.</summary>
+    public bool ScanAllFilesAcknowledged { get; set; }
     public bool StartMinimized { get; set; }
     public bool AutoProcessScan { get; set; } = true;
     public bool RunElevated { get; set; }
