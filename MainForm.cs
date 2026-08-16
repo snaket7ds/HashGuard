@@ -104,6 +104,8 @@ public sealed partial class MainForm : Form
     private readonly Label reputationStateLabel = new();
     private readonly Label reputationProtectionLabel = new();
     private readonly Label hashCacheStateLabel = new();
+    private readonly Label quarantineCountLabel = new();
+    private readonly Label quarantineStateLabel = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly ToolTip toolTip = new();
     private readonly Icon cleanTrayIcon;
@@ -314,6 +316,11 @@ public sealed partial class MainForm : Form
         trayIcon.ContextMenuStrip = new ContextMenuStrip();
         trayIcon.ContextMenuStrip.Items.Add("Open", null, (_, _) => RestoreFromTray());
         trayIcon.ContextMenuStrip.Items.Add("Scan Now", null, async (_, _) => await StartScanAsync());
+        trayIcon.ContextMenuStrip.Items.Add("View Quarantine", null, (_, _) =>
+        {
+            RestoreFromTray();
+            ShowQuarantineDialog();
+        });
         trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) =>
         {
             exitRequested = true;
@@ -485,7 +492,7 @@ public sealed partial class MainForm : Form
 
         tiles.Controls.Add(CreateFeatureTile("Process Security", "Running apps", "Protected"), 0, 0);
         tiles.Controls.Add(CreateReputationTile(), 1, 0);
-        tiles.Controls.Add(CreateHashCacheTile(), 0, 1);
+        tiles.Controls.Add(CreateQuarantineTile(), 0, 1);
         tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "Open", ShowScanDetailsDialogSafe), 1, 1);
         overview.Controls.Add(tiles, 1, 0);
 
@@ -540,6 +547,7 @@ public sealed partial class MainForm : Form
         var quarantineSelected = CreateQueueActionButton("Quarantine");
         var approveUpload = CreateQueueActionButton("Approve Upload");
         var exportReport = CreateQueueActionButton("Export");
+        var viewQuarantine = CreateQueueActionButton("View Quarantine");
         var activityLog = CreateQueueActionButton("Activity Log");
         openReport.Click += (_, _) => OpenSelectedReport(resultsView);
         openLocation.Click += (_, _) => OpenSelectedFileLocation(resultsView);
@@ -549,6 +557,7 @@ public sealed partial class MainForm : Form
         approveUploadButton = approveUpload;
         approveUpload.Click += async (_, _) => await ApproveSelectedVirusTotalUploadsAsync(resultsView);
         exportReport.Click += (_, _) => ExportScanReport();
+        viewQuarantine.Click += (_, _) => ShowQuarantineDialog();
         activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
         resultsView.SelectedIndexChanged += (_, _) =>
         {
@@ -577,6 +586,7 @@ public sealed partial class MainForm : Form
         queueActions.Controls.Add(quarantineSelected);
         queueActions.Controls.Add(approveUpload);
         queueActions.Controls.Add(exportReport);
+        queueActions.Controls.Add(viewQuarantine);
         queueActions.Controls.Add(activityLog);
         queueActionsHost.Controls.Add(queueActions);
         resultsLayout.Controls.Add(queueActionsHost, 0, 2);
@@ -616,6 +626,7 @@ public sealed partial class MainForm : Form
         UpdateResultsEmptyState();
         UpdateReputationTile();
         UpdateHashCacheTile();
+        UpdateQuarantineTile();
         ApplyAppTheme(this);
     }
 
@@ -702,6 +713,26 @@ public sealed partial class MainForm : Form
         layout.BackColor = Color.Transparent;
         tile.Controls.Add(layout);
         WireClick(tile, OpenHashCacheFolder);
+        return tile;
+    }
+
+    private Panel CreateQuarantineTile()
+    {
+        var tile = CreateSoftCardPanel();
+        tile.Margin = new Padding(4);
+        tile.Padding = new Padding(14);
+
+        ConfigureTileDetailLabel(quarantineCountLabel);
+        ConfigureTileStateLabel(quarantineStateLabel, SuccessGreen);
+        var layout = CreateTileTextLayout(
+            CreateTileTitle("Quarantine", Cursors.Hand),
+            quarantineCountLabel,
+            quarantineStateLabel);
+        layout.Cursor = Cursors.Hand;
+        layout.BackColor = Color.Transparent;
+        tile.Controls.Add(layout);
+        WireClick(tile, ShowQuarantineDialog);
+        toolTip.SetToolTip(tile, "View quarantined files and restore or delete them");
         return tile;
     }
 
@@ -810,6 +841,17 @@ public sealed partial class MainForm : Form
     {
         hashCacheStateLabel.Text = hashCacheEnabledBox.Checked ? "Enabled" : "Disabled";
         hashCacheStateLabel.ForeColor = hashCacheEnabledBox.Checked ? SuccessGreen : DangerRed;
+    }
+
+    private void UpdateQuarantineTile()
+    {
+        var restorable = HashGuardLogic.CountRestorableQuarantineEntries(LoadQuarantineManifest());
+        quarantineCountLabel.Text = restorable == 0
+            ? "No files held"
+            : restorable == 1 ? "1 file held" : $"{restorable} files held";
+        quarantineCountLabel.ForeColor = Color.FromArgb(35, 35, 35);
+        quarantineStateLabel.Text = "View / Restore";
+        quarantineStateLabel.ForeColor = restorable == 0 ? SuccessGreen : AttentionYellow;
     }
 
     private IEnumerable<string> GetEnabledReputationProviders()
@@ -1247,6 +1289,7 @@ public sealed partial class MainForm : Form
             .ToList();
         UpdateReputationTile();
         UpdateHashCacheTile();
+        UpdateQuarantineTile();
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();
         SaveCurrentAppSettings();
@@ -1560,6 +1603,7 @@ public sealed partial class MainForm : Form
         reputationStateLabel.ForeColor = palette.Text;
         UpdateReputationTile();
         UpdateHashCacheTile();
+        UpdateQuarantineTile();
         statusDot.Invalidate();
     }
 
@@ -5526,6 +5570,7 @@ public sealed partial class MainForm : Form
         hashCacheEnabledBox.Checked = appSettings.HashCacheEnabled;
         UpdateReputationTile();
         UpdateHashCacheTile();
+        UpdateQuarantineTile();
         freeApiLimitBox.Checked = appSettings.FreeApiLimits;
         uploadUnknownBox.Checked = appSettings.UploadUnknown;
         uploadWarningShown = appSettings.UploadUnknownAcknowledged;
@@ -6062,6 +6107,7 @@ public sealed partial class MainForm : Form
 
         SaveQuarantineManifest(manifest);
         statusLabel.Text = $"Quarantined {moved} file(s).";
+        UpdateQuarantineTile();
         ReconcileReviewQueue(updateSummary: false);
         UpdateSummary();
         if (failures.Count > 0)
@@ -6110,98 +6156,185 @@ public sealed partial class MainForm : Form
 
     private void ShowQuarantineDialog()
     {
-        var allManifestEntries = LoadQuarantineManifest();
-        var staleEntries = allManifestEntries
-            .Where(entry => !File.Exists(entry.QuarantinePath))
-            .ToList();
-        var manifest = allManifestEntries
-            .Where(entry => File.Exists(entry.QuarantinePath))
-            .OrderByDescending(entry => entry.QuarantinedAtUtc)
-            .ToList();
-
         using var dialog = new Form
         {
-            Text = "HashGuard Quarantine",
+            Text = "Quarantine Manager",
             StartPosition = FormStartPosition.CenterParent,
-            Size = new Size(980, 520),
-            MinimumSize = new Size(760, 420),
+            Size = new Size(1040, 580),
+            MinimumSize = new Size(800, 460),
             BackColor = Color.FromArgb(246, 247, 249),
         };
 
-        var view = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
-        view.Columns.Add("Quarantined", 150);
-        view.Columns.Add("SHA-256", 300);
-        view.Columns.Add("Original Path", 420);
-        view.Columns.Add("Notes", 360);
-        foreach (var entry in manifest)
-        {
-            var item = new ListViewItem(entry.QuarantinedAtUtc.LocalDateTime.ToString("g"));
-            item.SubItems.Add(entry.Sha256);
-            item.SubItems.Add(entry.OriginalPath);
-            item.SubItems.Add(entry.Notes);
-            item.Tag = entry;
-            view.Items.Add(item);
-        }
-
         var heading = new Label
         {
-            Text = BuildQuarantineHeading(manifest.Count, staleEntries.Count),
             Dock = DockStyle.Fill,
-            Height = 32,
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Height = 28,
+            Font = new Font("Segoe UI Semibold", 11, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = Color.FromArgb(35, 35, 35),
         };
-        var restore = new Button { Text = "Restore Selected", AutoSize = true };
+        var searchBox = new TextBox
+        {
+            PlaceholderText = "Search file name, path, or hash",
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 8),
+        };
+        var view = new ListView
+        {
+            Dock = DockStyle.Fill,
+            View = View.Details,
+            FullRowSelect = true,
+            GridLines = false,
+            HideSelection = false,
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+        view.Columns.Add("File", 180);
+        view.Columns.Add("Quarantined", 140);
+        view.Columns.Add("Original path", 420);
+        view.Columns.Add("SHA-256", 240);
+        var emptyLabel = new Label
+        {
+            Text = "No files in quarantine. Select a detection in Review Queue and click Quarantine, then come back here to restore it.",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.DimGray,
+            Font = new Font("Segoe UI", 10, FontStyle.Regular),
+        };
+        var detail = new Label
+        {
+            Text = "Select a file to restore it to the original path or to your Desktop.",
+            Dock = DockStyle.Fill,
+            Height = 72,
+            AutoEllipsis = true,
+            Padding = new Padding(10, 8, 10, 8),
+            BackColor = Color.White,
+            ForeColor = Color.FromArgb(35, 35, 35),
+            BorderStyle = BorderStyle.FixedSingle,
+            Tag = "callout",
+        };
+
+        var restore = new Button { Text = "Restore", AutoSize = true };
         var restoreDesktop = new Button { Text = "Restore to Desktop", AutoSize = true };
-        var delete = new Button { Text = "Delete Selected", AutoSize = true };
+        var delete = new Button { Text = "Delete permanently", AutoSize = true };
+        var copyHash = new Button { Text = "Copy Hash", AutoSize = true };
         var repairMissing = new Button { Text = "Repair Missing", AutoSize = true };
-        var openFolder = new Button { Text = "Open Quarantine", AutoSize = true };
+        var openFolder = new Button { Text = "Open Folder", AutoSize = true };
         var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
 
-        void RefreshQuarantineUi()
+        void ReloadRows()
         {
-            var remainingManifest = LoadQuarantineManifest();
-            var staleCount = remainingManifest.Count(entry => !File.Exists(entry.QuarantinePath));
-            SetQuarantineButtonsEnabled(view.Items.Count > 0, staleCount > 0, restore, restoreDesktop, delete, repairMissing);
-            heading.Text = BuildQuarantineHeading(view.Items.Count, staleCount);
+            var all = LoadQuarantineManifest();
+            var restorable = all
+                .Where(entry => HashGuardLogic.QuarantineEntryIsRestorable(entry))
+                .OrderByDescending(entry => entry.QuarantinedAtUtc)
+                .Where(entry => HashGuardLogic.QuarantineEntryMatchesFilter(entry, searchBox.Text))
+                .ToList();
+            var staleCount = all.Count(entry => !HashGuardLogic.QuarantineEntryIsRestorable(entry));
+            view.BeginUpdate();
+            view.Items.Clear();
+            foreach (var entry in restorable)
+            {
+                var item = new ListViewItem(HashGuardLogic.QuarantineDisplayName(entry));
+                item.SubItems.Add(entry.QuarantinedAtUtc.LocalDateTime.ToString("g"));
+                item.SubItems.Add(entry.OriginalPath);
+                item.SubItems.Add(entry.Sha256);
+                item.Tag = entry;
+                view.Items.Add(item);
+            }
+            view.EndUpdate();
+            emptyLabel.Visible = view.Items.Count == 0;
+            heading.Text = BuildQuarantineHeading(restorable.Count, staleCount);
+            var hasSelection = view.SelectedItems.Count > 0;
+            restore.Enabled = hasSelection;
+            restoreDesktop.Enabled = hasSelection;
+            delete.Enabled = hasSelection;
+            copyHash.Enabled = hasSelection;
+            repairMissing.Enabled = staleCount > 0;
+            if (!hasSelection)
+            {
+                detail.Text = view.Items.Count == 0
+                    ? "Nothing to restore. Quarantined files will appear here."
+                    : "Select a file to restore it to the original path or to your Desktop.";
+            }
         }
 
-        RefreshQuarantineUi();
+        void UpdateDetail()
+        {
+            var entries = GetSelectedQuarantineEntries(view);
+            if (entries.Count == 0)
+            {
+                return;
+            }
+
+            var first = entries[0];
+            var extra = entries.Count > 1 ? $"{Environment.NewLine}+{entries.Count - 1} more selected" : "";
+            detail.Text =
+                $"{HashGuardLogic.QuarantineDisplayName(first)}{Environment.NewLine}" +
+                $"Original: {first.OriginalPath}{Environment.NewLine}" +
+                $"SHA-256: {first.Sha256}{extra}";
+            restore.Enabled = true;
+            restoreDesktop.Enabled = true;
+            delete.Enabled = true;
+            copyHash.Enabled = true;
+        }
+
+        searchBox.TextChanged += (_, _) => ReloadRows();
+        view.SelectedIndexChanged += (_, _) => UpdateDetail();
 
         restore.Click += async (_, _) =>
         {
-            SetQuarantineButtonsEnabled(false, repairMissing.Enabled, restore, restoreDesktop, delete, repairMissing);
             try
             {
                 await RestoreSelectedQuarantineEntriesAsync(view, restoreToDesktop: false);
             }
             finally
             {
-                RefreshQuarantineUi();
+                ReloadRows();
+                UpdateQuarantineTile();
             }
         };
         restoreDesktop.Click += async (_, _) =>
         {
-            SetQuarantineButtonsEnabled(false, repairMissing.Enabled, restore, restoreDesktop, delete, repairMissing);
             try
             {
                 await RestoreSelectedQuarantineEntriesAsync(view, restoreToDesktop: true);
             }
             finally
             {
-                RefreshQuarantineUi();
+                ReloadRows();
+                UpdateQuarantineTile();
             }
         };
         delete.Click += (_, _) =>
         {
             DeleteSelectedQuarantineEntries(view);
-            RefreshQuarantineUi();
+            ReloadRows();
+            UpdateQuarantineTile();
+        };
+        copyHash.Click += (_, _) =>
+        {
+            var entries = GetSelectedQuarantineEntries(view);
+            var hash = entries.FirstOrDefault()?.Sha256;
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(hash);
+                statusLabel.Text = "Copied quarantine SHA-256.";
+            }
+            catch
+            {
+                // Clipboard can fail if another app holds it.
+            }
         };
         repairMissing.Click += (_, _) =>
         {
             RepairMissingQuarantineEntries();
-            RefreshQuarantineUi();
+            ReloadRows();
+            UpdateQuarantineTile();
         };
         openFolder.Click += (_, _) =>
         {
@@ -6209,25 +6342,44 @@ public sealed partial class MainForm : Form
             Process.Start(new ProcessStartInfo(GetQuarantineDirectory()) { UseShellExecute = true });
         };
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft };
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            Padding = new Padding(0, 8, 0, 0),
+        };
         buttons.Controls.Add(close);
         buttons.Controls.Add(openFolder);
         buttons.Controls.Add(repairMissing);
+        buttons.Controls.Add(copyHash);
         buttons.Controls.Add(delete);
         buttons.Controls.Add(restoreDesktop);
         buttons.Controls.Add(restore);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(12) };
+        var listHost = new Panel { Dock = DockStyle.Fill };
+        listHost.Controls.Add(emptyLabel);
+        listHost.Controls.Add(view);
+        emptyLabel.BringToFront();
+
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, Padding = new Padding(12) };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.Controls.Add(heading, 0, 0);
-        layout.Controls.Add(view, 0, 1);
-        layout.Controls.Add(buttons, 0, 2);
+        layout.Controls.Add(searchBox, 0, 1);
+        layout.Controls.Add(listHost, 0, 2);
+        layout.Controls.Add(detail, 0, 3);
+        layout.Controls.Add(buttons, 0, 4);
         dialog.Controls.Add(layout);
         dialog.AcceptButton = close;
         ApplyAppTheme(dialog);
+        ReloadRows();
         dialog.ShowDialog(this);
+        UpdateQuarantineTile();
     }
 
     private static string BuildQuarantineHeading(int restorableCount, int staleCount)

@@ -83,6 +83,20 @@ var tests = new (string Name, Action Test)[]
         AssertFalse(HashGuardLogic.NoteIndicatesQuarantined("No issues"));
         AssertFalse(HashGuardLogic.NoteIndicatesQuarantined(null));
     }),
+    ("quarantine manager lists restorable files and matches search", () =>
+    {
+        var entries = new[]
+        {
+            new QuarantineEntry { OriginalPath = @"C:\Temp\bad.exe", QuarantinePath = @"C:\q\bad.exe.quarantine", Sha256 = "abc123" },
+            new QuarantineEntry { OriginalPath = @"C:\Temp\gone.dll", QuarantinePath = @"C:\q\missing.quarantine", Sha256 = "def456" },
+        };
+        bool Exists(string path) => path.EndsWith("bad.exe.quarantine", StringComparison.OrdinalIgnoreCase);
+        AssertEqual(1, HashGuardLogic.CountRestorableQuarantineEntries(entries, Exists));
+        AssertEqual("bad.exe", HashGuardLogic.QuarantineDisplayName(entries[0]));
+        AssertTrue(HashGuardLogic.QuarantineEntryMatchesFilter(entries[0], "bad"));
+        AssertTrue(HashGuardLogic.QuarantineEntryMatchesFilter(entries[0], "ABC"));
+        AssertFalse(HashGuardLogic.QuarantineEntryMatchesFilter(entries[0], "gone"));
+    }),
     ("can ignore by hash or path", () =>
     {
         AssertTrue(HashGuardLogic.CanIgnoreTarget("abc", null, out var kind, out var value));

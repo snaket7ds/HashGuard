@@ -29,7 +29,7 @@ When picking work up again, prefer the **Next up** section unless product priori
 | Clearer update flow | Progress: downloading → verifying SHA-256 → publisher check → restarting. Reduce “did it hang?” moments. |
 | Review Queue “diff mode” | Optional default/filter: only *new since last scan* and/or *action needed*. |
 | One-click “copy diagnostics” | Version, elevated?, providers on/off, last errors, install path — support without screenshots. |
-| Quarantine / ignore audit trail | Local-only short history of ignored/quarantined items. |
+| Quarantine / ignore audit trail | Local-only short history of ignored/quarantined items. Manager UI shipped in 1.0.63; a dedicated history view is still optional. |
 | Scheduled scan tray summary | Notify only when something changed vs last run. |
 | Portable vs installed first-run | Further simplify the two-mode path (already improved in 1.0.5x). |
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## v1.0.63 - 2026-08-15
+
+- Quarantine Manager is on the home screen: Quarantine tile (View / Restore), Review Queue **View Quarantine**, and a tray menu item.
+- Manager lists quarantined files by name, supports search, restore to the original path or Desktop, permanent delete, copy hash, and repair of missing files.
+
 ## v1.0.62 - 2026-08-13
 
 - Fix Approve Upload crashing with "Value of '-1' is not valid for 'index'" when the Review Queue clears the selected row after a successful submit.

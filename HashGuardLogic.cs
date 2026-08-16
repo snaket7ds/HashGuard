@@ -235,6 +235,46 @@ internal static class HashGuardLogic
         && (notes.Contains("Quarantined to ", StringComparison.OrdinalIgnoreCase)
             || notes.Contains("Quarantined", StringComparison.OrdinalIgnoreCase));
 
+    public static string QuarantineDisplayName(QuarantineEntry entry)
+    {
+        var path = !string.IsNullOrWhiteSpace(entry.OriginalPath) ? entry.OriginalPath : entry.QuarantinePath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return "(unknown file)";
+        }
+
+        var slash = path.LastIndexOfAny(['\\', '/']);
+        return slash >= 0 && slash < path.Length - 1 ? path[(slash + 1)..] : path;
+    }
+
+    public static bool QuarantineEntryIsRestorable(QuarantineEntry entry, Func<string, bool>? fileExists = null)
+    {
+        fileExists ??= File.Exists;
+        return !string.IsNullOrWhiteSpace(entry.QuarantinePath) && fileExists(entry.QuarantinePath);
+    }
+
+    public static int CountRestorableQuarantineEntries(IEnumerable<QuarantineEntry> entries, Func<string, bool>? fileExists = null)
+        => entries.Count(entry => QuarantineEntryIsRestorable(entry, fileExists));
+
+    public static bool QuarantineEntryMatchesFilter(QuarantineEntry entry, string? query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return true;
+        }
+
+        var needle = query.Trim();
+        return ContainsIgnoreCase(QuarantineDisplayName(entry), needle)
+            || ContainsIgnoreCase(entry.OriginalPath, needle)
+            || ContainsIgnoreCase(entry.QuarantinePath, needle)
+            || ContainsIgnoreCase(entry.Sha256, needle)
+            || ContainsIgnoreCase(entry.Notes, needle);
+    }
+
+    private static bool ContainsIgnoreCase(string? value, string needle) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Whether a selected review-queue row can be ignored by hash and/or path.
     /// </summary>
