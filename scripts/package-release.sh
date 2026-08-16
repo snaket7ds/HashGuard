@@ -31,7 +31,7 @@ cat > "$RELEASE_DIR/WINDOWS_QA_CHECKLIST.md" <<'CHECKLIST'
 - Run a process scan and verify the progress bar, scan count, status text, and scan results table.
 - Open Activity Log and verify All, Action Needed, Unknown, Clean, and Errors filters.
 - Select a row and verify the reason panel, Copy Hash, Copy Summary, Open File Location, and Open Report.
-- Open Quarantine from the home-screen tile, Review Queue "View Quarantine", and the tray menu.
+- Open Quarantine from the home-screen tile and the tray menu.
 - Quarantine a harmless test file, then restore it to the original path.
 - Quarantine a harmless test file, then restore it to Desktop.
 - Delete a quarantined harmless test file.

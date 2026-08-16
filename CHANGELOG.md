@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.64 - 2026-08-15
+
+- Remove the Review Queue **View Quarantine** button so the action bar matches the previous layout. Open view/restore from the Quarantine tile.
+
 ## v1.0.63 - 2026-08-15
 
 - Quarantine Manager is on the home screen: Quarantine tile (View / Restore), Review Queue **View Quarantine**, and a tray menu item.

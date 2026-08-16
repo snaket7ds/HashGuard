@@ -547,7 +547,6 @@ public sealed partial class MainForm : Form
         var quarantineSelected = CreateQueueActionButton("Quarantine");
         var approveUpload = CreateQueueActionButton("Approve Upload");
         var exportReport = CreateQueueActionButton("Export");
-        var viewQuarantine = CreateQueueActionButton("View Quarantine");
         var activityLog = CreateQueueActionButton("Activity Log");
         openReport.Click += (_, _) => OpenSelectedReport(resultsView);
         openLocation.Click += (_, _) => OpenSelectedFileLocation(resultsView);
@@ -557,7 +556,6 @@ public sealed partial class MainForm : Form
         approveUploadButton = approveUpload;
         approveUpload.Click += async (_, _) => await ApproveSelectedVirusTotalUploadsAsync(resultsView);
         exportReport.Click += (_, _) => ExportScanReport();
-        viewQuarantine.Click += (_, _) => ShowQuarantineDialog();
         activityLog.Click += (_, _) => ShowScanDetailsDialogSafe();
         resultsView.SelectedIndexChanged += (_, _) =>
         {
@@ -586,7 +584,6 @@ public sealed partial class MainForm : Form
         queueActions.Controls.Add(quarantineSelected);
         queueActions.Controls.Add(approveUpload);
         queueActions.Controls.Add(exportReport);
-        queueActions.Controls.Add(viewQuarantine);
         queueActions.Controls.Add(activityLog);
         queueActionsHost.Controls.Add(queueActions);
         resultsLayout.Controls.Add(queueActionsHost, 0, 2);

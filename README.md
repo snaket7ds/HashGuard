@@ -14,7 +14,7 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 - Adds local triage context such as signer/publisher status, risky paths, startup persistence, and risk scoring.
 - Can review selected results by opening reports, copying hashes, killing selected processes, and quarantining selected files.
 - Tracks per-provider reputation state, supports local triage without API keys, and can restore/delete quarantined files from a manifest.
-- Opens Quarantine Manager from the home-screen tile, Review Queue **View Quarantine**, Activity Log, or the tray menu to search, restore, or permanently delete held files.
+- Opens Quarantine Manager from the home-screen Quarantine tile, Activity Log, or the tray menu to search, restore, or permanently delete held files.
 - Provides Activity Log filters, selected-row reason summaries, and quarantine repair/restore-to-Desktop recovery controls.
 - Supports startup scanning, tray minimization, Windows startup registration, and update checks from GitHub Releases.
 - Can schedule a daily full scan, export CSV/HTML reports, highlight files new since the last scan, and bulk-ignore a publisher from the Review Queue.
