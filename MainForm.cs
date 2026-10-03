@@ -80,6 +80,7 @@ public sealed partial class MainForm : Form
     private readonly CheckBox metaDefenderEnabledBox = new() { Text = "Use MetaDefender Cloud", AutoSize = true, Checked = true };
     private readonly CheckBox mhrEnabledBox = new() { Text = "Use Team Cymru MHR", AutoSize = true, Checked = true };
     private readonly CheckBox hashCacheEnabledBox = new() { Text = "Enable Hash Cache", AutoSize = true, Checked = true };
+    private readonly CheckBox deltaScanBox = new() { Text = "Delta scan: skip unchanged clean files", AutoSize = true };
     private readonly CheckBox autoUpdateChecksBox = new() { Text = "Check updates automatically", AutoSize = true };
     private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = false };
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
@@ -1078,6 +1079,7 @@ public sealed partial class MainForm : Form
         var scheduledDaily = new CheckBox { Text = "Daily scheduled full scan", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
         var scheduledHour = new NumericUpDown { Minimum = 0, Maximum = 23, Value = Math.Clamp(appSettings.ScheduledScanHour, 0, 23), Width = 70 };
         var preferDelta = new CheckBox { Text = "Highlight new files since last scan", Checked = appSettings.PreferDeltaScan, AutoSize = true };
+        var deltaScan = new CheckBox { Text = "Skip unchanged clean files (delta scan)", Checked = appSettings.DeltaScanEnabled, AutoSize = true };
         var suppressTray = new CheckBox { Text = "Suppress repeat tray alerts for same detections", Checked = appSettings.SuppressRepeatTrayAlerts, AutoSize = true };
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
         var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
@@ -1142,7 +1144,7 @@ public sealed partial class MainForm : Form
         AddSettingsTab(tabs, "Reputation", reputationPage);
 
         var behaviorPage = CreateSettingsPage(
-            ("Scanning", [hashCache, autoProcessScan, scanAllFiles, runElevated, preferDelta, scheduledDaily, CreateSettingRow("Scheduled scan hour (0-23)", scheduledHour)]),
+            ("Scanning", [hashCache, deltaScan, autoProcessScan, scanAllFiles, runElevated, preferDelta, scheduledDaily, CreateSettingRow("Scheduled scan hour (0-23)", scheduledHour)]),
             ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, CreateSettingRow("Colors", colorMode), autoUpdates, suppressTray]),
             ("Privacy", [telemetryEnabled]),
             ("Version and Updates", [updateInfo]));
@@ -1259,6 +1261,7 @@ public sealed partial class MainForm : Form
         {
             uploadUnknownBox.Checked = uploadUnknown.Checked;
             hashCacheEnabledBox.Checked = hashCache.Checked;
+            deltaScanBox.Checked = deltaScan.Checked;
             rightClickScanBox.Checked = rightClickScan.Checked;
             startWithWindowsBox.Checked = startWithWindows.Checked;
             startMinimizedBox.Checked = startMinimized.Checked;
@@ -1277,6 +1280,7 @@ public sealed partial class MainForm : Form
         appSettings.ScheduledDailyScan = scheduledDaily.Checked;
         appSettings.ScheduledScanHour = (int)scheduledHour.Value;
         appSettings.PreferDeltaScan = preferDelta.Checked;
+        appSettings.DeltaScanEnabled = deltaScan.Checked;
         appSettings.SuppressRepeatTrayAlerts = suppressTray.Checked;
         appSettings.TrustedPublishers = trustedPublishers.Lines
             .Select(line => line.Trim())
@@ -3405,6 +3409,31 @@ public sealed partial class MainForm : Form
                 ApplyIgnoredHash(result);
                 ApplyRiskAndTrust(result);
                 return result;
+            }
+
+            // Delta scan: the file is unchanged on disk (size + last-write time) but the clean
+            // provider entry has aged out. Reuse the cached hash so the file is not re-read, and
+            // reuse the entry when it is still provider-reusable. Otherwise re-query providers
+            // with the known hash instead of re-hashing the file.
+            if (hashCacheEnabled
+                && appSettings.DeltaScanEnabled
+                && hashCache.TryGetKnownHash(path, out var knownSha256)
+                && hashCache.TryGet(knownSha256, out var knownEntry))
+            {
+                result.Sha256 = knownSha256;
+                result.Link = string.Format(AppConstants.VirusTotalGuiReportUrl, result.Sha256);
+                if (HashCache.IsReusableCleanEntry(knownEntry))
+                {
+                    result.ApplyCache(knownEntry, "Skipped unchanged file");
+                    result.Status = "clean/seen";
+                    hashCache.SetFileState(result);
+                    await hashCache.FlushIfDueAsync();
+                    ApplyIgnoredHash(result);
+                    ApplyRiskAndTrust(result);
+                    return result;
+                }
+
+                AppendResultNote(result, "Delta scan: unchanged file, hash reused (provider re-check).");
             }
 
             result.Sha256 = await FileHash.Sha256FileAsync(path, cancellationToken);
@@ -5565,6 +5594,7 @@ public sealed partial class MainForm : Form
         metaDefenderEnabledBox.Checked = appSettings.MetaDefenderEnabled;
         mhrEnabledBox.Checked = appSettings.MhrEnabled;
         hashCacheEnabledBox.Checked = appSettings.HashCacheEnabled;
+        deltaScanBox.Checked = appSettings.DeltaScanEnabled;
         UpdateReputationTile();
         UpdateHashCacheTile();
         UpdateQuarantineTile();
@@ -5596,6 +5626,7 @@ public sealed partial class MainForm : Form
         appSettings.MetaDefenderEnabled = metaDefenderEnabledBox.Checked;
         appSettings.MhrEnabled = mhrEnabledBox.Checked;
         appSettings.HashCacheEnabled = hashCacheEnabledBox.Checked;
+        appSettings.DeltaScanEnabled = deltaScanBox.Checked;
         appSettings.UploadUnknown = uploadUnknownBox.Checked;
         appSettings.UploadUnknownAcknowledged = uploadWarningShown || appSettings.UploadUnknownAcknowledged;
         appSettings.ScanAllFilesAcknowledged = scanAllFilesWarningShown || appSettings.ScanAllFilesAcknowledged;

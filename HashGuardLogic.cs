@@ -108,6 +108,21 @@ internal static class HashGuardLogic
         return string.Join(Environment.NewLine, lines[start..end]).TrimEnd() + Environment.NewLine;
     }
 
+    /// <summary>
+    /// True when a file whose size and last-write time match the cached state can skip
+    /// re-hashing and provider lookups for this scan. Requires the delta-scan option, the
+    /// hash cache, and an unchanged path; a file with no cached hash still needs hashing.
+    /// </summary>
+    public static bool ShouldSkipUnchangedCleanFile(
+        bool deltaScanEnabled,
+        bool hashCacheEnabled,
+        bool fileUnchangedOnDisk,
+        string? cachedSha256)
+        => deltaScanEnabled
+        && hashCacheEnabled
+        && fileUnchangedOnDisk
+        && !string.IsNullOrWhiteSpace(cachedSha256);
+
     public static bool CanReuseProviderCache(
         string status,
         bool virusTotalDeferred,

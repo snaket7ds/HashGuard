@@ -311,6 +311,16 @@ var tests = new (string Name, Action Test)[]
         var html = ScanReportExport.ToHtml(results, "1.0.51", DateTimeOffset.UtcNow);
         AssertTrue(html.Contains("HashGuard Scan Report", StringComparison.Ordinal));
     }),
+    ("delta scan skips only unchanged clean files when enabled", () =>
+    {
+        var sha = new string('a', 64);
+        AssertTrue(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, true, sha));
+        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(false, true, true, sha));
+        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, false, true, sha));
+        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, false, sha));
+        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, true, ""));
+        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, true, null));
+    }),
     ("hash cache flush is due after 25 mutations or 5 seconds", () =>
     {
         var saved = DateTimeOffset.Parse("2026-08-12T12:00:00Z");

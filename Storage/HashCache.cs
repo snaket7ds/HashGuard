@@ -220,6 +220,40 @@ internal sealed class HashCache
     public bool IsTrustedCleanPath(string path) =>
         !string.IsNullOrWhiteSpace(path) && TryGetUnchangedFile(path, out _, out _);
 
+    /// <summary>
+    /// The cached hash when the path is unchanged on disk, even if the clean provider entry
+    /// has aged out. A delta scan can reuse this hash to skip re-hashing; the caller re-queries
+    /// providers unless the entry is still reusable (see <see cref="IsReusableCleanEntry"/>).
+    /// </summary>
+    public bool TryGetKnownHash(string path, out string sha256)
+    {
+        sha256 = "";
+        if (string.IsNullOrWhiteSpace(path)
+            || !fileStates.TryGetValue(path, out var fileState)
+            || string.IsNullOrWhiteSpace(fileState.Sha256))
+        {
+            return false;
+        }
+
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists
+                || info.Length != fileState.Length
+                || info.LastWriteTimeUtc != fileState.LastWriteTimeUtc)
+            {
+                return false;
+            }
+
+            sha256 = fileState.Sha256;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static string BuildScanLogSignature(IEnumerable<string> logDirectories)
     {
         var parts = new List<string>();

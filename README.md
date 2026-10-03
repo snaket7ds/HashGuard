@@ -18,6 +18,7 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 - Provides Activity Log filters, selected-row reason summaries, and quarantine repair/restore-to-Desktop recovery controls.
 - Supports startup scanning, tray minimization, Windows startup registration, and update checks from GitHub Releases.
 - Can schedule a daily full scan, export CSV/HTML reports, highlight files new since the last scan, and bulk-ignore a publisher from the Review Queue.
+- Delta scan option: skip re-hashing and provider lookups for files already cached clean and unchanged on disk (size + last-write time).
 - Verifies update downloads with SHA-256 and, when the current build is signed, matching Authenticode publisher.
 
 ## How Scanning Works

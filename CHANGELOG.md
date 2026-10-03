@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.66 - 2026-10-03
+
+- Add a **delta scan** option (Settings → Behavior → Scanning → "Skip unchanged clean files"). When enabled, files already cached clean and unchanged on disk (size + last-write time) skip re-hashing and provider lookups, cutting full-scan time and API-quota use. A file whose clean cache entry has aged out still reuses its cached hash instead of being re-read, then re-checks providers. Detections, unknown files, and changed files are always re-checked.
+
 ## v1.0.65 - 2026-10-03
 
 - Telemetry backend hardening (server-side; no app behavior change in this build). The D1 rollup-on-write ingest and edge-cached summary are live on the shared worker, so existing installs already benefit without updating. This release republishes the current build at the new version.

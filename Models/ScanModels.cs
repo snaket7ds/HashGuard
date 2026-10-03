@@ -180,6 +180,8 @@ internal sealed class AppSettings
     public int ScheduledScanHour { get; set; } = 2;
     /// <summary>When true, full scans only re-check files not present in the previous snapshot (still rechecks detections/unknown).</summary>
     public bool PreferDeltaScan { get; set; }
+    /// <summary>When true, files already cached clean and unchanged on disk (size + last-write time) skip re-hashing and provider lookups.</summary>
+    public bool DeltaScanEnabled { get; set; }
     /// <summary>Suppress repeated tray balloons for the same action-needed hash until the hash set changes.</summary>
     public bool SuppressRepeatTrayAlerts { get; set; } = true;
     public string LastTrayAlertSignature { get; set; } = "";
