@@ -55,7 +55,7 @@ Settings are stored in the local `config` folder. Scan logs are stored in `logs`
 
 HashGuard can send optional anonymous usage events when enabled in Settings. The payload is limited to a random install ID, app version, OS version, event type, and scan summary counts. It does not include file paths, file hashes, process names, usernames, machine names, API keys, or provider report links.
 
-The Cloudflare Worker and D1 dashboard scaffold lives in `cloudflare/telemetry`. Deploy it first, then set `TelemetryEndpointUrl` in `MainForm.cs` to the deployed `/events` URL before publishing a release.
+The Cloudflare Worker and D1 dashboard live in `cloudflare/telemetry`. The worker rolls events up on write (one per-install row plus per-day rows) instead of storing a row per heartbeat, so dashboard reads stay inside D1 free-tier limits. Deploy it first, then set `TelemetryEndpointUrl` in `MainForm.cs` to the deployed `/events` URL before publishing a release. See [cloudflare/telemetry/README.md](cloudflare/telemetry/README.md) for the schema and deploy steps.
 
 ## Project Layout
 
