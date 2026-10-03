@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: telemetry backend exceeded D1 free-tier read limits (enforced since 2026-09-01). Server-side only — no client change. `/api/summary` responses are now cached at the edge, dashboard queries no longer scan the full event history (bounded to recent 7–30 day windows), and the dashboard auto-refreshes every 5 minutes instead of 60 seconds.
+- Fix: heartbeats are now aggregated on write (per-install row + per-day rows) instead of storing a row per 5-minute ping, so D1 read/write usage stays flat as history grows. Duplicate heartbeats inside the 4-minute window are still dropped, now tracked via a `last_ping` column on the per-install row instead of reading the event log. Lifetime scan totals and roster counters are preserved via backfill (`migration-rollup.sql`); the old `events` table is no longer written to.
+
 ## v1.0.64 - 2026-08-15
 
 - Remove the Review Queue **View Quarantine** button so the action bar matches the previous layout. Open view/restore from the Quarantine tile.

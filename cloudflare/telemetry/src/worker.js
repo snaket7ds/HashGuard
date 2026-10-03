@@ -1,9 +1,12 @@
 const ALLOWED_EVENTS = new Set(["app_install", "app_start", "app_ping", "scan_complete"]);
-// Presence = any proof the app was running (launch, heartbeat, or completed scan).
-const PRESENCE_EVENTS = "('app_start', 'app_ping', 'scan_complete')";
-// Heartbeats are every 5 minutes; ignore duplicate pings inside this window to cut D1 write volume.
+// Serve cached /api/summary responses so dashboard auto-refresh / tab-focus
+// reloads don't rescan D1 on every request. 120s keeps "Online Now" fresh
+// (heartbeats arrive every 5 min anyway).
+const SUMMARY_CACHE_TTL_SECONDS = 120;
+// Heartbeats are every 5 minutes; ignore duplicate pings inside this window to cut
+// D1 write volume. The install row tracks the last accepted heartbeat so the dedupe
+// survives the rollup-on-write path (it no longer reads the `events` log).
 const PING_MIN_INTERVAL_MS = 4 * 60 * 1000;
-const VALID_INSTALL = `install_id != 'probe' AND length(install_id) >= 8`;
 
 export default {
   async fetch(request, env) {
@@ -22,9 +25,18 @@ export default {
         return withCors(json({ error: "unauthorized" }, 401));
       }
 
-      return withCors(json(await buildSummary(env)), {
-        "cache-control": "private, max-age=30",
+      // Serve summary from the edge cache when possible so the dashboard's
+      // auto-refresh and tab-focus reloads don't re-scan D1 every time.
+      const cached = await readCachedSummary(request);
+      if (cached) {
+        return cached;
+      }
+
+      const response = withCors(json(await buildSummary(env)), {
+        "cache-control": `private, max-age=${SUMMARY_CACHE_TTL_SECONDS}`,
       });
+      await writeCachedSummary(request, response);
+      return response;
     }
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/dashboard")) {
@@ -68,14 +80,23 @@ async function recordEvent(request, env) {
     return json({ error: "invalid_event" }, 400);
   }
 
+  // Rollup-on-write (2026-09): heartbeats no longer append rows to `events`.
+  // Each event upserts one row in `installs` (per install) and one tiny row in
+  // `presence_days` (per install per UTC day), so dashboard summaries read a
+  // few hundred rows instead of the whole heartbeat log. `scan_complete` also
+  // rolls totals into `scan_days`. This keeps D1 free-tier read/write usage
+  // flat regardless of how many 5-minute heartbeats arrive.
+  const nowIso = new Date().toISOString();
+  const day = nowIso.slice(0, 10);
+  const stmts = [];
+
+  // Drop duplicate heartbeats inside PING_MIN_INTERVAL_MS. The last accepted
+  // ping time lives on the installs row, so this is a single indexed read and
+  // never touches the legacy events log.
   if (eventType === "app_ping") {
     const recent = await first(
       env,
-      `SELECT received_at AS value
-       FROM events
-       WHERE install_id = ? AND event_type = 'app_ping'
-       ORDER BY received_at DESC
-       LIMIT 1`,
+      `SELECT last_ping AS value FROM installs WHERE install_id = ?`,
       installId
     );
     if (recent?.value) {
@@ -86,36 +107,85 @@ async function recordEvent(request, env) {
     }
   }
 
-  await env.DB.prepare(
-    `INSERT INTO events (
-      received_at,
-      event_type,
-      install_id,
-      app_version,
-      os_version,
-      items_scanned,
-      action_needed,
-      detections,
-      unknown_count,
-      errors,
-      high_risk
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(
-      new Date().toISOString(),
-      eventType,
-      installId,
-      appVersion,
-      osVersion,
-      numberValue(data.items_scanned),
-      numberValue(data.action_needed),
-      numberValue(data.detections),
-      numberValue(data.unknown),
-      numberValue(data.errors),
-      numberValue(data.high_risk)
-    )
-    .run();
+  if (eventType === "app_install") {
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings)
+         VALUES (?, ?, ?, NULL, ?, ?, 0, 0)
+         ON CONFLICT(install_id) DO UPDATE SET
+           last_seen = excluded.last_seen,
+           app_version = excluded.app_version,
+           os_version = excluded.os_version`
+      ).bind(installId, nowIso, nowIso, appVersion, osVersion)
+    );
+  } else if (eventType === "app_start") {
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 0)
+         ON CONFLICT(install_id) DO UPDATE SET
+           last_seen = excluded.last_seen,
+           last_start = excluded.last_start,
+           app_version = excluded.app_version,
+           os_version = excluded.os_version,
+           starts = starts + 1`
+      ).bind(installId, nowIso, nowIso, nowIso, appVersion, osVersion)
+    );
+  } else if (eventType === "app_ping") {
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings, last_ping)
+         VALUES (?, ?, ?, NULL, ?, ?, 0, 1, ?)
+         ON CONFLICT(install_id) DO UPDATE SET
+           last_seen = excluded.last_seen,
+           app_version = excluded.app_version,
+           os_version = excluded.os_version,
+           last_ping = excluded.last_ping,
+           pings = pings + 1`
+      ).bind(installId, nowIso, nowIso, appVersion, osVersion, nowIso)
+    );
+  } else if (eventType === "scan_complete") {
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings)
+         VALUES (?, ?, ?, NULL, ?, ?, 0, 0)
+         ON CONFLICT(install_id) DO UPDATE SET
+           last_seen = excluded.last_seen,
+           app_version = excluded.app_version,
+           os_version = excluded.os_version`
+      ).bind(installId, nowIso, nowIso, appVersion, osVersion),
+      env.DB.prepare(
+        `INSERT INTO scan_days (install_id, day, scans, items_scanned, action_needed, detections, unknown_count, errors, high_risk)
+         VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(install_id, day) DO UPDATE SET
+           scans = scans + 1,
+           items_scanned = items_scanned + excluded.items_scanned,
+           action_needed = action_needed + excluded.action_needed,
+           detections = detections + excluded.detections,
+           unknown_count = unknown_count + excluded.unknown_count,
+           errors = errors + excluded.errors,
+           high_risk = high_risk + excluded.high_risk`
+      ).bind(
+        installId,
+        day,
+        numberValue(data.items_scanned),
+        numberValue(data.action_needed),
+        numberValue(data.detections),
+        numberValue(data.unknown),
+        numberValue(data.errors),
+        numberValue(data.high_risk)
+      )
+    );
+  }
 
+  // One tiny row per install per UTC day proves it ran that day (daily chart).
+  stmts.push(
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO presence_days (install_id, day) VALUES (?, ?)`
+    ).bind(installId, day)
+  );
+
+  await env.DB.batch(stmts);
   return json({ ok: true });
 }
 
@@ -130,6 +200,8 @@ async function buildSummary(env) {
 
   // Presence = any start, heartbeat, or scan. Launches = app_start only.
   // Installs with no activity in the last 7 days are hidden from the dashboard.
+  const since30DaysDay = since30Days.slice(0, 10); // date-only compare for day columns
+
   const [
     totalInstalls,
     liveRunning,
@@ -147,26 +219,19 @@ async function buildSummary(env) {
     installRoster,
   ] = await Promise.all([
     // "Total installs" = unique IDs seen in the last 7 days (not lifetime stale).
-    distinctPresence(env, sinceRoster),
-    distinctPresence(env, sinceLive),
-    distinctPresence(env, since1Day),
-    distinctPresence(env, since7Days),
-    distinctPresence(env, since30Days),
-    distinctLaunches(env, since1Day),
-    distinctLaunches(env, since7Days),
-    distinctLaunches(env, since30Days),
+    countInstallsSeen(env, sinceRoster),
+    countInstallsSeen(env, sinceLive),
+    countInstallsSeen(env, since1Day),
+    countInstallsSeen(env, since7Days),
+    countInstallsSeen(env, since30Days),
+    countLaunches(env, since1Day),
+    countLaunches(env, since7Days),
+    countLaunches(env, since30Days),
     all(
       env,
       `SELECT app_version, COUNT(*) AS installs
-       FROM (
-         SELECT install_id, app_version,
-                ROW_NUMBER() OVER (PARTITION BY install_id ORDER BY received_at DESC) AS rn
-         FROM events
-         WHERE event_type IN ('app_install', 'app_start', 'app_ping', 'scan_complete')
-           AND received_at >= ?
-           AND ${VALID_INSTALL}
-       )
-       WHERE rn = 1
+       FROM installs
+       WHERE last_seen >= ? AND app_version != ''
        GROUP BY app_version
        ORDER BY installs DESC, app_version DESC`,
       sinceRoster
@@ -174,68 +239,56 @@ async function buildSummary(env) {
     all(
       env,
       `SELECT os_version, COUNT(*) AS installs
-       FROM (
-         SELECT install_id, os_version,
-                ROW_NUMBER() OVER (PARTITION BY install_id ORDER BY received_at DESC) AS rn
-         FROM events
-         WHERE event_type IN ('app_install', 'app_start', 'app_ping', 'scan_complete')
-           AND received_at >= ?
-           AND ${VALID_INSTALL}
-           AND os_version != ''
-       )
-       WHERE rn = 1
+       FROM installs
+       WHERE last_seen >= ? AND os_version != ''
        GROUP BY os_version
        ORDER BY installs DESC, os_version ASC`,
       sinceRoster
     ),
-    all(
+    first(
       env,
       `SELECT
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN items_scanned ELSE 0 END), 0) AS total_scanned,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN action_needed ELSE 0 END), 0) AS total_action_needed,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN detections ELSE 0 END), 0) AS total_detections,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN high_risk ELSE 0 END), 0) AS total_high_risk,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN 1 ELSE 0 END), 0) AS total_scans
-       FROM events`
+         COALESCE(SUM(items_scanned), 0) AS total_scanned,
+         COALESCE(SUM(action_needed), 0) AS total_action_needed,
+         COALESCE(SUM(detections), 0) AS total_detections,
+         COALESCE(SUM(high_risk), 0) AS total_high_risk,
+         COALESCE(SUM(scans), 0) AS total_scans
+       FROM scan_days`
+    ),
+    first(
+      env,
+      `SELECT
+         COALESCE(SUM(items_scanned), 0) AS total_scanned,
+         COALESCE(SUM(action_needed), 0) AS total_action_needed,
+         COALESCE(SUM(detections), 0) AS total_detections,
+         COALESCE(SUM(high_risk), 0) AS total_high_risk,
+         COALESCE(SUM(scans), 0) AS total_scans
+       FROM scan_days
+       WHERE day >= ?`,
+      since30DaysDay
     ),
     all(
       env,
-      `SELECT
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN items_scanned ELSE 0 END), 0) AS total_scanned,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN action_needed ELSE 0 END), 0) AS total_action_needed,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN detections ELSE 0 END), 0) AS total_detections,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN high_risk ELSE 0 END), 0) AS total_high_risk,
-         COALESCE(SUM(CASE WHEN event_type = 'scan_complete' THEN 1 ELSE 0 END), 0) AS total_scans
-       FROM events
-       WHERE received_at >= ?`,
-      since30Days
-    ),
-    all(
-      env,
-      `SELECT substr(received_at, 1, 10) AS day, COUNT(DISTINCT install_id) AS running_apps
-       FROM events
-       WHERE event_type IN ${PRESENCE_EVENTS}
-         AND received_at >= ?
-         AND ${VALID_INSTALL}
+      `SELECT day, COUNT(*) AS running_apps
+       FROM presence_days
+       WHERE day >= ?
        GROUP BY day
        ORDER BY day ASC`,
-      since30Days
+      since30DaysDay
     ),
     all(
       env,
       `SELECT
          substr(install_id, 1, 8) AS install_short,
-         MAX(app_version) AS app_version,
-         MAX(os_version) AS os_version,
-         MIN(received_at) AS first_seen,
-         MAX(received_at) AS last_seen,
-         SUM(CASE WHEN event_type = 'app_start' THEN 1 ELSE 0 END) AS starts,
-         SUM(CASE WHEN event_type = 'app_ping' THEN 1 ELSE 0 END) AS pings,
-         SUM(CASE WHEN event_type = 'scan_complete' THEN 1 ELSE 0 END) AS scans
-       FROM events
-       WHERE ${VALID_INSTALL}
-       GROUP BY install_id
-       HAVING MAX(received_at) >= ?
+         app_version,
+         os_version,
+         first_seen,
+         last_seen,
+         starts,
+         pings,
+         COALESCE((SELECT SUM(scans) FROM scan_days s WHERE s.install_id = installs.install_id), 0) AS scans
+       FROM installs
+       WHERE last_seen >= ?
        ORDER BY last_seen DESC
        LIMIT 50`,
       sinceRoster
@@ -273,8 +326,8 @@ async function buildSummary(env) {
     },
     versions,
     osVersions,
-    scanStats: normalizeScanStats(scanStats[0]),
-    scanStats30d: normalizeScanStats(scanStats30[0]),
+    scanStats: normalizeScanStats(scanStats),
+    scanStats30d: normalizeScanStats(scanStats30),
     daily: filledDaily,
     installs,
     retentionDays: rosterRetentionDays,
@@ -291,26 +344,18 @@ function normalizeScanStats(row) {
   };
 }
 
-function distinctPresence(env, since) {
+function countInstallsSeen(env, since) {
   return scalar(
     env,
-    `SELECT COUNT(DISTINCT install_id) AS value
-     FROM events
-     WHERE event_type IN ${PRESENCE_EVENTS}
-       AND received_at >= ?
-       AND ${VALID_INSTALL}`,
+    `SELECT COUNT(*) AS value FROM installs WHERE last_seen >= ?`,
     since
   );
 }
 
-function distinctLaunches(env, since) {
+function countLaunches(env, since) {
   return scalar(
     env,
-    `SELECT COUNT(DISTINCT install_id) AS value
-     FROM events
-     WHERE event_type = 'app_start'
-       AND received_at >= ?
-       AND ${VALID_INSTALL}`,
+    `SELECT COUNT(*) AS value FROM installs WHERE last_start IS NOT NULL AND last_start >= ?`,
     since
   );
 }
@@ -608,7 +653,7 @@ function renderDashboard() {
       </div>
       <div class="meta">
         <div id="generated">loading&hellip;</div>
-        <div style="margin-top:4px">auto-refresh <strong>60s</strong></div>
+        <div style="margin-top:4px">auto-refresh <strong>5 min</strong></div>
       </div>
     </div>
   </header>
@@ -894,13 +939,48 @@ function renderDashboard() {
     }
 
     load();
-    refreshTimer = setInterval(load, 60000);
+    refreshTimer = setInterval(load, 300000);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") load();
     });
   </script>
 </body>
 </html>`;
+}
+
+// Cache API helpers for /api/summary. The dashboard polls every few minutes and
+// reloads on tab focus, so serving a cached JSON blob keeps those refreshes off D1.
+// The cache key includes the ?token= URL, so only the authorized dashboard hits it.
+async function readCachedSummary(request) {
+  try {
+    const cache = caches.default;
+    const key = new Request(request.url, { method: "GET" });
+    const hit = await cache.match(key);
+    if (hit) {
+      const headers = new Headers(hit.headers);
+      headers.set("cache-control", "no-store"); // never let browsers cache the token URL
+      return withCors(new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers }));
+    }
+  } catch {
+    // Cache unavailable — fall through and compute fresh.
+  }
+  return null;
+}
+
+async function writeCachedSummary(request, response) {
+  try {
+    const cache = caches.default;
+    const key = new Request(request.url, { method: "GET" });
+    const copy = response.clone();
+    const headers = new Headers(copy.headers);
+    // Cloudflare's cache won't store `private` responses. The dashboard fetches
+    // with cache: "no-store" (and the URL carries the token), so making the edge
+    // copy public is safe — only someone with the token URL can request it.
+    headers.set("cache-control", `public, max-age=${SUMMARY_CACHE_TTL_SECONDS}`);
+    await cache.put(key, new Response(copy.body, { status: copy.status, statusText: copy.statusText, headers }));
+  } catch {
+    // Best-effort caching only; a failed put just means the next call recomputes.
+  }
 }
 
 function isAuthorized(request, env, url) {
