@@ -1,7 +1,7 @@
 # HashGuard future roadmap
 
 Living list of improvement ideas that are **not** scheduled for immediate work.
-Last updated: 2026-10-03 (post v1.0.66).
+Last updated: 2026-10-04 (post v1.0.67).
 
 When picking work up again, prefer the **Next up** section unless product priorities change.
 
@@ -77,7 +77,7 @@ When picking work up again, prefer the **Next up** section unless product priori
 
 ## Already shipped (context — do not re-open without reason)
 
-Through **v1.0.66** roughly includes:
+Through **v1.0.67** roughly includes:
 
 - True delta scan — unchanged clean files (size/mtime) skip re-hash + provider lookups; aged-out clean entries reuse the cached hash instead of re-reading the file
 

@@ -109,11 +109,12 @@ internal static class HashGuardLogic
     }
 
     /// <summary>
-    /// True when a file whose size and last-write time match the cached state can skip
-    /// re-hashing and provider lookups for this scan. Requires the delta-scan option, the
+    /// True when a file whose size and last-write time match the cached state can reuse the
+    /// stored hash instead of being read and hashed again. Requires the delta-scan option, the
     /// hash cache, and an unchanged path; a file with no cached hash still needs hashing.
+    /// Provider results are still re-checked separately.
     /// </summary>
-    public static bool ShouldSkipUnchangedCleanFile(
+    public static bool ShouldReuseCachedHashForUnchangedFile(
         bool deltaScanEnabled,
         bool hashCacheEnabled,
         bool fileUnchangedOnDisk,
@@ -122,6 +123,41 @@ internal static class HashGuardLogic
         && hashCacheEnabled
         && fileUnchangedOnDisk
         && !string.IsNullOrWhiteSpace(cachedSha256);
+
+    /// <summary>
+    /// Aggregates per-provider outcomes into a scan status when no provider set one directly.
+    /// Detections win; a clean result wins over provider errors; otherwise errors surface as
+    /// "error" so a failed lookup is not reported as clean or silently folded into "unknown".
+    /// </summary>
+    public static string ClassifyAggregateStatus(bool isAlert, IReadOnlyCollection<ProviderState> providerStates)
+    {
+        if (isAlert)
+        {
+            return "detected";
+        }
+
+        if (providerStates.Count == 0)
+        {
+            return "unknown";
+        }
+
+        if (providerStates.Any(state => state == ProviderState.Detected))
+        {
+            return "detected";
+        }
+
+        if (providerStates.Any(state => state == ProviderState.Clean))
+        {
+            return "clean";
+        }
+
+        if (providerStates.Any(state => state == ProviderState.Error))
+        {
+            return "error";
+        }
+
+        return "unknown";
+    }
 
     public static bool CanReuseProviderCache(
         string status,

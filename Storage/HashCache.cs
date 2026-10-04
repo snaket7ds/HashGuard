@@ -371,16 +371,54 @@ internal sealed class HashCache
 
     public async Task SaveAsync()
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(AppPaths.GetHashCachePath())!);
-        await using var stream = File.Create(AppPaths.GetHashCachePath());
-        await JsonSerializer.SerializeAsync(stream, entries, new JsonSerializerOptions { WriteIndented = true });
-
-        await using var fileStateStream = File.Create(AppPaths.GetFileStateCachePath());
-        await JsonSerializer.SerializeAsync(fileStateStream, fileStates, new JsonSerializerOptions { WriteIndented = true });
+        await WriteJsonAtomicAsync(AppPaths.GetHashCachePath(), entries);
+        await WriteJsonAtomicAsync(AppPaths.GetFileStateCachePath(), fileStates);
 
         dirty = false;
         unsavedMutations = 0;
         lastSaveUtc = DateTimeOffset.UtcNow;
+    }
+
+    private static async Task WriteJsonAtomicAsync<T>(string path, T value)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var tempPath = path + ".tmp";
+        await using (var stream = File.Create(tempPath))
+        {
+            await JsonSerializer.SerializeAsync(stream, value, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        // Replace in one step so a crash or full disk cannot leave a truncated cache that the
+        // next launch would parse as empty (silently losing every cached clean result).
+        File.Move(tempPath, path, overwrite: true);
+    }
+
+    /// <summary>
+    /// Drops file-state rows whose file no longer exists (temp files, uninstalled apps) so the
+    /// path-keyed cache does not grow without bound across reboots.
+    /// </summary>
+    private void PruneMissingFileStates()
+    {
+        if (fileStates.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var path in fileStates.Keys.ToList())
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    fileStates.Remove(path);
+                    MarkDirty();
+                }
+            }
+            catch
+            {
+                // Unreadable paths stay; they can be pruned on a later run.
+            }
+        }
     }
 
     public async Task SaveIfDirtyAsync()
@@ -432,6 +470,8 @@ internal sealed class HashCache
                     fileStates[item.Key] = item.Value;
                 }
             }
+
+            PruneMissingFileStates();
         }
         catch
         {
@@ -441,19 +481,13 @@ internal sealed class HashCache
 
     private static IEnumerable<string> GetCachePaths()
     {
+        // Only files HashGuard itself writes are cache candidates. The previous version
+        // enumerated every *.json in the config folder, so settings.json, ignored-hashes.json
+        // and quarantine-manifest.json were all fed to the cache deserializer; a future file
+        // shaped like the cache would silently seed bogus entries.
         yield return AppPaths.GetHashCachePath();
         yield return Path.Combine(AppPaths.GetConfigDirectory(), "cache.json");
         yield return Path.Combine(AppContext.BaseDirectory, "hash-cache.json");
-
-        if (!Directory.Exists(AppPaths.GetConfigDirectory()))
-        {
-            yield break;
-        }
-
-        foreach (var path in Directory.EnumerateFiles(AppPaths.GetConfigDirectory(), "*.json"))
-        {
-            yield return path;
-        }
     }
 
     private async Task LoadFromPathAsync(string cachePath)

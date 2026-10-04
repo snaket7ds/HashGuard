@@ -144,7 +144,8 @@ internal static class FirstRunSetup
 
         if (File.Exists(MainForm.GetAppSettingsPath()))
         {
-            EnsureCodeSigningCertificateTrusted();
+            // Do not silently offer/install a root certificate on every launch. Trusting the
+            // self-signed certificate is opt-in through the first-run dialog or --install.
             return true;
         }
 
@@ -292,7 +293,9 @@ internal static class FirstRunSetup
         var trustCert = new CheckBox
         {
             Text = "Trust this build's local code-signing certificate for this Windows user",
-            Checked = IsCurrentExecutableCertificateTrustNeeded(),
+            // Default off: installing a self-signed cert into the CurrentUser Root and
+            // TrustedPublisher stores is a privilege the user should opt into explicitly.
+            Checked = false,
             Enabled = IsCurrentExecutableCertificateTrustNeeded(),
             AutoSize = false,
             Height = 28,

@@ -172,7 +172,14 @@ internal sealed class AppSettings
     public int TimeoutSeconds { get; set; } = 60;
     public string ApiKeyEncrypted { get; set; } = "";
     public string MetaDefenderApiKeyEncrypted { get; set; } = "";
+    /// <summary>
+    /// Legacy plaintext key from pre-DPAPI builds. Never serialized (JsonIgnore); populated only
+    /// when migrating an old settings file so it can be re-encrypted.
+    /// </summary>
+    [JsonIgnore]
     public string ApiKey { get; set; } = "";
+    /// <summary>Legacy plaintext MetaDefender key (see <see cref="ApiKey"/>).</summary>
+    [JsonIgnore]
     public string MetaDefenderApiKey { get; set; } = "";
     /// <summary>When true, register a daily scheduled full scan via Task Scheduler.</summary>
     public bool ScheduledDailyScan { get; set; }

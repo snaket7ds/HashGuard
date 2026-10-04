@@ -80,7 +80,7 @@ public sealed partial class MainForm : Form
     private readonly CheckBox metaDefenderEnabledBox = new() { Text = "Use MetaDefender Cloud", AutoSize = true, Checked = true };
     private readonly CheckBox mhrEnabledBox = new() { Text = "Use Team Cymru MHR", AutoSize = true, Checked = true };
     private readonly CheckBox hashCacheEnabledBox = new() { Text = "Enable Hash Cache", AutoSize = true, Checked = true };
-    private readonly CheckBox deltaScanBox = new() { Text = "Delta scan: skip unchanged clean files", AutoSize = true };
+    private readonly CheckBox deltaScanBox = new() { Text = "Delta scan: reuse cached hash for unchanged files", AutoSize = true };
     private readonly CheckBox autoUpdateChecksBox = new() { Text = "Check updates automatically", AutoSize = true };
     private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = false };
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
@@ -1079,7 +1079,7 @@ public sealed partial class MainForm : Form
         var scheduledDaily = new CheckBox { Text = "Daily scheduled full scan", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
         var scheduledHour = new NumericUpDown { Minimum = 0, Maximum = 23, Value = Math.Clamp(appSettings.ScheduledScanHour, 0, 23), Width = 70 };
         var preferDelta = new CheckBox { Text = "Highlight new files since last scan", Checked = appSettings.PreferDeltaScan, AutoSize = true };
-        var deltaScan = new CheckBox { Text = "Skip unchanged clean files (delta scan)", Checked = appSettings.DeltaScanEnabled, AutoSize = true };
+        var deltaScan = new CheckBox { Text = "Reuse cached hash for unchanged files (delta scan)", Checked = appSettings.DeltaScanEnabled, AutoSize = true };
         var suppressTray = new CheckBox { Text = "Suppress repeat tray alerts for same detections", Checked = appSettings.SuppressRepeatTrayAlerts, AutoSize = true };
         var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
         var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
@@ -1862,6 +1862,8 @@ public sealed partial class MainForm : Form
             SaveCurrentAppSettings();
         }
 
+        EnsureProviderKeysConfigured();
+
         using var cancellation = new CancellationTokenSource();
         scanCancellation = cancellation;
         var token = cancellation.Token;
@@ -1913,7 +1915,10 @@ public sealed partial class MainForm : Form
                 PulseScanUi(scannedCount, paths.Count, path);
                 await hashCache.FlushIfDueAsync().ConfigureAwait(true);
 
-                if (virusTotalEnabledBox.Checked && index + 1 < paths.Count && delayBox.Value > 0 && result.Status != "clean/seen")
+                if (virusTotalEnabledBox.Checked
+                    && index + 1 < paths.Count
+                    && delayBox.Value > 0
+                    && IssuedVirusTotalRequest(result))
                 {
                     await Task.Delay(TimeSpan.FromSeconds((double)delayBox.Value), token);
                 }
@@ -2062,6 +2067,8 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        EnsureProviderKeysConfigured();
+
         progressBar.Value = 0;
         progressBar.Maximum = Math.Max(newPaths.Count, 1);
         countLabel.Text = $"0 / {newPaths.Count}";
@@ -2089,7 +2096,10 @@ public sealed partial class MainForm : Form
                 PulseScanUi(index + 1, newPaths.Count, path, "Monitoring scan");
                 await hashCache.FlushIfDueAsync().ConfigureAwait(true);
 
-                if (virusTotalEnabledBox.Checked && index + 1 < newPaths.Count && delayBox.Value > 0 && result.Status != "clean/seen")
+                if (virusTotalEnabledBox.Checked
+                    && index + 1 < newPaths.Count
+                    && delayBox.Value > 0
+                    && IssuedVirusTotalRequest(result))
                 {
                     await Task.Delay(TimeSpan.FromSeconds((double)delayBox.Value));
                 }
@@ -2646,6 +2656,8 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        EnsureProviderKeysConfigured();
+
         scanButton.Enabled = false;
         results.Clear();
         resultsView.Items.Clear();
@@ -2787,6 +2799,34 @@ public sealed partial class MainForm : Form
         }
 
         await quotaTracker.EnsureLoadedAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates provider API keys once before a scan starts. Prompts for a missing MetaDefender
+    /// key and disables the provider if the user leaves it blank, so the scan loop never has to
+    /// pop modal dialogs per file.
+    /// </summary>
+    private void EnsureProviderKeysConfigured()
+    {
+        var metaDefenderMissing = metaDefenderEnabledBox.Checked
+            && string.IsNullOrWhiteSpace(metaDefenderApiKeyBox.Text.Trim());
+        if (!metaDefenderMissing)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            "MetaDefender Cloud is enabled but no API key is saved. Open Settings and paste your MetaDefender Cloud API key, or disable MetaDefender.",
+            "MetaDefender API key required",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+        ShowSettingsDialog();
+        if (string.IsNullOrWhiteSpace(metaDefenderApiKeyBox.Text.Trim()))
+        {
+            metaDefenderEnabledBox.Checked = false;
+            UpdateReputationTile();
+        }
     }
 
     private static Task<ProcessCollectionResult> CollectProcessFilesAsync(CancellationToken cancellationToken = default) =>
@@ -3105,280 +3145,6 @@ public sealed partial class MainForm : Form
         return new SkippedProcess(pid, name, ex.GetType().Name);
     }
 
-    private async Task CheckForUpdatesAsync(bool automatic = false)
-    {
-        if (updateCheckRunning)
-        {
-            return;
-        }
-
-        updateCheckRunning = true;
-        if (!automatic)
-        {
-            updateButton.Enabled = false;
-            statusLabel.Text = "Checking for updates...";
-        }
-        try
-        {
-            var releasesApiUrl = $"https://api.github.com/repos/{AppConstants.GitHubOwner}/{AppConstants.GitHubRepo}/releases";
-            var latestReleaseApiUrl = $"{releasesApiUrl}/latest";
-            using var http = AppHttp.Create(TimeSpan.FromSeconds(30));
-            http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{CurrentVersion}");
-            http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-
-            var release = await GetLatestGitHubReleaseAsync(http, latestReleaseApiUrl, releasesApiUrl);
-            if (release is null || string.IsNullOrWhiteSpace(release.TagName))
-            {
-                throw new InvalidOperationException("GitHub release data is missing a tag name.");
-            }
-
-            var releaseVersionText = release.TagName.Trim().TrimStart('v', 'V');
-            if (!Version.TryParse(releaseVersionText, out var latestVersion) || !Version.TryParse(CurrentVersion, out var currentVersion))
-            {
-                throw new InvalidOperationException("GitHub release version is invalid.");
-            }
-
-            if (latestVersion <= currentVersion)
-            {
-                if (!automatic)
-                {
-                    statusLabel.Text = $"HashGuard is up to date ({CurrentVersion}).";
-                    MessageBox.Show(
-                        this,
-                        $"HashGuard is up to date.{Environment.NewLine}Current version: {CurrentVersion}{Environment.NewLine}Latest GitHub version: {latestVersion}",
-                        "Update",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                }
-                return;
-            }
-
-            var exeAsset = release.Assets.FirstOrDefault(asset => string.Equals(asset.Name, "HashGuard.exe", StringComparison.OrdinalIgnoreCase));
-            if (exeAsset is null || string.IsNullOrWhiteSpace(exeAsset.BrowserDownloadUrl))
-            {
-                throw new InvalidOperationException("GitHub release is missing the HashGuard.exe asset.");
-            }
-
-            var shaAsset = release.Assets.FirstOrDefault(asset =>
-                string.Equals(asset.Name, "HashGuard.exe.sha256", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(asset.Name, "HashGuard.sha256", StringComparison.OrdinalIgnoreCase));
-            var expectedSha256 = UpdateVerifier.GetReleaseAssetSha256(exeAsset);
-            if (string.IsNullOrWhiteSpace(expectedSha256) && shaAsset is not null && !string.IsNullOrWhiteSpace(shaAsset.BrowserDownloadUrl))
-            {
-                var shaText = await DownloadGitHubUrlTextAsync(http, shaAsset.BrowserDownloadUrl, "download the checksum asset");
-                expectedSha256 = UpdateVerifier.ParseSha256Text(shaText);
-            }
-
-            if (string.IsNullOrWhiteSpace(expectedSha256))
-            {
-                throw new InvalidOperationException("GitHub release is missing SHA-256 verification. Add a HashGuard.exe.sha256 release asset.");
-            }
-
-            if (automatic)
-            {
-                if (!IsRunningElevated())
-                {
-                    if (!string.Equals(lastAutoPromptedUpdateVersion, latestVersion.ToString(), StringComparison.OrdinalIgnoreCase))
-                    {
-                        lastAutoPromptedUpdateVersion = latestVersion.ToString();
-                        statusLabel.Text = $"HashGuard {latestVersion} is available. Run elevated or click Update to install.";
-                    }
-
-                    return;
-                }
-            }
-            else
-            {
-                var notes = string.IsNullOrWhiteSpace(release.Body) ? "" : $"{Environment.NewLine}{Environment.NewLine}{release.Body}";
-                var accepted = MessageBox.Show(
-                    this,
-                    $"HashGuard {latestVersion} is available from GitHub. Install it now?{notes}",
-                    "Update available",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Question);
-                if (accepted != DialogResult.Yes)
-                {
-                    statusLabel.Text = "Update canceled.";
-                    return;
-                }
-            }
-
-            var updateDir = Path.Combine(AppContext.BaseDirectory, "updates");
-            Directory.CreateDirectory(updateDir);
-            var downloadPath = Path.Combine(updateDir, "HashGuard.exe.new");
-            statusLabel.Text = "Downloading update...";
-            await using (var download = await DownloadGitHubUrlStreamAsync(http, exeAsset.BrowserDownloadUrl, "download the HashGuard.exe asset"))
-            await using (var output = File.Create(downloadPath))
-            {
-                await download.CopyToAsync(output);
-            }
-
-            statusLabel.Text = "Verifying update...";
-            var actualSha256 = await FileHash.Sha256FileAsync(downloadPath);
-            if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
-            {
-                File.Delete(downloadPath);
-                throw new InvalidOperationException("Downloaded update hash did not match the GitHub release checksum. Update was not installed.");
-            }
-
-            if (!UpdateVerifier.PublisherMatchesCurrentBuild(Application.ExecutablePath, downloadPath, out var publisherDetail))
-            {
-                File.Delete(downloadPath);
-                throw new InvalidOperationException($"Update Authenticode publisher check failed. {publisherDetail}");
-            }
-
-            InstallDownloadedUpdate(downloadPath);
-        }
-        catch (Exception ex)
-        {
-            if (automatic)
-            {
-                statusLabel.Text = $"Automatic update check failed: {ex.Message}";
-            }
-            else
-            {
-                statusLabel.Text = "Update failed";
-                MessageBox.Show(this, $"Update failed:{Environment.NewLine}{ex.Message}", "Update", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-        finally
-        {
-            updateButton.Enabled = true;
-            updateCheckRunning = false;
-        }
-    }
-
-    private void UpdateAutomaticUpdateTimer()
-    {
-        updateCheckTimer.Enabled = autoUpdateChecksBox.Checked;
-    }
-
-    private static bool IsRunningElevated()
-    {
-        using var identity = WindowsIdentity.GetCurrent();
-        var principal = new WindowsPrincipal(identity);
-        return principal.IsInRole(WindowsBuiltInRole.Administrator);
-    }
-
-    private void InstallDownloadedUpdate(string downloadPath)
-    {
-        var currentExe = Application.ExecutablePath;
-        var backupPath = Path.Combine(Path.GetDirectoryName(currentExe)!, "HashGuard.exe.update-bak");
-        var command = $"/c for /l %i in (1,1,60) do @(timeout /t 1 /nobreak >nul & copy /y \"{currentExe}\" \"{backupPath}\" >nul 2>nul & copy /y \"{downloadPath}\" \"{currentExe}\" >nul 2>nul && del /f /q \"{downloadPath}\" \"{backupPath}\" >nul 2>nul & start \"\" \"{currentExe}\" && exit /b 0)";
-        Process.Start(new ProcessStartInfo("cmd.exe", command)
-        {
-            CreateNoWindow = true,
-            UseShellExecute = false,
-            WindowStyle = ProcessWindowStyle.Hidden,
-        });
-
-        exitRequested = true;
-        trayIcon.Visible = false;
-        Application.Exit();
-    }
-
-    private static async Task<Stream> GetGitHubStreamAsync(HttpClient http, string url, string action)
-    {
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        if (!response.IsSuccessStatusCode)
-        {
-            var details = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException(BuildGitHubHttpError(action, response.StatusCode, details));
-        }
-
-        var memory = new MemoryStream();
-        await response.Content.CopyToAsync(memory);
-        memory.Position = 0;
-        return memory;
-    }
-
-    private static async Task<GitHubRelease?> GetLatestGitHubReleaseAsync(HttpClient http, string latestReleaseApiUrl, string releasesApiUrl)
-    {
-        try
-        {
-            await using var latestStream = await GetGitHubStreamAsync(http, latestReleaseApiUrl, "read the latest release");
-            return await JsonSerializer.DeserializeAsync<GitHubRelease>(latestStream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("404 Not Found", StringComparison.OrdinalIgnoreCase))
-        {
-            await using var releasesStream = await GetGitHubStreamAsync(http, releasesApiUrl, "read the releases list");
-            var releases = await JsonSerializer.DeserializeAsync<List<GitHubRelease>>(releasesStream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
-            return releases
-                .Where(release => !release.Draft)
-                .Select(release => new
-                {
-                    Release = release,
-                    Parsed = Version.TryParse(release.TagName.Trim().TrimStart('v', 'V'), out var version),
-                    Version = version
-                })
-                .Where(item => item.Parsed)
-                .OrderByDescending(item => item.Version)
-                .Select(item => item.Release)
-                .FirstOrDefault();
-        }
-    }
-
-    private static async Task<Stream> DownloadGitHubAssetStreamAsync(HttpClient http, string assetApiUrl)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, assetApiUrl);
-        request.Headers.Accept.Clear();
-        request.Headers.Accept.ParseAdd("application/octet-stream");
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        if (!response.IsSuccessStatusCode)
-        {
-            var details = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException(BuildGitHubHttpError("download the release asset", response.StatusCode, details));
-        }
-
-        var memory = new MemoryStream();
-        await response.Content.CopyToAsync(memory);
-        memory.Position = 0;
-        return memory;
-    }
-
-    private static async Task<Stream> DownloadGitHubUrlStreamAsync(HttpClient http, string url, string action)
-    {
-        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        if (!response.IsSuccessStatusCode)
-        {
-            var details = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException(BuildGitHubHttpError(action, response.StatusCode, details));
-        }
-
-        var memory = new MemoryStream();
-        await response.Content.CopyToAsync(memory);
-        memory.Position = 0;
-        return memory;
-    }
-
-    private static async Task<string> DownloadGitHubUrlTextAsync(HttpClient http, string url, string action)
-    {
-        await using var stream = await DownloadGitHubUrlStreamAsync(http, url, action);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        return await reader.ReadToEndAsync();
-    }
-
-    private static async Task<string> DownloadGitHubAssetTextAsync(HttpClient http, string assetApiUrl)
-    {
-        await using var stream = await DownloadGitHubAssetStreamAsync(http, assetApiUrl);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        return await reader.ReadToEndAsync();
-    }
-
-    private static string BuildGitHubHttpError(string action, HttpStatusCode statusCode, string details)
-    {
-        var note = statusCode switch
-        {
-            HttpStatusCode.Unauthorized => "GitHub returned 401 Unauthorized.",
-            HttpStatusCode.Forbidden => "GitHub returned 403 Forbidden. Verify the repository is public and release assets are available.",
-            HttpStatusCode.NotFound => "GitHub returned 404 Not Found. Verify the repository, release, and asset names.",
-            _ => $"GitHub returned {(int)statusCode} {statusCode}."
-        };
-
-        var detailText = string.IsNullOrWhiteSpace(details) ? "" : $"{Environment.NewLine}{details}";
-        return $"Could not {action}. {note}{detailText}";
-    }
-
     private async Task<ScanResult> ScanPathAsync(
         HttpClient http,
         string path,
@@ -3389,7 +3155,7 @@ public sealed partial class MainForm : Form
         var names = string.Join(", ", processFiles.Select(p => p.Name).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(n => n));
         var pids = string.Join(", ", processFiles.Select(p => p.Pid).OrderBy(pid => pid));
         var result = new ScanResult(path, names, pids);
-        ApplyLocalFileIntelligence(result, processFiles);
+        await ApplyLocalFileIntelligenceAsync(result, processFiles, cancellationToken);
         // Capture WinForms state before any await — later continuations may be off the UI thread.
         var hashCacheEnabled = hashCacheEnabledBox.Checked;
         var metaEnabled = metaDefenderEnabledBox.Checked;
@@ -3415,11 +3181,18 @@ public sealed partial class MainForm : Form
             // provider entry has aged out. Reuse the cached hash so the file is not re-read, and
             // reuse the entry when it is still provider-reusable. Otherwise re-query providers
             // with the known hash instead of re-hashing the file.
-            if (hashCacheEnabled
+            var knownHashSha256 = "";
+            var knownHashAvailable = hashCacheEnabled
                 && appSettings.DeltaScanEnabled
-                && hashCache.TryGetKnownHash(path, out var knownSha256)
-                && hashCache.TryGet(knownSha256, out var knownEntry))
+                && hashCache.TryGetKnownHash(path, out knownHashSha256);
+            if (HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(
+                    appSettings.DeltaScanEnabled,
+                    hashCacheEnabled,
+                    knownHashAvailable,
+                    knownHashSha256)
+                && hashCache.TryGet(knownHashSha256, out var knownEntry))
             {
+                var knownSha256 = knownHashSha256;
                 result.Sha256 = knownSha256;
                 result.Link = string.Format(AppConstants.VirusTotalGuiReportUrl, result.Sha256);
                 if (HashCache.IsReusableCleanEntry(knownEntry))
@@ -3496,10 +3269,9 @@ public sealed partial class MainForm : Form
             }
             else if (string.IsNullOrWhiteSpace(result.Status))
             {
-                result.Status = result.IsAlert ? "detected"
-                    : result.ProviderResults.Count > 0 && result.ProviderResults.All(provider => provider.State is ProviderState.NotChecked or ProviderState.Deferred or ProviderState.Error)
-                        ? "unknown"
-                        : "clean";
+                result.Status = HashGuardLogic.ClassifyAggregateStatus(
+                    result.IsAlert,
+                    result.ProviderResults.Select(provider => provider.State).ToList());
             }
 
             ApplyIgnoredHash(result);
@@ -3521,7 +3293,10 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static void ApplyLocalFileIntelligence(ScanResult result, List<ProcessFile> processFiles)
+    private static async Task ApplyLocalFileIntelligenceAsync(
+        ScanResult result,
+        List<ProcessFile> processFiles,
+        CancellationToken cancellationToken)
     {
         result.PersistenceSources = processFiles
             .Where(file => file.Pid == 0 && file.Name.Contains(':', StringComparison.Ordinal))
@@ -3545,12 +3320,50 @@ public sealed partial class MainForm : Form
             // Local metadata is best-effort and should not block reputation checks.
         }
 
-        var signature = GetSignatureInfo(result.Path);
+        // Signature/chain checks touch certificate stores and used to run on the UI thread for
+        // every file. Run them on the pool so the scan loop stays responsive.
+        var signature = await Task.Run(() => GetSignatureInfo(result.Path), cancellationToken).ConfigureAwait(true);
         result.SignatureSummary = signature.Summary;
         result.SignaturePublisher = signature.Publisher;
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SignatureInfo> SignatureCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private static SignatureInfo GetSignatureInfo(string path)
+    {
+        string cacheKey;
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                return new SignatureInfo("Unsigned or signature unavailable", "");
+            }
+
+            cacheKey = $"{path}|{info.Length}|{info.LastWriteTimeUtc.Ticks}";
+        }
+        catch
+        {
+            return new SignatureInfo("Unsigned or signature unavailable", "");
+        }
+
+        if (SignatureCache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
+        var signature = ReadSignatureInfo(path);
+        if (SignatureCache.Count > 20000)
+        {
+            SignatureCache.Clear();
+        }
+
+        SignatureCache[cacheKey] = signature;
+        return signature;
+    }
+
+    private static SignatureInfo ReadSignatureInfo(string path)
     {
         try
         {
@@ -3559,9 +3372,11 @@ public sealed partial class MainForm : Form
             var publisher = cert2.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
             var expired = DateTime.Now < cert2.NotBefore || DateTime.Now > cert2.NotAfter;
             using var chain = new X509Chain();
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.Online;
+            // Offline: online CRL/OCSP lookups added a network round trip (up to seconds) per
+            // file. Offline uses the local cache and is sufficient for the risk heuristic.
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.Offline;
             chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
-            chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(3);
+            chain.ChainPolicy.UrlRetrievalTimeout = TimeSpan.FromSeconds(1);
             chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
             var chainValid = chain.Build(cert2);
             var chainStatus = chainValid
@@ -3841,16 +3656,11 @@ public sealed partial class MainForm : Form
         var apiKey = metaDefenderApiKeyBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            MessageBox.Show(this, "Open Settings and paste your MetaDefender Cloud API key to use MetaDefender checks.", "MetaDefender API key required", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            ShowSettingsDialog();
-            apiKey = metaDefenderApiKeyBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                metaDefenderEnabledBox.Checked = false;
-                AddProviderResult(result, "MetaDefender", ProviderState.NotChecked, "API key not configured.");
-                AppendResultNote(result, "MetaDefender Cloud: skipped, API key not configured.");
-                return;
-            }
+            // Keys are validated once before the scan starts (EnsureProviderKeysConfigured).
+            // Never block the per-file scan loop with a modal dialog.
+            AddProviderResult(result, "MetaDefender", ProviderState.NotChecked, "API key not configured.");
+            AppendResultNote(result, "MetaDefender Cloud: skipped, API key not configured.");
+            return;
         }
 
         try
@@ -4019,6 +3829,18 @@ public sealed partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// True when this result actually issued a request to VirusTotal (as opposed to resolving
+    /// from cache). Drives the optional inter-file delay so we only pace real network calls.
+    /// </summary>
+    private static bool IssuedVirusTotalRequest(ScanResult result) =>
+        result.ProviderResults.Any(provider =>
+            provider.Provider == "VirusTotal"
+            && provider.State is ProviderState.Clean
+                or ProviderState.Detected
+                or ProviderState.Unknown
+                or ProviderState.Error);
+
     private async Task<bool> TryReserveVirusTotalQuotaAsync(
         ScanResult? result,
         CancellationToken cancellationToken,
@@ -4050,25 +3872,6 @@ public sealed partial class MainForm : Form
         }
 
         return false;
-    }
-
-    private void EnsureVirusTotalApiKey(HttpClient http)
-    {
-        if (http.DefaultRequestHeaders.Contains("x-apikey"))
-        {
-            return;
-        }
-
-        MessageBox.Show(this, "This file has not been seen as clean before. Open Settings and paste your VirusTotal API key to check it.", "API key required", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        ShowSettingsDialog();
-        var apiKey = apiKeyBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            virusTotalEnabledBox.Checked = false;
-            throw new InvalidOperationException("VirusTotal API key is required for VirusTotal checks.");
-        }
-
-        http.DefaultRequestHeaders.Add("x-apikey", apiKey);
     }
 
     private async Task SaveResultToCacheAsync(ScanResult result)
@@ -5678,8 +5481,10 @@ public sealed partial class MainForm : Form
             var currentPath = AppPaths.GetAppSettingsPath();
             if (File.Exists(currentPath))
             {
-                var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(currentPath, Encoding.UTF8)) ?? new AppSettings();
+                var settingsJson = File.ReadAllText(currentPath, Encoding.UTF8);
+                var settings = JsonSerializer.Deserialize<AppSettings>(settingsJson) ?? new AppSettings();
                 settings.TrustedPublishers ??= new AppSettings().TrustedPublishers;
+                PopulateLegacyPlaintextKeys(settings, settingsJson);
                 return settings;
             }
 
@@ -5688,6 +5493,37 @@ public sealed partial class MainForm : Form
         catch
         {
             return new AppSettings();
+        }
+    }
+
+    /// <summary>
+    /// Reads the pre-DPAPI plaintext API keys that older builds wrote. Those properties are
+    /// [JsonIgnore] now, so HashGuard can no longer persist a plaintext key, but existing
+    /// settings files still need their keys migrated into the encrypted fields on load.
+    /// </summary>
+    private static void PopulateLegacyPlaintextKeys(AppSettings settings, string settingsJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(settingsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+
+            if (document.RootElement.TryGetProperty("ApiKey", out var apiKey) && apiKey.ValueKind == JsonValueKind.String)
+            {
+                settings.ApiKey = apiKey.GetString() ?? "";
+            }
+
+            if (document.RootElement.TryGetProperty("MetaDefenderApiKey", out var metaDefenderKey) && metaDefenderKey.ValueKind == JsonValueKind.String)
+            {
+                settings.MetaDefenderApiKey = metaDefenderKey.GetString() ?? "";
+            }
+        }
+        catch
+        {
+            // Legacy plaintext migration is best-effort.
         }
     }
 

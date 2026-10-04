@@ -46,10 +46,18 @@ internal static class TelemetryClient
 
         try
         {
+            var payload = BuildPayload(eventType, installId, appVersion, Environment.OSVersion.VersionString, data);
+            var json = JsonSerializer.Serialize(payload);
+            // Defense in depth: refuse to send anything that looks like it carries a path, hash,
+            // key, or machine/user identifier, even if a future caller passes unexpected data.
+            if (!HashGuardLogic.TelemetryPayloadLooksSafe(json))
+            {
+                return false;
+            }
+
             using var http = AppHttp.Create(TimeSpan.FromSeconds(5));
             http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{appVersion}");
-            var payload = BuildPayload(eventType, installId, appVersion, Environment.OSVersion.VersionString, data);
-            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
             using var response = await http.PostAsync(endpointUrl, content, cancellationToken);
             return response.IsSuccessStatusCode;
         }

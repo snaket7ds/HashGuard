@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.67 - 2026-10-04
+
+- **Clarify the delta-scan option.** The v1.0.66 setting was labelled "skip unchanged clean files", but the unchanged-skip has been on since v1.0.57; the option actually controls whether an unchanged file whose clean result has *aged out* reuses its cached hash instead of being re-read. Renamed to "reuse cached hash for unchanged files" and the helper now encodes that exact rule (and is wired into the scan path instead of only tests).
+- **Report provider failures honestly.** When no reputation provider returns a clean or detected verdict, a provider error now makes the file status `error` (counted in the scan summary) rather than falling through to `clean`/`unknown`.
+- **Validate API keys once per scan.** A missing MetaDefender key no longer pops a modal Settings dialog from inside the per-file scan loop; it is checked once before the scan starts, and the provider is disabled if still unconfigured.
+- **Faster scans.** Signature/authenticode checks now use offline revocation, are memoised by path+size+last-write time, and run off the UI thread; the fixed inter-file delay now only applies when a VirusTotal request was actually issued (cache hits no longer sleep).
+- **More robust storage.** Hash and file-state caches are written atomically (temp file + replace) and file-state rows for deleted files are pruned on load; the cache loader only reads files HashGuard writes instead of every `*.json` in the config folder.
+- **Safer updates.** The ~160 MB update asset streams straight to disk instead of buffering in a `MemoryStream`, and the install script restores the previous executable if the swap fails instead of deleting its backup unconditionally.
+- **Hardening.** Trusting the self-signed certificate is now off by default (no prompt on every launch), plaintext API-key fields are `[JsonIgnore]` (legacy files are still migrated on load), and the telemetry payload safety check is enforced at send time.
+- **Maintenance.** `MainForm.cs` split: the update/download/install path moved to `MainForm.Updates.cs`.
+
 ## v1.0.66 - 2026-10-03
 
 - Add a **delta scan** option (Settings → Behavior → Scanning → "Skip unchanged clean files"). When enabled, files already cached clean and unchanged on disk (size + last-write time) skip re-hashing and provider lookups, cutting full-scan time and API-quota use. A file whose clean cache entry has aged out still reuses its cached hash instead of being re-read, then re-checks providers. Detections, unknown files, and changed files are always re-checked.

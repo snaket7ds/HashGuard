@@ -311,15 +311,25 @@ var tests = new (string Name, Action Test)[]
         var html = ScanReportExport.ToHtml(results, "1.0.51", DateTimeOffset.UtcNow);
         AssertTrue(html.Contains("HashGuard Scan Report", StringComparison.Ordinal));
     }),
-    ("delta scan skips only unchanged clean files when enabled", () =>
+    ("delta scan reuses the cached hash only when enabled and unchanged", () =>
     {
         var sha = new string('a', 64);
-        AssertTrue(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, true, sha));
-        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(false, true, true, sha));
-        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, false, true, sha));
-        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, false, sha));
-        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, true, ""));
-        AssertFalse(HashGuardLogic.ShouldSkipUnchangedCleanFile(true, true, true, null));
+        AssertTrue(HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(true, true, true, sha));
+        AssertFalse(HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(false, true, true, sha));
+        AssertFalse(HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(true, false, true, sha));
+        AssertFalse(HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(true, true, false, sha));
+        AssertFalse(HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(true, true, true, ""));
+        AssertFalse(HashGuardLogic.ShouldReuseCachedHashForUnchangedFile(true, true, true, null));
+    }),
+    ("aggregate status surfaces provider errors instead of clean", () =>
+    {
+        AssertEqual("detected", HashGuardLogic.ClassifyAggregateStatus(true, [ProviderState.Clean]));
+        AssertEqual("clean", HashGuardLogic.ClassifyAggregateStatus(false, [ProviderState.Clean, ProviderState.Error]));
+        AssertEqual("error", HashGuardLogic.ClassifyAggregateStatus(false, [ProviderState.Error]));
+        AssertEqual("error", HashGuardLogic.ClassifyAggregateStatus(false, [ProviderState.Error, ProviderState.NotChecked]));
+        AssertEqual("unknown", HashGuardLogic.ClassifyAggregateStatus(false, [ProviderState.Deferred]));
+        AssertEqual("unknown", HashGuardLogic.ClassifyAggregateStatus(false, []));
+        AssertEqual("detected", HashGuardLogic.ClassifyAggregateStatus(false, [ProviderState.Detected]));
     }),
     ("hash cache flush is due after 25 mutations or 5 seconds", () =>
     {
