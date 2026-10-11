@@ -131,7 +131,14 @@ public sealed partial class MainForm : Form
             var errors = unresolved.Count(result => result.Status == "error");
             var highRisk = unresolved.Count(result => result.RiskScore >= 70);
             var newText = newSinceLast > 0 ? $", {newSinceLast} new since last scan" : "";
-            statusLabel.Text = $"Done. {unresolved.Count} action needed, {alerts.Count} detections, {unknown} unknown/uploaded, {errors} errors{newText}. Cache: {hashCache.Count} hashes.";
+            var summaryParts = new[]
+            {
+                Plural(unresolved.Count, "item") + " need action",
+                Plural(alerts.Count, "detection"),
+                Plural(unknown, "unknown file"),
+                Plural(errors, "error"),
+            };
+            statusLabel.Text = $"Done: {string.Join(" · ", summaryParts)}{newText} · cache {hashCache.Count:N0} hashes";
             _ = SendTelemetryEventAsync(
                 "scan_complete",
                 HashGuardLogic.BuildScanCompleteTelemetry(results.Count, unresolved.Count, alerts.Count, unknown, errors));

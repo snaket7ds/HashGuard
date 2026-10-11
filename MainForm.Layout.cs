@@ -206,7 +206,7 @@ public sealed partial class MainForm : Form
         tiles.Controls.Add(CreateFeatureTile("Process Security", "Running apps", "Protected"), 0, 0);
         tiles.Controls.Add(CreateReputationTile(), 1, 0);
         tiles.Controls.Add(CreateQuarantineTile(), 0, 1);
-        tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "Open", ShowScanDetailsDialogSafe), 1, 1);
+        tiles.Controls.Add(CreateFeatureTile("Activity Log", "Scan history", "View history", ShowScanDetailsDialogSafe), 1, 1);
         overview.Controls.Add(tiles, 1, 0);
 
         ConfigureResultsView(resultsView);
@@ -604,8 +604,8 @@ public sealed partial class MainForm : Form
             view.Columns.Add("Status", 112);
             view.Columns.Add("Risk", 92);
             view.Columns.Add("Trust / Publisher", 240);
-            view.Columns.Add("Mal", 0);
-            view.Columns.Add("Susp", 0);
+            view.Columns.Add("Malicious", 0);
+            view.Columns.Add("Suspicious", 0);
             view.Columns.Add("Process", 190);
             view.Columns.Add("PID(s)", 0);
             view.Columns.Add("SHA-256", 0);
@@ -617,8 +617,8 @@ public sealed partial class MainForm : Form
             view.Columns.Add("Status", 100);
             view.Columns.Add("Risk", 92);
             view.Columns.Add("Trust", 240);
-            view.Columns.Add("Mal", 52);
-            view.Columns.Add("Susp", 52);
+            view.Columns.Add("Malicious", 84);
+            view.Columns.Add("Suspicious", 84);
             view.Columns.Add("Process", 170);
             view.Columns.Add("PID(s)", 95);
             view.Columns.Add("SHA-256", 420);

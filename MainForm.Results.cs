@@ -311,6 +311,9 @@ public sealed partial class MainForm : Form
         view.Columns[ColNotes].Width = Math.Min(420, Math.Max(300, view.Columns[ColNotes].Width));
     }
 
+    private static string Plural(int count, string noun) =>
+        count == 1 ? $"{count} {noun}" : $"{count} {noun}s";
+
     private static void ApplyResultRowColor(ListViewItem item)
     {
         item.BackColor = Color.Empty;
@@ -327,14 +330,15 @@ public sealed partial class MainForm : Form
         {
             item.BackColor = Color.FromArgb(253, 232, 232);
         }
+        else if (status == "error")
+        {
+            // Neutral, not red: a file that could not be read is not a detection.
+            item.BackColor = Color.FromArgb(238, 240, 242);
+        }
         else if (riskText.StartsWith("Medium", StringComparison.OrdinalIgnoreCase)
             || status is "unknown" or "uploaded" or "limited access")
         {
             item.BackColor = Color.FromArgb(255, 247, 214);
-        }
-        else if (status == "error")
-        {
-            item.BackColor = Color.FromArgb(248, 215, 218);
         }
     }
 
