@@ -218,6 +218,38 @@ var tests = new (string Name, Action Test)[]
         var asset = new GitHubAsset { Digest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" };
         AssertEqual("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", UpdateVerifier.GetReleaseAssetSha256(asset));
     }),
+    ("release signature verifies only the signed file and the right key", () =>
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "hashguard-sig-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var exe = Path.Combine(dir, "HashGuard.exe");
+            File.WriteAllBytes(exe, System.Text.Encoding.UTF8.GetBytes("genuine release bytes"));
+            using var signer = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+            var publicKey = Convert.ToBase64String(signer.ExportSubjectPublicKeyInfo());
+            var hash = System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(exe));
+            var signature = signer.SignHash(hash, System.Security.Cryptography.DSASignatureFormat.Rfc3279DerSequence);
+
+            AssertTrue(UpdateVerifier.VerifyDetachedSignature(exe, signature, publicKey, out _));
+
+            File.WriteAllBytes(exe, System.Text.Encoding.UTF8.GetBytes("tampered release bytes"));
+            AssertFalse(UpdateVerifier.VerifyDetachedSignature(exe, signature, publicKey, out _));
+
+            File.WriteAllBytes(exe, System.Text.Encoding.UTF8.GetBytes("genuine release bytes"));
+            using var other = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+            var otherKey = Convert.ToBase64String(other.ExportSubjectPublicKeyInfo());
+            AssertFalse(UpdateVerifier.VerifyDetachedSignature(exe, signature, otherKey, out _));
+
+            AssertFalse(UpdateVerifier.VerifyDetachedSignature(exe, signature, "", out var noKeyDetail));
+            AssertTrue(noKeyDetail.Contains("No release signing key"));
+            AssertFalse(UpdateVerifier.VerifyDetachedSignature(exe, Array.Empty<byte>(), publicKey, out _));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }),
     ("config path is next to the app (not LocalAppData)", () =>
     {
         var config = Path.GetFullPath(AppPaths.GetConfigDirectory());
