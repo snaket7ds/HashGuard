@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.70 - 2026-10-11
+
+- **Clearer results.** Error rows are neutral gray instead of red, so a file that could not be read no longer looks like a detection. Column headers now read "Malicious" and "Suspicious".
+- **Clearer summary.** The scan summary reads "Done: 3 items need action · 1 detection · ..." with correct plurals, and shows the cache size with separators.
+- **Activity Log tile** now says "View history" instead of "Open".
+- **Cleanup.** Removed the unused Hash Cache tile code, the UI mockup screenshots, and the stale `RECOMMENDATIONS.md` and `GITHUB_RELEASES.md` notes.
+- **Version 1.0.68 was removed.** It was published without a signature and cannot update in-app. Install v1.0.70 instead.
+
 ## v1.0.69 - 2026-10-11
 
 - **Release signing key embedded.** Updates now install only when `HashGuard.exe.sig` verifies against the release public key. This is the first build that can install signed updates. v1.0.68 shipped with an empty key and cannot update in-app; install v1.0.69 by hand.

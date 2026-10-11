@@ -101,7 +101,6 @@ HashGuard.exe
 HashGuard.exe.sha256
 ```
 
-See [GITHUB_RELEASES.md](GITHUB_RELEASES.md) for release asset details.
 
 ## License
 

@@ -39,7 +39,6 @@ public sealed partial class MainForm : Form
         statusSubtitle.ForeColor = palette.MutedText;
         reputationStateLabel.ForeColor = palette.Text;
         UpdateReputationTile();
-        UpdateHashCacheTile();
         UpdateQuarantineTile();
         statusDot.Invalidate();
     }

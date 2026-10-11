@@ -262,7 +262,6 @@ public sealed partial class MainForm : Form
             .OrderBy(line => line, StringComparer.OrdinalIgnoreCase)
             .ToList();
         UpdateReputationTile();
-        UpdateHashCacheTile();
         UpdateQuarantineTile();
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();

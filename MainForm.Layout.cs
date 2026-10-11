@@ -335,7 +335,6 @@ public sealed partial class MainForm : Form
         statusLabel.Text = "Ready";
         UpdateResultsEmptyState();
         UpdateReputationTile();
-        UpdateHashCacheTile();
         UpdateQuarantineTile();
         ApplyAppTheme(this);
     }
@@ -407,23 +406,6 @@ public sealed partial class MainForm : Form
         reputationStateLabel.ForeColor = Color.FromArgb(35, 35, 35);
         reputationProtectionLabel.Text = enabled.Count == 0 ? "Not protected" : "Protected";
         reputationProtectionLabel.ForeColor = enabled.Count == 0 ? DangerRed : SuccessGreen;
-    }
-
-    private Panel CreateHashCacheTile()
-    {
-        var tile = CreateSoftCardPanel();
-        tile.Margin = new Padding(4);
-        tile.Padding = new Padding(14);
-
-        ConfigureTileStateLabel(hashCacheStateLabel, SuccessGreen);
-        var layout = CreateTileTextLayout(
-            CreateTileTitle("Hash Cache"),
-            CreateTileDetail("Repeat lookups"),
-            hashCacheStateLabel);
-        layout.BackColor = Color.Transparent;
-        tile.Controls.Add(layout);
-        WireClick(tile, OpenHashCacheFolder);
-        return tile;
     }
 
     private Panel CreateQuarantineTile()
@@ -545,12 +527,6 @@ public sealed partial class MainForm : Form
         label.Margin = new Padding(0);
         label.TextAlign = ContentAlignment.MiddleLeft;
         label.AutoEllipsis = true;
-    }
-
-    private void UpdateHashCacheTile()
-    {
-        hashCacheStateLabel.Text = hashCacheEnabledBox.Checked ? "Enabled" : "Disabled";
-        hashCacheStateLabel.ForeColor = hashCacheEnabledBox.Checked ? SuccessGreen : DangerRed;
     }
 
     private void UpdateQuarantineTile()

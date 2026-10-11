@@ -104,7 +104,6 @@ public sealed partial class MainForm : Form
     private readonly Label actionLabel = new() { Text = "Needs review: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label reputationStateLabel = new();
     private readonly Label reputationProtectionLabel = new();
-    private readonly Label hashCacheStateLabel = new();
     private readonly Label quarantineCountLabel = new();
     private readonly Label quarantineStateLabel = new();
     private readonly NotifyIcon trayIcon = new();

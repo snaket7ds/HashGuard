@@ -65,7 +65,6 @@ public sealed partial class MainForm : Form
         hashCacheEnabledBox.Checked = appSettings.HashCacheEnabled;
         deltaScanBox.Checked = appSettings.DeltaScanEnabled;
         UpdateReputationTile();
-        UpdateHashCacheTile();
         UpdateQuarantineTile();
         freeApiLimitBox.Checked = appSettings.FreeApiLimits;
         uploadUnknownBox.Checked = appSettings.UploadUnknown;
