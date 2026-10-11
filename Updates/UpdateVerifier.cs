@@ -34,10 +34,10 @@ internal static class UpdateVerifier
 
     /// <summary>
     /// Public key that signs release builds: ECDSA P-256, SubjectPublicKeyInfo DER, base64.
-    /// It is not secret. It stays empty until the release key is generated, and while it is
-    /// empty no update installs (fail closed). See scripts/sign-release.sh.
+    /// It is not secret. While it is empty, no update installs (fail closed).
+    /// See scripts/sign-release.sh.
     /// </summary>
-    internal const string ReleasePublicKeyBase64 = "";
+    internal const string ReleasePublicKeyBase64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEfwGA7L+9aMdccFlReclKz1IghW7PSLqZszoTrLPW86cMkJaAqQsBWowxqhqIQBWBWzp53Qn1lBaE/aoDDTm1Cw==";
 
     /// <summary>
     /// Checks a detached release signature: the file's SHA-256 must verify against an

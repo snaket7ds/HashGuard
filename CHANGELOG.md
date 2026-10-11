@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.69 - 2026-10-11
+
+- **Release signing key embedded.** Updates now install only when `HashGuard.exe.sig` verifies against the release public key. This is the first build that can install signed updates. v1.0.68 shipped with an empty key and cannot update in-app; install v1.0.69 by hand.
+
 ## v1.0.68 - 2026-10-11
 
 - **Signed updates.** An update installs only when the release includes `HashGuard.exe.sig` and it verifies against the release public key (ECDSA P-256). The SHA-256 check alone cannot catch a tampered release, because its expected hash comes from the same GitHub release. `scripts/sign-release.sh` makes the signature.
