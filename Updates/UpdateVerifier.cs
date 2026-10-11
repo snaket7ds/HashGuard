@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace HashGuardScanner;
@@ -29,6 +30,60 @@ internal static class UpdateVerifier
         return asset.Digest.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             ? asset.Digest[prefix.Length..].Trim()
             : "";
+    }
+
+    /// <summary>
+    /// Public key that signs release builds: ECDSA P-256, SubjectPublicKeyInfo DER, base64.
+    /// It is not secret. It stays empty until the release key is generated, and while it is
+    /// empty no update installs (fail closed). See scripts/sign-release.sh.
+    /// </summary>
+    internal const string ReleasePublicKeyBase64 = "";
+
+    /// <summary>
+    /// Checks a detached release signature: the file's SHA-256 must verify against an
+    /// ECDSA P-256 signature (DER) made with the release key. The SHA-256 check alone
+    /// cannot tell a genuine release from a tampered one, because the expected hash
+    /// comes from the same GitHub release as the binary.
+    /// </summary>
+    public static bool VerifyDetachedSignature(string filePath, byte[] signatureDer, string publicKeyBase64, out string detail)
+    {
+        detail = "";
+        if (string.IsNullOrWhiteSpace(publicKeyBase64))
+        {
+            detail = "No release signing key is configured in this build; refusing the update.";
+            return false;
+        }
+
+        if (signatureDer.Length == 0)
+        {
+            detail = "Release signature is empty.";
+            return false;
+        }
+
+        try
+        {
+            using var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(publicKeyBase64), out _);
+            byte[] hash;
+            using (var stream = File.OpenRead(filePath))
+            {
+                hash = SHA256.HashData(stream);
+            }
+
+            if (!ecdsa.VerifyHash(hash, signatureDer, DSASignatureFormat.Rfc3279DerSequence))
+            {
+                detail = "Release signature does not match the downloaded file.";
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is CryptographicException or FormatException or IOException)
+        {
+            detail = $"Release signature could not be checked: {ex.GetType().Name}.";
+            return false;
+        }
+
+        detail = "Release signature verified.";
+        return true;
     }
 
     public static string? TryGetPublisher(string path)

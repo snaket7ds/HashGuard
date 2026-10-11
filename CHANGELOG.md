@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.68 - 2026-10-11
+
+- **Signed updates.** An update installs only when the release includes `HashGuard.exe.sig` and it verifies against the release public key (ECDSA P-256). The SHA-256 check alone cannot catch a tampered release, because its expected hash comes from the same GitHub release. `scripts/sign-release.sh` makes the signature.
+- **Fail closed until the key is set.** The release public key (`ReleasePublicKeyBase64`) is empty in this build, so no update installs until it is generated and added.
+- **Maintenance.** `MainForm.cs` is split into 18 feature partials (layout, theme, settings, scanning, providers, results, quarantine, ignore, reports, and others). The methods were moved without changes.
+
 ## v1.0.67 - 2026-10-04
 
 - **Clarify the delta-scan option.** The v1.0.66 setting was labelled "skip unchanged clean files", but the unchanged-skip has been on since v1.0.57; the option actually controls whether an unchanged file whose clean result has *aged out* reuses its cached hash instead of being re-read. Renamed to "reuse cached hash for unchanged files" and the helper now encodes that exact rule (and is wired into the scan path instead of only tests).

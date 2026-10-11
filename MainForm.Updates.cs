@@ -81,6 +81,14 @@ public sealed partial class MainForm : Form
                 throw new InvalidOperationException("GitHub release is missing SHA-256 verification. Add a HashGuard.exe.sha256 release asset.");
             }
 
+            // A release must carry a detached signature from the release key. Without one
+            // the update is refused, because the SHA-256 above comes from the same release.
+            var sigAsset = release.Assets.FirstOrDefault(asset => string.Equals(asset.Name, "HashGuard.exe.sig", StringComparison.OrdinalIgnoreCase));
+            if (sigAsset is null || string.IsNullOrWhiteSpace(sigAsset.BrowserDownloadUrl))
+            {
+                throw new InvalidOperationException("GitHub release is missing HashGuard.exe.sig. Unsigned updates are refused.");
+            }
+
             if (automatic)
             {
                 if (!IsRunningElevated())
@@ -122,6 +130,20 @@ public sealed partial class MainForm : Form
             {
                 File.Delete(downloadPath);
                 throw new InvalidOperationException("Downloaded update hash did not match the GitHub release checksum. Update was not installed.");
+            }
+
+            var signaturePath = downloadPath + ".sig";
+            await DownloadGitHubUrlToFileAsync(http, sigAsset.BrowserDownloadUrl, signaturePath, "download the HashGuard.exe.sig asset");
+            var signatureOk = UpdateVerifier.VerifyDetachedSignature(
+                downloadPath,
+                await File.ReadAllBytesAsync(signaturePath),
+                UpdateVerifier.ReleasePublicKeyBase64,
+                out var signatureDetail);
+            File.Delete(signaturePath);
+            if (!signatureOk)
+            {
+                File.Delete(downloadPath);
+                throw new InvalidOperationException($"Update signature check failed. {signatureDetail} Update was not installed.");
             }
 
             if (!UpdateVerifier.PublisherMatchesCurrentBuild(Application.ExecutablePath, downloadPath, out var publisherDetail))
