@@ -400,6 +400,7 @@ public sealed partial class MainForm : Form
         var unsigned = results.Count(result => result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase));
         summaryLabel.Text = $"Items scanned: {results.Count}";
         actionLabel.Text = $"Needs review: {actionsNeeded}";
+        UpdateReviewCount(actionsNeeded);
         toolTip.SetToolTip(summaryLabel, $"{results.Count} scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown");
         toolTip.SetToolTip(actionLabel, $"{actionsNeeded} file(s) need action | {alerts} detections | {highRisk} high risk | {errors} errors");
         if (scanCancellation is not null || scanGate.IsBusy)
