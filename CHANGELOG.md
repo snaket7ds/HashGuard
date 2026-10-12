@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.0.71 - 2026-10-11
+
+- **Refreshed main window.** Same layout and the same buttons in the same order, with a calmer, cleaner look:
+  - Neutral gray background with rounded white cards and soft shadows instead of boxed borders. Brand green stays for the badge, the app mark and Scan Now; green text is darker so it is easier to read.
+  - Simpler header: the green strip and the tagline are gone, Settings is a gear icon, and the update button reads "Check for Updates".
+  - The status badge is a solid circle inside a soft halo of the same color. It is still static, with no animation.
+  - Tiles have icons. Only the tiles you can click (Quarantine, Activity Log) show a chevron and highlight on hover and press.
+  - Review Queue has a count badge next to its title, which turns red when items need a decision. Its buttons are grouped (open, ignore, act) with Quarantine in red; Export and Activity Log sit on the right.
+  - Stop Scan is a plain outline button instead of red, because stopping a scan is not destructive.
+  - The status bar is slimmer, with a thin progress line along its top edge.
+- Dark mode uses the same layout with matching colors.
+
 ## v1.0.70 - 2026-10-11
 
 - **Clearer results.** Error rows are neutral gray instead of red, so a file that could not be read no longer looks like a detection. Column headers now read "Malicious" and "Suspicious".
