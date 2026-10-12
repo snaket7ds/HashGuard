@@ -59,14 +59,14 @@ public sealed partial class MainForm : Form
     private static readonly Color SuccessGreen = Color.FromArgb(76, 175, 40);
     private static readonly Color AttentionYellow = Color.FromArgb(255, 193, 7);
     private static readonly Color DangerRed = Color.FromArgb(211, 47, 47);
-    private static readonly Color SoftBorder = Color.FromArgb(220, 226, 232);
-    private static readonly Color SoftAppBack = Color.FromArgb(242, 245, 247);
+    private static readonly Color SoftBorder = Color.FromArgb(214, 219, 225);
+    private static readonly Color SoftAppBack = Color.FromArgb(242, 243, 245);
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
-    private readonly Button scanButton = new() { Text = "Scan Now", Width = 172, Height = 42, BackColor = BrandGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 10, FontStyle.Bold) };
-    private readonly Button updateButton = new() { Text = "Update", Width = 86, Height = 40, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
-    private readonly Button settingsButton = new() { Text = "\uE713", Width = 44, Height = 40, Font = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular) };
+    private readonly Button scanButton = new() { Text = "Scan Now", Width = 128, Height = 36, BackColor = BrandGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular) };
+    private readonly Button updateButton = new() { Text = "Check for Updates", Width = 140, Height = 36, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
+    private readonly Button settingsButton = new() { Text = "\uE713", Width = 36, Height = 36, Font = new Font("Segoe MDL2 Assets", 11, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
     private readonly CheckBox rightClickScanBox = new() { Text = "Add Explorer right-click scan", AutoSize = true };
     private readonly CheckBox startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };
@@ -98,10 +98,11 @@ public sealed partial class MainForm : Form
     private readonly Label statusLabel = new() { AutoEllipsis = false };
     private readonly Label countLabel = new() { AutoSize = true };
     private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "idle" };
-    private readonly Label statusTitle = new() { Text = "Not scanned yet", AutoSize = true, Font = new Font("Segoe UI Semibold", 18, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label statusTitle = new() { Text = "Not scanned yet", AutoSize = true, Font = new Font("Segoe UI Semibold", 19, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label statusSubtitle = new() { Text = "Run a scan to check running apps and local trust signals.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label summaryLabel = new() { Text = "Items scanned: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
-    private readonly Label actionLabel = new() { Text = "Needs review: 0", AutoSize = false, Font = new Font("Segoe UI", 10, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly PillLabel summaryLabel = new() { Text = "Items scanned: 0", AutoSize = false, Font = new Font("Segoe UI Semibold", 10, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft };
+    private readonly PillLabel actionLabel = new() { Text = "Needs review: 0", AutoSize = false, Font = new Font("Segoe UI Semibold", 10, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft };
+    private readonly PillLabel reviewCountLabel = new() { Text = "0", AutoSize = true, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(8, 2, 8, 2), Radius = 10 };
     private readonly Label reputationStateLabel = new();
     private readonly Label reputationProtectionLabel = new();
     private readonly Label quarantineCountLabel = new();
@@ -313,16 +314,21 @@ public sealed partial class MainForm : Form
         scanButton.ForeColor = Color.FromArgb(20, 40, 10);
         scanButton.FlatAppearance.BorderSize = 0;
         scanButton.FlatAppearance.BorderColor = BrandGreenDark;
+        scanButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(116, 192, 34);
+        scanButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(104, 176, 30);
         scanButton.FlatStyle = FlatStyle.Flat;
     }
 
     private void SetScanButtonStopStyle()
     {
+        // Stopping is not destructive, so it is a quiet outline button rather than red.
         scanButton.Text = "Stop Scan";
-        scanButton.BackColor = DangerRed;
-        scanButton.ForeColor = Color.White;
-        scanButton.FlatAppearance.BorderSize = 0;
-        scanButton.FlatAppearance.BorderColor = DangerRed;
+        scanButton.BackColor = activePalette.HeaderButtonBack;
+        scanButton.ForeColor = activePalette.Text;
+        scanButton.FlatAppearance.BorderSize = 1;
+        scanButton.FlatAppearance.BorderColor = activePalette.HeaderButtonBorder;
+        scanButton.FlatAppearance.MouseOverBackColor = activePalette.SurfaceHover;
+        scanButton.FlatAppearance.MouseDownBackColor = activePalette.SurfacePressed;
     }
 
     private void SetDashboardState(string title, string subtitle, bool actionNeeded)

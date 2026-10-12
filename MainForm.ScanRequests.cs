@@ -224,6 +224,7 @@ public sealed partial class MainForm : Form
         statusLabel.Text = $"Scanning selected file: {FormatDisplayPath(path)}";
         summaryLabel.Text = "Preparing scan";
         actionLabel.Text = "Needs review: 0";
+        UpdateReviewCount(0);
         SetDashboardState("Scanning", "Checking the selected file with enabled reputation services.", false);
 
         try

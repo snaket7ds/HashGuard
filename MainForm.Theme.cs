@@ -19,9 +19,12 @@ namespace HashGuardScanner;
 
 public sealed partial class MainForm : Form
 {
+    private ThemePalette activePalette = ThemePalette.Light;
+
     private void ApplyAppTheme(Control root)
     {
         var palette = GetCurrentPalette();
+        activePalette = palette;
         ApplyTheme(root, palette, inHeader: false);
         if (scanCancellation is null)
         {
@@ -34,10 +37,9 @@ public sealed partial class MainForm : Form
         resultsView.BackColor = palette.Surface;
         resultsView.ForeColor = palette.Text;
         resultsEmptyLabel.ForeColor = palette.MutedText;
-        summaryLabel.BackColor = palette.PillBack;
-        actionLabel.BackColor = palette.PillBack;
+        summaryLabel.PillColor = palette.PillBack;
         statusSubtitle.ForeColor = palette.MutedText;
-        reputationStateLabel.ForeColor = palette.Text;
+        UpdateReviewCount();
         UpdateReputationTile();
         UpdateQuarantineTile();
         statusDot.Invalidate();
@@ -96,7 +98,6 @@ public sealed partial class MainForm : Form
     {
         var header = inHeader || control.Tag as string == "header";
         var brandStrip = control.Tag as string == "brand-strip";
-        var softCard = control.Tag as string == "soft-card";
         switch (control)
         {
             case Form:
@@ -127,6 +128,45 @@ public sealed partial class MainForm : Form
                 button.FlatAppearance.BorderColor = header ? palette.HeaderButtonBorder : palette.Border;
                 button.BackColor = header ? palette.HeaderButtonBack : palette.ButtonBack;
                 button.ForeColor = header ? palette.HeaderText : palette.Text;
+                // Feedback on press, not on release.
+                button.FlatAppearance.MouseOverBackColor = palette.SurfaceHover;
+                button.FlatAppearance.MouseDownBackColor = palette.SurfacePressed;
+                if (button.Tag as string == "danger-button")
+                {
+                    button.ForeColor = palette.DangerText;
+                    button.FlatAppearance.BorderColor = Color.FromArgb(110, palette.DangerText);
+                }
+                else if (button.Tag as string == "quiet-button")
+                {
+                    button.FlatAppearance.BorderSize = 0;
+                    button.BackColor = palette.Surface;
+                    button.ForeColor = palette.MutedText;
+                }
+                break;
+            case CardPanel card:
+                card.BackColor = palette.AppBack;
+                card.SurfaceColor = palette.Surface;
+                card.HoverColor = palette.SurfaceHover;
+                card.PressedColor = palette.SurfacePressed;
+                card.EdgeColor = palette.Hairline;
+                card.ShadowColor = palette.CardShadow;
+                card.ForeColor = palette.Text;
+                card.Invalidate();
+                break;
+            case IconBadge badge:
+                badge.TintColor = (badge.Tag as string) switch
+                {
+                    "brand" => BrandGreen,
+                    "neutral" => palette.NeutralTint,
+                    _ => palette.AccentTint,
+                };
+                badge.GlyphColor = (badge.Tag as string) switch
+                {
+                    "brand" => Color.FromArgb(18, 38, 10),
+                    "neutral" => palette.MutedText,
+                    _ => palette.AccentText,
+                };
+                badge.Invalidate();
                 break;
             case CheckBox:
             case Label:
@@ -144,10 +184,30 @@ public sealed partial class MainForm : Form
                     break;
                 }
 
-                if (control.Tag as string is "header-sub")
+                if (control.Tag as string is "header-sub" or "muted")
                 {
                     control.ForeColor = palette.MutedText;
                     control.BackColor = Color.Transparent;
+                    break;
+                }
+
+                if (control.Tag as string is "tile-ok")
+                {
+                    control.ForeColor = palette.AccentText;
+                    control.BackColor = Color.Transparent;
+                    break;
+                }
+
+                if (control.Tag as string is "chevron")
+                {
+                    control.ForeColor = palette.SubtleText;
+                    control.BackColor = Color.Transparent;
+                    break;
+                }
+
+                if (control is PillLabel)
+                {
+                    control.ForeColor = palette.Text;
                     break;
                 }
 
@@ -174,6 +234,19 @@ public sealed partial class MainForm : Form
                     break;
                 }
 
+                if (control.Tag as string == "separator")
+                {
+                    control.BackColor = palette.Border;
+                    break;
+                }
+
+                if (control.Tag as string == "footer")
+                {
+                    control.BackColor = palette.HeaderBack;
+                    control.ForeColor = palette.Text;
+                    break;
+                }
+
                 if (header)
                 {
                     control.BackColor = palette.HeaderBack;
@@ -181,19 +254,12 @@ public sealed partial class MainForm : Form
                     break;
                 }
 
-                if (softCard)
-                {
-                    control.BackColor = palette.Surface;
-                    control.ForeColor = palette.Text;
-                    break;
-                }
-
                 // Keep soft app background on root layout panels.
-                if (control.BackColor == SoftAppBack || control.BackColor == ThemePalette.Light.AppBack || control.BackColor == Color.FromArgb(246, 247, 249))
+                if (control.BackColor == SoftAppBack || control.BackColor == ThemePalette.Light.AppBack || control.BackColor == ThemePalette.Dark.AppBack || control.BackColor == Color.FromArgb(246, 247, 249))
                 {
                     control.BackColor = palette.AppBack;
                 }
-                else if (control.BackColor == Color.White || control.BackColor == ThemePalette.Light.Surface)
+                else if (control.BackColor == Color.White || control.BackColor == ThemePalette.Light.Surface || control.BackColor == ThemePalette.Dark.Surface)
                 {
                     control.BackColor = palette.Surface;
                 }
