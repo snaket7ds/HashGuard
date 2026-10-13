@@ -8,6 +8,7 @@ internal sealed class QuotaTracker
     private const int MinuteLimit = 4;
     private QuotaState state = new();
     private bool loaded;
+    private readonly SemaphoreSlim saveGate = new(1, 1);
 
     /// <summary>Load free-API quota state once per process; keep updates in memory.</summary>
     public async Task EnsureLoadedAsync()
@@ -87,9 +88,19 @@ internal sealed class QuotaTracker
 
     private async Task SaveAsync()
     {
-        var path = AppPaths.GetQuotaPath();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, state, new JsonSerializerOptions { WriteIndented = true });
+        // Write one at a time so overlapping reservations do not collide on the file, and serialize
+        // synchronously so a reservation made during the write cannot change the list mid-write.
+        await saveGate.WaitAsync();
+        try
+        {
+            var json = JsonSerializer.SerializeToUtf8Bytes(state, new JsonSerializerOptions { WriteIndented = true });
+            var path = AppPaths.GetQuotaPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            await File.WriteAllBytesAsync(path, json);
+        }
+        finally
+        {
+            saveGate.Release();
+        }
     }
 }

@@ -12,6 +12,8 @@ internal sealed class HashCache
     private int unsavedMutations;
     private DateTimeOffset lastSaveUtc = DateTimeOffset.MinValue;
     private string scanLogImportSignature = "";
+    // Lookups for several files can overlap, so two flushes can be due at once; saves run one at a time.
+    private readonly SemaphoreSlim saveGate = new(1, 1);
 
     public const int FlushEveryMutations = 25;
     public static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(5);
@@ -371,12 +373,26 @@ internal sealed class HashCache
 
     public async Task SaveAsync()
     {
-        await WriteJsonAtomicAsync(AppPaths.GetHashCachePath(), entries);
-        await WriteJsonAtomicAsync(AppPaths.GetFileStateCachePath(), fileStates);
+        await saveGate.WaitAsync();
+        try
+        {
+            // Snapshot first: other lookups keep adding entries while the write awaits.
+            var entriesSnapshot = new Dictionary<string, CacheEntry>(entries, StringComparer.OrdinalIgnoreCase);
+            var fileStatesSnapshot = new Dictionary<string, FileStateEntry>(fileStates, StringComparer.OrdinalIgnoreCase);
+            var mutationsAtSnapshot = unsavedMutations;
 
-        dirty = false;
-        unsavedMutations = 0;
-        lastSaveUtc = DateTimeOffset.UtcNow;
+            await WriteJsonAtomicAsync(AppPaths.GetHashCachePath(), entriesSnapshot);
+            await WriteJsonAtomicAsync(AppPaths.GetFileStateCachePath(), fileStatesSnapshot);
+
+            // Changes made during the write are not on disk yet; leave them dirty.
+            unsavedMutations = Math.Max(0, unsavedMutations - mutationsAtSnapshot);
+            dirty = unsavedMutations > 0;
+            lastSaveUtc = DateTimeOffset.UtcNow;
+        }
+        finally
+        {
+            saveGate.Release();
+        }
     }
 
     private static async Task WriteJsonAtomicAsync<T>(string path, T value)

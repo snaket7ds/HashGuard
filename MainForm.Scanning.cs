@@ -84,25 +84,19 @@ public sealed partial class MainForm : Form
             await EnsureScanStorageReadyAsync(token).ConfigureAwait(true);
 
             BeginScanUiBatch();
-            for (var index = 0; index < paths.Count; index++)
-            {
-                token.ThrowIfCancellationRequested();
-                var path = paths[index];
-                var result = await ScanPathAsync(http, path, grouped[path], token);
-                results.Add(result);
-                AddResultRow(result);
-                scannedCount = index + 1;
-                PulseScanUi(scannedCount, paths.Count, path);
-                await hashCache.FlushIfDueAsync().ConfigureAwait(true);
-
-                if (virusTotalEnabledBox.Checked
-                    && index + 1 < paths.Count
-                    && delayBox.Value > 0
-                    && IssuedVirusTotalRequest(result))
+            await OrderedConcurrency.ForEachAsync(
+                paths,
+                AppConstants.MaxConcurrentFileLookups,
+                path => ScanPathAsync(http, path, grouped[path], token),
+                async (index, result) =>
                 {
-                    await Task.Delay(TimeSpan.FromSeconds((double)delayBox.Value), token);
-                }
-            }
+                    results.Add(result);
+                    AddResultRow(result);
+                    scannedCount = index + 1;
+                    PulseScanUi(scannedCount, paths.Count, paths[index]);
+                    await hashCache.FlushIfDueAsync().ConfigureAwait(true);
+                },
+                token);
 
             completedScan = true;
             processMonitorTimer.Start();
@@ -274,23 +268,17 @@ public sealed partial class MainForm : Form
             await EnsureScanStorageReadyAsync().ConfigureAwait(true);
 
             BeginScanUiBatch();
-            for (var index = 0; index < newPaths.Count; index++)
-            {
-                var path = newPaths[index];
-                var result = await ScanPathAsync(http, path, grouped[path]);
-                results.Add(result);
-                AddResultRow(result);
-                PulseScanUi(index + 1, newPaths.Count, path, "Monitoring scan");
-                await hashCache.FlushIfDueAsync().ConfigureAwait(true);
-
-                if (virusTotalEnabledBox.Checked
-                    && index + 1 < newPaths.Count
-                    && delayBox.Value > 0
-                    && IssuedVirusTotalRequest(result))
+            await OrderedConcurrency.ForEachAsync(
+                newPaths,
+                AppConstants.MaxConcurrentFileLookups,
+                path => ScanPathAsync(http, path, grouped[path]),
+                async (index, result) =>
                 {
-                    await Task.Delay(TimeSpan.FromSeconds((double)delayBox.Value));
-                }
-            }
+                    results.Add(result);
+                    AddResultRow(result);
+                    PulseScanUi(index + 1, newPaths.Count, newPaths[index], "Monitoring scan");
+                    await hashCache.FlushIfDueAsync().ConfigureAwait(true);
+                });
 
             var unresolved = results.Where(ResultNeedsAction).ToList();
             var alerts = unresolved.Where(result => result.IsAlert).ToList();

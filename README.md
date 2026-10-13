@@ -5,7 +5,7 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 ## What It Does
 
 - Scans running process executable files.
-- Adds an optional Windows Explorer right-click action for scanning a single file.
+- Adds an optional Windows Explorer right-click action for scanning selected files.
 - Can hash-scan files you open or select in File Explorer, while skipping common picture, video, audio, and camera/raw media files.
 - Checks file reputation using VirusTotal, MetaDefender Cloud, and Team Cymru Malware Hash Registry when enabled.
 - Caches clean hashes locally to reduce repeat lookups.
@@ -50,7 +50,7 @@ Open settings inside the app to configure:
 - Automatic update checks
 - Request delay and timeout values
 
-Settings are stored in the local `config` folder. Scan logs are stored in `logs`.
+Settings are stored in the local `config` folder. Scan logs are stored in `logs`. If the app folder is read-only (for example under Program Files without running elevated), both move to `%LocalAppData%\HashGuardUserData\`; Settings → Behavior → Version and Updates shows which folder is in use.
 
 ## Anonymous Usage Reporting
 

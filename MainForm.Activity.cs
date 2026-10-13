@@ -452,10 +452,7 @@ public sealed partial class MainForm : Form
     private static string GetLogDirectory() => AppPaths.GetLogDirectory();
 
 
-    private static IEnumerable<string> GetLogDirectories()
-    {
-        yield return AppPaths.GetLogDirectory();
-    }
+    private static IEnumerable<string> GetLogDirectories() => AppPaths.GetLogDirectories();
 
     private static string? ParseStartupScanFile(string[] args)
     {
