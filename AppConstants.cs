@@ -18,6 +18,12 @@ internal static class AppConstants
 
     public const long RegularUploadLimitBytes = 32L * 1024L * 1024L;
 
+    /// <summary>
+    /// Files looked up at once during a scan. VirusTotal calls still go one at a time with the
+    /// configured delay when the free-API limit or a delay is set (see MainForm.Providers).
+    /// </summary>
+    public const int MaxConcurrentFileLookups = 3;
+
     public static readonly TimeSpan CleanCacheMaxAge = TimeSpan.FromDays(7);
     public static readonly TimeSpan UnknownCacheMaxAge = TimeSpan.FromHours(12);
     public static readonly TimeSpan ErrorCacheMaxAge = TimeSpan.FromHours(1);

@@ -17,6 +17,8 @@
     <Compile Include="../../Scanning/FileHash.cs" Link="Scanning/FileHash.cs" />
     <Compile Include="../../Scanning/ScanPathSecurity.cs" Link="Scanning/ScanPathSecurity.cs" />
     <Compile Include="../../Scanning/ScanReportExport.cs" Link="Scanning/ScanReportExport.cs" />
+    <Compile Include="../../Scanning/OrderedConcurrency.cs" Link="Scanning/OrderedConcurrency.cs" />
+    <Compile Include="../../Scanning/ScanRequestQueue.cs" Link="Scanning/ScanRequestQueue.cs" />
     <Compile Include="../../Storage/HashCache.cs" Link="Storage/HashCache.cs" />
     <Compile Include="../../Storage/ScanSnapshotStore.cs" Link="Storage/ScanSnapshotStore.cs" />
     <Compile Include="../../Telemetry/TelemetryClient.cs" Link="Telemetry/TelemetryClient.cs" />

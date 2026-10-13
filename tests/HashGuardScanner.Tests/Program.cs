@@ -399,6 +399,123 @@ var tests = new (string Name, Action Test)[]
         AssertFalse(HashGuardLogic.NeedsAction(result.Status, "High 90", result.Malicious, result.Suspicious));
         AssertTrue(HashGuardLogic.IsIgnoredStatus(result.Status));
     }),
+    ("ordered concurrency keeps input order and caps tasks in flight", () =>
+    {
+        var items = Enumerable.Range(0, 10).ToList();
+        var inFlight = 0;
+        var peak = 0;
+        var seen = new List<int>();
+        OrderedConcurrency.ForEachAsync(
+            items,
+            3,
+            async item =>
+            {
+                var now = Interlocked.Increment(ref inFlight);
+                lock (seen) { peak = Math.Max(peak, now); }
+                // Later items finish first, so ordering cannot come from completion order.
+                await Task.Delay(30 - item * 3);
+                Interlocked.Decrement(ref inFlight);
+                return item * 10;
+            },
+            (index, result) =>
+            {
+                AssertEqual(index * 10, result);
+                seen.Add(result);
+                return Task.CompletedTask;
+            }).GetAwaiter().GetResult();
+        AssertEqual(10, seen.Count);
+        AssertTrue(peak <= 3);
+        AssertTrue(peak >= 2);
+    }),
+    ("ordered concurrency waits for running tasks before rethrowing", () =>
+    {
+        var finished = 0;
+        var threw = false;
+        try
+        {
+            OrderedConcurrency.ForEachAsync(
+                new[] { 0, 1, 2 },
+                3,
+                async item =>
+                {
+                    if (item == 0)
+                    {
+                        throw new InvalidOperationException("boom");
+                    }
+
+                    await Task.Delay(50);
+                    Interlocked.Increment(ref finished);
+                    return item;
+                },
+                (_, _) => Task.CompletedTask).GetAwaiter().GetResult();
+        }
+        catch (InvalidOperationException)
+        {
+            threw = true;
+        }
+
+        AssertTrue(threw);
+        AssertEqual(2, finished);
+    }),
+    ("scan request queue drops duplicates, quick repeats, and overflow", () =>
+    {
+        var queue = new ScanRequestQueue();
+        var now = DateTimeOffset.Parse("2026-10-12T12:00:00Z");
+        AssertEqual(ScanRequestOutcome.Queued, queue.TryEnqueue(@"C:\a.exe", now));
+        AssertEqual(ScanRequestOutcome.Duplicate, queue.TryEnqueue(@"c:\A.EXE", now));
+        AssertEqual(1, queue.DequeueAll().Count);
+        AssertEqual(ScanRequestOutcome.Duplicate, queue.TryEnqueue(@"C:\a.exe", now.AddSeconds(2)));
+        AssertEqual(ScanRequestOutcome.Queued, queue.TryEnqueue(@"C:\a.exe", now.AddSeconds(6)));
+        for (var i = 1; i < ScanRequestQueue.MaxQueued; i++)
+        {
+            AssertEqual(ScanRequestOutcome.Queued, queue.TryEnqueue($@"C:\f{i}.exe", now));
+        }
+
+        AssertEqual(ScanRequestOutcome.Full, queue.TryEnqueue(@"C:\one-too-many.exe", now));
+        var drained = queue.DequeueAll();
+        AssertEqual(ScanRequestQueue.MaxQueued, drained.Count);
+        AssertEqual(@"C:\a.exe", drained[0]);
+        AssertEqual(0, queue.Count);
+    }),
+    ("storage falls back to LocalAppData only when the app folder is read-only", () =>
+    {
+        var writable = AppPaths.ChooseStorageRoot(@"C:\Apps\HashGuard", @"C:\Users\u\AppData\Local", _ => true);
+        AssertFalse(writable.UsingFallback);
+        AssertEqual(@"C:\Apps\HashGuard", writable.Path);
+
+        var readOnly = AppPaths.ChooseStorageRoot(@"C:\Apps\HashGuard", @"C:\Users\u\AppData\Local", _ => false);
+        AssertTrue(readOnly.UsingFallback);
+        AssertTrue(readOnly.Path.EndsWith(AppPaths.FallbackFolderName, StringComparison.Ordinal));
+        AssertFalse(string.Equals(AppPaths.FallbackFolderName, "HashGuard", StringComparison.OrdinalIgnoreCase));
+
+        var noProfile = AppPaths.ChooseStorageRoot(@"C:\Apps\HashGuard", "", _ => false);
+        AssertFalse(noProfile.UsingFallback);
+    }),
+    ("fallback seeding copies settings but not the quarantine manifest", () =>
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"hg-seed-{Guid.NewGuid():N}");
+        var appConfig = Path.Combine(root, "app", "config");
+        var fallbackConfig = Path.Combine(root, "fallback", "config");
+        try
+        {
+            Directory.CreateDirectory(appConfig);
+            File.WriteAllText(Path.Combine(appConfig, AppPaths.AppSettingsFileName), "{\"old\":true}");
+            File.WriteAllText(Path.Combine(appConfig, AppPaths.IgnoredHashesFileName), "[]");
+            File.WriteAllText(Path.Combine(appConfig, AppPaths.QuarantineManifestFileName), "[]");
+            Directory.CreateDirectory(fallbackConfig);
+            File.WriteAllText(Path.Combine(fallbackConfig, AppPaths.IgnoredHashesFileName), "[\"keep\"]");
+
+            AppPaths.SeedFallbackConfig(appConfig, fallbackConfig);
+
+            AssertEqual("{\"old\":true}", File.ReadAllText(Path.Combine(fallbackConfig, AppPaths.AppSettingsFileName)));
+            AssertEqual("[\"keep\"]", File.ReadAllText(Path.Combine(fallbackConfig, AppPaths.IgnoredHashesFileName)));
+            AssertFalse(File.Exists(Path.Combine(fallbackConfig, AppPaths.QuarantineManifestFileName)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }),
 };
 
 var failures = new List<string>();

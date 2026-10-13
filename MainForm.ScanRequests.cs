@@ -140,7 +140,8 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        await ScanSingleFileAsync(startupScanFile);
+        explorerScanRequests.TryEnqueue(startupScanFile, DateTimeOffset.UtcNow);
+        await DrainExplorerScanRequestsAsync();
     }
 
     private async Task ListenForScanRequestsAsync(CancellationToken cancellationToken)
@@ -156,11 +157,22 @@ public sealed partial class MainForm : Form
                 var safePath = ScanPathSecurity.TryNormalizeScanPath(path, out _);
                 if (!string.IsNullOrWhiteSpace(safePath))
                 {
-                    BeginInvoke(async () =>
+                    // Bursts (multi-select, repeated clicks) are de-duplicated and capped here
+                    // instead of each request opening its own scan or "already running" dialog.
+                    var outcome = explorerScanRequests.TryEnqueue(safePath, DateTimeOffset.UtcNow);
+                    if (outcome == ScanRequestOutcome.Queued)
                     {
-                        RestoreFromTray();
-                        await ScanSingleFileAsync(safePath);
-                    });
+                        BeginInvoke(async () =>
+                        {
+                            RestoreFromTray();
+                            await DrainExplorerScanRequestsAsync();
+                        });
+                    }
+                    else if (outcome == ScanRequestOutcome.Full)
+                    {
+                        BeginInvoke(() => statusLabel.Text =
+                            $"Right-click scan queue is full ({ScanRequestQueue.MaxQueued} files). Extra files were not added.");
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -197,35 +209,91 @@ public sealed partial class MainForm : Form
             pipeSecurity);
     }
 
-    private async Task ScanSingleFileAsync(string path)
+    /// <summary>
+    /// Scans queued right-click requests. Requests that arrive together are scanned as one
+    /// batch; requests that arrive while another scan runs wait for it instead of failing.
+    /// </summary>
+    private async Task DrainExplorerScanRequestsAsync()
     {
-        var apiKey = apiKeyBox.Text.Trim();
-        if (!File.Exists(path))
+        if (explorerScanDrainRunning)
         {
-            MessageBox.Show(this, $"File not found:{Environment.NewLine}{path}", "Right-click scan", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
-        if (!scanGate.TryEnter())
+        explorerScanDrainRunning = true;
+        try
         {
-            MessageBox.Show(this, "A scan is already running. Try again when it finishes.", "Right-click scan", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Explorer sends one pipe request per selected file; give the burst a moment to land.
+            await Task.Delay(ExplorerBurstCollectDelay);
+            var waitAnnounced = false;
+            while (explorerScanRequests.Count > 0)
+            {
+                if (!scanGate.TryEnter())
+                {
+                    // Say it once; the running scan keeps updating the status line after that.
+                    if (!waitAnnounced)
+                    {
+                        statusLabel.Text = $"{Plural(explorerScanRequests.Count, "right-click file")} waiting for the current scan to finish.";
+                        waitAnnounced = true;
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    continue;
+                }
+
+                waitAnnounced = false;
+
+                try
+                {
+                    await ScanSelectedFilesAsync(explorerScanRequests.DequeueAll());
+                }
+                finally
+                {
+                    scanGate.Exit();
+                }
+            }
+        }
+        finally
+        {
+            explorerScanDrainRunning = false;
+        }
+    }
+
+    /// <summary>Scans files picked in Explorer. The caller holds <see cref="scanGate"/>.</summary>
+    private async Task ScanSelectedFilesAsync(IReadOnlyList<string> requestedPaths)
+    {
+        var apiKey = apiKeyBox.Text.Trim();
+        var paths = requestedPaths.Where(File.Exists).ToList();
+        var missing = requestedPaths.Count - paths.Count;
+        if (paths.Count == 0)
+        {
+            var message = requestedPaths.Count == 1
+                ? $"File not found:{Environment.NewLine}{requestedPaths[0]}"
+                : $"None of the {requestedPaths.Count} selected files could be found.";
+            MessageBox.Show(this, message, "Right-click scan", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         EnsureProviderKeysConfigured();
 
+        var single = paths.Count == 1;
         scanButton.Enabled = false;
         results.Clear();
         resultsView.Items.Clear();
         UpdateResultsEmptyState();
         progressBar.Value = 0;
-        progressBar.Maximum = 1;
-        countLabel.Text = "1 / 1";
-        statusLabel.Text = $"Scanning selected file: {FormatDisplayPath(path)}";
+        progressBar.Maximum = paths.Count;
+        countLabel.Text = $"0 / {paths.Count}";
+        statusLabel.Text = single
+            ? $"Scanning selected file: {FormatDisplayPath(paths[0])}"
+            : $"Scanning {paths.Count} selected files...";
         summaryLabel.Text = "Preparing scan";
         actionLabel.Text = "Needs review: 0";
         UpdateReviewCount(0);
-        SetDashboardState("Scanning", "Checking the selected file with enabled reputation services.", false);
+        SetDashboardState(
+            "Scanning",
+            single ? "Checking the selected file with enabled reputation services." : "Checking the selected files with enabled reputation services.",
+            false);
 
         try
         {
@@ -241,12 +309,20 @@ public sealed partial class MainForm : Form
             }
             await EnsureScanStorageReadyAsync().ConfigureAwait(true);
 
-            var processFile = new ProcessFile(0, Path.GetFileName(path), path);
-            var result = await ScanPathAsync(http, path, [processFile]);
-            results.Add(result);
-            AddResultRow(result);
+            BeginScanUiBatch();
+            await OrderedConcurrency.ForEachAsync(
+                paths,
+                AppConstants.MaxConcurrentFileLookups,
+                path => ScanPathAsync(http, path, [new ProcessFile(0, Path.GetFileName(path), path)]),
+                async (index, result) =>
+                {
+                    results.Add(result);
+                    AddResultRow(result);
+                    PulseScanUi(index + 1, paths.Count, paths[index]);
+                    await hashCache.FlushIfDueAsync().ConfigureAwait(true);
+                });
+            EndScanUiBatch();
             UpdateSummary();
-            progressBar.Value = 1;
             await hashCache.SaveIfDirtyAsync().ConfigureAwait(true);
             var unresolved = results.Where(ResultNeedsAction).ToList();
             var alerts = unresolved.Where(result => result.IsAlert).ToList();
@@ -255,13 +331,18 @@ public sealed partial class MainForm : Form
                 alerts.Count > 0
                     ? "A reputation service reported malicious or suspicious detections."
                     : unresolved.Count > 0
-                        ? "Local trust signals found a file that needs review."
+                        ? single ? "Local trust signals found a file that needs review." : "Local trust signals found files that need review."
                         : "No unresolved threats or high-risk items were found.",
                 unresolved.Count > 0);
-            statusLabel.Text = unresolved.Count > 0 ? "Selected file scan complete. Review needed." : "Selected file scan complete. No unresolved threats.";
+            var done = single ? "Selected file scan complete." : $"Scanned {paths.Count} selected files.";
+            var missingText = missing > 0 ? $" {Plural(missing, "file")} could not be found." : "";
+            statusLabel.Text = unresolved.Count > 0
+                ? $"{done} Review needed.{missingText}"
+                : $"{done} No unresolved threats.{missingText}";
         }
         catch (Exception ex)
         {
+            EndScanUiBatch();
             statusLabel.Text = "Selected file scan failed";
             SetDashboardState("Action needed", "The selected file scan failed.", true);
             MessageBox.Show(this, ex.Message, "Right-click scan failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -269,7 +350,6 @@ public sealed partial class MainForm : Form
         finally
         {
             scanButton.Enabled = true;
-            scanGate.Exit();
         }
     }
 

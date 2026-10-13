@@ -1,7 +1,7 @@
 # HashGuard future roadmap
 
 Living list of improvement ideas that are **not** scheduled for immediate work.
-Last updated: 2026-10-04 (post v1.0.67).
+Last updated: 2026-10-12 (post v1.0.72).
 
 When picking work up again, prefer the **Next up** section unless product priorities change.
 
@@ -17,7 +17,7 @@ When picking work up again, prefer the **Next up** section unless product priori
 
 ## Next up (best remaining ROI)
 
-1. **Bounded provider concurrency** — Small parallel pool for MetaDefender/Cymru (and VT when quota allows) across different files, still respecting free-tier delays.
+1. **Provider interface** — `IReputationProvider.LookupAsync` with rate limiting in one place (the VirusTotal lane in `MainForm.Providers.cs` is the first piece).
 
 ---
 
@@ -49,8 +49,6 @@ When picking work up again, prefer the **Next up** section unless product priori
 | Idea | Notes |
 |------|--------|
 | Authenticode-sign GitHub release builds | SmartScreen; meaningful publisher checks (CI builds are often unsigned today). |
-| Settings write fallback | If Program Files config is read-only, write under user profile and surface that clearly. |
-| Rate-limit Explorer named-pipe | Guard against burst `--scan-file` requests. |
 | Document unsigned vs signed release policy | So users know what Update verifier will accept. |
 
 ---
@@ -76,6 +74,12 @@ When picking work up again, prefer the **Next up** section unless product priori
 ---
 
 ## Already shipped (context — do not re-open without reason)
+
+Through **v1.0.72** roughly includes:
+
+- Bounded provider concurrency (3 files at a time; VirusTotal paced one at a time on the free tier)
+- Explorer right-click queue (batched, de-duplicated, capped at 50)
+- Settings/log fallback to `%LocalAppData%\HashGuardUserData` when the app folder is read-only
 
 Through **v1.0.67** roughly includes:
 

@@ -36,12 +36,14 @@ public sealed partial class MainForm : Form
                 return;
             }
 
+            using var lane = await EnterVirusTotalLaneAsync(cancellationToken);
             if (!await TryReserveVirusTotalQuotaAsync(result, cancellationToken, waitForMinuteSlot: false))
             {
                 AddProviderResult(result, "VirusTotal", ProviderState.Deferred, "Free API quota reached.");
                 return;
             }
 
+            await lane.WaitForSpacingAsync(cancellationToken);
             using var reportResponse = await http.GetAsync(string.Format(AppConstants.VirusTotalFileReportUrl, result.Sha256), cancellationToken);
             if (reportResponse.StatusCode != HttpStatusCode.OK)
             {
@@ -318,16 +320,61 @@ public sealed partial class MainForm : Form
     }
 
     /// <summary>
-    /// True when this result actually issued a request to VirusTotal (as opposed to resolving
-    /// from cache). Drives the optional inter-file delay so we only pace real network calls.
+    /// Scans look up several files at once, but VirusTotal's free tier allows 4 requests a
+    /// minute. While the free-API limit or a per-request delay is set, scan lookups take turns
+    /// here and start at least "VirusTotal delay per request" apart (this replaces the old
+    /// pause between files). With neither set, lookups are not held back.
     /// </summary>
-    private static bool IssuedVirusTotalRequest(ScanResult result) =>
-        result.ProviderResults.Any(provider =>
-            provider.Provider == "VirusTotal"
-            && provider.State is ProviderState.Clean
-                or ProviderState.Detected
-                or ProviderState.Unknown
-                or ProviderState.Error);
+    private async Task<VirusTotalLane> EnterVirusTotalLaneAsync(CancellationToken cancellationToken)
+    {
+        var delay = TimeSpan.FromSeconds((double)delayBox.Value);
+        if (!freeApiLimitBox.Checked && delay <= TimeSpan.Zero)
+        {
+            return new VirusTotalLane(this, held: false, TimeSpan.Zero);
+        }
+
+        await virusTotalLaneGate.WaitAsync(cancellationToken);
+        return new VirusTotalLane(this, held: true, delay);
+    }
+
+    private sealed class VirusTotalLane : IDisposable
+    {
+        private readonly MainForm owner;
+        private readonly bool held;
+        private readonly TimeSpan delay;
+
+        public VirusTotalLane(MainForm owner, bool held, TimeSpan delay)
+        {
+            this.owner = owner;
+            this.held = held;
+            this.delay = delay;
+        }
+
+        /// <summary>Waits out the spacing since the last request, then books the next slot.</summary>
+        public async Task WaitForSpacingAsync(CancellationToken cancellationToken)
+        {
+            if (!held)
+            {
+                return;
+            }
+
+            var wait = owner.nextVirusTotalRequestUtc - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero)
+            {
+                await Task.Delay(wait, cancellationToken);
+            }
+
+            owner.nextVirusTotalRequestUtc = DateTimeOffset.UtcNow + delay;
+        }
+
+        public void Dispose()
+        {
+            if (held)
+            {
+                owner.virusTotalLaneGate.Release();
+            }
+        }
+    }
 
     private async Task<bool> TryReserveVirusTotalQuotaAsync(
         ScanResult? result,

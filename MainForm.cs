@@ -151,6 +151,11 @@ public sealed partial class MainForm : Form
     private const int ScanUiFlushEvery = 12;
     private static readonly TimeSpan ScanUiFlushInterval = TimeSpan.FromMilliseconds(150);
     private const int MaxAllFileScanQueueSize = 200;
+    private readonly SemaphoreSlim virusTotalLaneGate = new(1, 1);
+    private DateTimeOffset nextVirusTotalRequestUtc = DateTimeOffset.MinValue;
+    private readonly ScanRequestQueue explorerScanRequests = new();
+    private bool explorerScanDrainRunning;
+    private static readonly TimeSpan ExplorerBurstCollectDelay = TimeSpan.FromMilliseconds(300);
     private static readonly HashSet<string> SensitiveFileScanExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".3fr",
@@ -276,6 +281,11 @@ public sealed partial class MainForm : Form
         {
             _ = InitializeTelemetryAsync();
             ShowFirstRunSetupIfNeeded();
+            if (AppPaths.UsingFallbackStorage)
+            {
+                statusLabel.Text = $"The app folder is read-only, so settings and logs are saved in {AppPaths.GetConfigRoot()}.";
+            }
+
             if (startupScanFile is not null)
             {
                 await RunStartupFileScanAsync();

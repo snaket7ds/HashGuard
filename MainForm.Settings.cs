@@ -320,6 +320,9 @@ public sealed partial class MainForm : Form
             $"Installed version: {CurrentVersion}",
             $"Executable: {Application.ExecutablePath}",
             $"Running elevated: {elevated}",
+            AppPaths.UsingFallbackStorage
+                ? $"Settings and logs: {AppPaths.GetConfigRoot()} (the app folder is read-only)"
+                : "Settings and logs: next to HashGuard.exe",
             "Use Update to check GitHub release notes and install a verified HashGuard.exe asset.",
         });
     }

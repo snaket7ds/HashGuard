@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.72 - 2026-10-12
+
+- **Faster scans.** HashGuard now looks up 3 files at a time instead of one. Results still appear in the same order. While the free VirusTotal limit or a "VirusTotal delay per request" is set, VirusTotal requests still go out one at a time with that delay between them. MetaDefender and Team Cymru lookups for other files run in the meantime.
+- **Right-click scans of many files.** Selecting several files in Explorer and choosing Scan now scans them together in one batch. Previously each file started its own scan, and every file after the first showed an "A scan is already running" message. Requests that arrive during another scan wait for it to finish. Repeat requests for the same file within 5 seconds are ignored, and the queue holds at most 50 files.
+- **Settings when the app folder is read-only.** If HashGuard cannot write next to `HashGuard.exe` (for example under Program Files without elevation), settings, caches and logs are saved in `%LocalAppData%\HashGuardUserData\` instead of failing to save. Existing settings, ignore lists and caches are copied over the first time. The status bar says so at startup, and Settings → Behavior → Version and Updates shows the folder in use.
+
 ## v1.0.71 - 2026-10-11
 
 - **Refreshed main window.** Same layout and the same buttons in the same order, with a calmer, cleaner look:
