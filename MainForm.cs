@@ -253,6 +253,7 @@ public sealed partial class MainForm : Form
         telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
         settingsButton.Click += (_, _) => ShowSettingsDialog();
+        networkButton.Click += (_, _) => ShowNetworkMonitor();
         uploadUnknownBox.CheckedChanged += (_, _) => ConfirmUploads();
         rightClickScanBox.CheckedChanged += (_, _) => RightClickScanPreferenceChanged();
         startWithWindowsBox.CheckedChanged += (_, _) => StartWithWindowsPreferenceChanged();
@@ -276,11 +277,13 @@ public sealed partial class MainForm : Form
         {
             scanPipeCancellation.Cancel();
             telemetryHeartbeatTimer.Stop();
+            networkTimer.Stop();
             StopAllFileWatchers();
         };
         Shown += async (_, _) =>
         {
             _ = InitializeTelemetryAsync();
+            InitializeNetworkMonitor();
             ShowFirstRunSetupIfNeeded();
             if (AppPaths.UsingFallbackStorage)
             {

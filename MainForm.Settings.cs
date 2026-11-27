@@ -58,6 +58,24 @@ public sealed partial class MainForm : Form
         var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
         var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
         var uploadUnknown = new CheckBox { Text = "Allow VirusTotal uploads (approve each file in Review Queue)", Checked = uploadUnknownBox.Checked, AutoSize = true };
+        var networkMonitor = new CheckBox { Text = "Watch network connections in the background (needed for alerts and auto-block)", Checked = appSettings.NetworkMonitorEnabled, AutoSize = true };
+        var networkNotify = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 360 };
+        networkNotify.Items.AddRange(["When an untrusted app connects for the first time", "When any app connects for the first time", "Never"]);
+        networkNotify.SelectedIndex = NetworkNotifyModes.Normalize(appSettings.NetworkNotifyMode) switch
+        {
+            NetworkNotifyModes.NewApps => 1,
+            NetworkNotifyModes.Never => 2,
+            _ => 0,
+        };
+        var autoBlockMalicious = new CheckBox { Text = "Automatically block apps HashGuard flags as malicious (needs Run elevated)", Checked = appSettings.AutoBlockMalicious, AutoSize = true };
+        var networkInfo = new Label
+        {
+            Text = "Open the Network Monitor with the globe button or from the tray. Blocking adds Windows Firewall rules in the \"HashGuard\" group; HashGuard never changes your other firewall rules.",
+            Dock = DockStyle.Top,
+            Height = 52,
+            ForeColor = Color.DimGray,
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
         var trustedPublishers = new TextBox
         {
             Text = string.Join(Environment.NewLine, appSettings.TrustedPublishers),
@@ -122,6 +140,10 @@ public sealed partial class MainForm : Form
             ("Privacy", [telemetryEnabled]),
             ("Version and Updates", [updateInfo]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
+
+        var networkPage = CreateSettingsPage(
+            ("Network Monitor", [networkMonitor, CreateSettingRow("Alerts", networkNotify), autoBlockMalicious, networkInfo]));
+        AddSettingsTab(tabs, "Network", networkPage);
 
         trustedPublishers.Height = 220;
         var trustPage = CreateSettingsPage(
@@ -269,6 +291,14 @@ public sealed partial class MainForm : Form
 
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
         telemetryEnabledBox.Checked = telemetryEnabled.Checked;
+        appSettings.NetworkMonitorEnabled = networkMonitor.Checked;
+        appSettings.NetworkNotifyMode = networkNotify.SelectedIndex switch
+        {
+            1 => NetworkNotifyModes.NewApps,
+            2 => NetworkNotifyModes.Never,
+            _ => NetworkNotifyModes.Untrusted,
+        };
+        appSettings.AutoBlockMalicious = autoBlockMalicious.Checked;
         appSettings.ScheduledDailyScan = scheduledDaily.Checked;
         appSettings.ScheduledScanHour = (int)scheduledHour.Value;
         appSettings.PreferDeltaScan = preferDelta.Checked;
@@ -285,6 +315,7 @@ public sealed partial class MainForm : Form
         UpdateAutomaticUpdateTimer();
         UpdateAllFileScanner();
         SaveCurrentAppSettings();
+        UpdateNetworkTimer();
         try
         {
             ScheduledScan.Apply(appSettings.ScheduledDailyScan, appSettings.ScheduledScanHour, Application.ExecutablePath, appSettings.RunElevated && IsRunningElevated());

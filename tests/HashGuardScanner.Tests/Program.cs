@@ -559,6 +559,179 @@ var tests = new (string Name, Action Test)[]
         AssertThrows<ArgumentException>(() => ElevatedStartupTask.BuildTaskXml("", "S-1-5-21-9"));
         AssertThrows<ArgumentException>(() => ElevatedStartupTask.BuildTaskXml(@"C:\HG\HashGuard.exe", " "));
     }),
+    ("tcp4 table parser reads state, addresses, ports and pid", () =>
+    {
+        var buffer = new byte[4 + 24 * 2];
+        WriteUInt32(buffer, 0, 2);
+        WriteTcp4Row(buffer, 4, state: 5, local: [192, 168, 1, 10], localPort: 51000, remote: [142, 250, 72, 14], remotePort: 443, pid: 1234);
+        WriteTcp4Row(buffer, 28, state: 2, local: [0, 0, 0, 0], localPort: 445, remote: [0, 0, 0, 0], remotePort: 0, pid: 4);
+        var rows = ConnectionTable.ParseTcp4(buffer);
+        AssertEqual(2, rows.Count);
+        AssertEqual(1234, rows[0].Pid);
+        AssertEqual("192.168.1.10", rows[0].LocalAddress.ToString());
+        AssertEqual(51000, rows[0].LocalPort);
+        AssertEqual("142.250.72.14", rows[0].RemoteAddress.ToString());
+        AssertEqual(443, rows[0].RemotePort);
+        AssertEqual(TcpState.Established, rows[0].State);
+        AssertEqual(TcpState.Listen, rows[1].State);
+        AssertTrue(ConnectionTable.IsOutboundCandidate(rows[0]));
+        AssertFalse(ConnectionTable.IsOutboundCandidate(rows[1]));
+    }),
+    ("tcp6 table parser reads 56-byte rows", () =>
+    {
+        var buffer = new byte[4 + 56];
+        WriteUInt32(buffer, 0, 1);
+        var remote = System.Net.IPAddress.Parse("2606:4700::1111").GetAddressBytes();
+        var local = System.Net.IPAddress.Parse("2001:db8::5").GetAddressBytes();
+        local.CopyTo(buffer, 4);
+        buffer[24] = 0xC3; buffer[25] = 0x50; // local port 50000
+        remote.CopyTo(buffer, 28);
+        buffer[48] = 0x01; buffer[49] = 0xBB; // remote port 443
+        WriteUInt32(buffer, 52, 3); // SYN_SENT
+        WriteUInt32(buffer, 56, 99);
+        var rows = ConnectionTable.ParseTcp6(buffer);
+        AssertEqual(1, rows.Count);
+        AssertEqual("2606:4700::1111", rows[0].RemoteAddress.ToString());
+        AssertEqual("2001:db8::5", rows[0].LocalAddress.ToString());
+        AssertEqual(50000, rows[0].LocalPort);
+        AssertEqual(443, rows[0].RemotePort);
+        AssertEqual(TcpState.SynSent, rows[0].State);
+        AssertEqual(99, rows[0].Pid);
+    }),
+    ("tcp table parser tolerates short and truncated buffers", () =>
+    {
+        AssertEqual(0, ConnectionTable.ParseTcp4([]).Count);
+        AssertEqual(0, ConnectionTable.ParseTcp6([1, 0]).Count);
+        var buffer = new byte[4 + 24];
+        WriteUInt32(buffer, 0, 5); // claims 5 rows, holds 1
+        WriteTcp4Row(buffer, 4, state: 5, local: [10, 0, 0, 2], localPort: 1, remote: [1, 1, 1, 1], remotePort: 53, pid: 7);
+        AssertEqual(1, ConnectionTable.ParseTcp4(buffer).Count);
+    }),
+    ("remote addresses are classified as loopback, lan or internet", () =>
+    {
+        foreach (var (address, scope) in new[]
+        {
+            ("127.0.0.1", RemoteScope.Loopback), ("::1", RemoteScope.Loopback),
+            ("0.0.0.0", RemoteScope.Unspecified), ("::", RemoteScope.Unspecified),
+            ("10.0.1.12", RemoteScope.Lan), ("172.16.0.1", RemoteScope.Lan), ("172.31.255.1", RemoteScope.Lan),
+            ("192.168.1.1", RemoteScope.Lan), ("169.254.3.4", RemoteScope.Lan), ("100.64.0.1", RemoteScope.Lan),
+            ("224.0.0.251", RemoteScope.Lan), ("fe80::1", RemoteScope.Lan), ("fd00::1", RemoteScope.Lan),
+            ("::ffff:10.0.0.1", RemoteScope.Lan), ("::ffff:8.8.8.8", RemoteScope.Internet),
+            ("172.32.0.1", RemoteScope.Internet), ("8.8.8.8", RemoteScope.Internet), ("2606:4700::1111", RemoteScope.Internet),
+        })
+        {
+            AssertEqual(scope, ConnectionTable.Classify(System.Net.IPAddress.Parse(address)));
+        }
+    }),
+    ("outbound candidates skip pid 0, loopback, listeners and time-wait", () =>
+    {
+        var internet = System.Net.IPAddress.Parse("8.8.8.8");
+        var local = System.Net.IPAddress.Parse("10.0.0.2");
+        AssertTrue(ConnectionTable.IsOutboundCandidate(new TcpConnection(10, local, 5000, internet, 443, TcpState.SynSent)));
+        AssertFalse(ConnectionTable.IsOutboundCandidate(new TcpConnection(0, local, 5000, internet, 443, TcpState.Established)));
+        AssertFalse(ConnectionTable.IsOutboundCandidate(new TcpConnection(10, local, 5000, internet, 443, TcpState.TimeWait)));
+        AssertFalse(ConnectionTable.IsOutboundCandidate(new TcpConnection(10, local, 5000, System.Net.IPAddress.Loopback, 443, TcpState.Established)));
+        AssertFalse(ConnectionTable.IsOutboundCandidate(new TcpConnection(10, local, 5000, internet, 0, TcpState.Established)));
+    }),
+    ("network tracker counts a long-lived connection once and new ones again", () =>
+    {
+        var tracker = new NetworkActivityTracker();
+        var t0 = DateTimeOffset.Parse("2026-11-26T10:00:00Z");
+        var app = @"C:\Apps\curl.exe";
+        var first = Conn(10, 50000, "93.184.216.34", 443);
+        var r1 = tracker.Update([(app, first)], t0);
+        tracker.Update([(app, first)], t0.AddSeconds(1));
+        tracker.Update([(app, first), (app, Conn(10, 50001, "93.184.216.34", 443))], t0.AddSeconds(2));
+        AssertTrue(tracker.TryGetApp(app, out var activity));
+        AssertEqual(2, activity.TotalConnections);
+        AssertEqual(2, activity.CurrentConnections);
+        AssertEqual(1, activity.Endpoints.Count);
+        AssertEqual(1, r1.FirstEverSeen.Count);
+        tracker.Update([], t0.AddSeconds(3));
+        AssertEqual(0, activity.CurrentConnections);
+        AssertEqual(t0.AddSeconds(2), activity.LastSeenUtc);
+        AssertEqual("curl.exe", activity.Name);
+    }),
+    ("network tracker reports first-ever apps only once and remembers saved ones", () =>
+    {
+        var t0 = DateTimeOffset.Parse("2026-11-26T10:00:00Z");
+        var seen = new Dictionary<string, SeenNetworkApp> { [@"C:\Old\app.exe"] = new() { FirstSeenUtc = t0.AddDays(-3), LastSeenUtc = t0.AddDays(-1) } };
+        var tracker = new NetworkActivityTracker(seen);
+        var r1 = tracker.Update([(@"c:\old\APP.exe", Conn(1, 1000, "1.1.1.1", 443)), (@"C:\New\tool.exe", Conn(2, 1001, "1.1.1.1", 443))], t0);
+        AssertEqual(1, r1.FirstEverSeen.Count);
+        AssertEqual(@"C:\New\tool.exe", r1.FirstEverSeen[0].Path);
+        AssertTrue(r1.SeenAppsChanged);
+        var r2 = tracker.Update([(@"C:\New\tool.exe", Conn(2, 1002, "1.1.1.1", 443))], t0.AddMinutes(1));
+        AssertEqual(0, r2.FirstEverSeen.Count);
+        AssertFalse(r2.SeenAppsChanged);
+    }),
+    ("network tracker caps seen apps and endpoints", () =>
+    {
+        var t0 = DateTimeOffset.Parse("2026-11-26T10:00:00Z");
+        var tracker = new NetworkActivityTracker(maxSeenApps: 2);
+        tracker.Update([(@"C:\a.exe", Conn(1, 1, "1.1.1.1", 443))], t0);
+        tracker.Update([(@"C:\b.exe", Conn(2, 2, "1.1.1.1", 443))], t0.AddSeconds(1));
+        tracker.Update([(@"C:\c.exe", Conn(3, 3, "1.1.1.1", 443))], t0.AddSeconds(2));
+        AssertEqual(2, tracker.SeenApps.Count);
+        AssertFalse(tracker.SeenApps.ContainsKey(@"C:\a.exe"));
+        var many = Enumerable.Range(0, NetworkAppActivity.MaxEndpoints + 5)
+            .Select(i => (@"C:\d.exe", Conn(4, 2000 + i, $"8.8.{i / 250}.{i % 250 + 1}", 443)))
+            .ToList();
+        tracker.Update(many, t0.AddSeconds(3));
+        AssertTrue(tracker.TryGetApp(@"C:\d.exe", out var app));
+        AssertEqual(NetworkAppActivity.MaxEndpoints, app.Endpoints.Count);
+    }),
+    ("network tracker writes endpoints with brackets for ipv6", () =>
+    {
+        AssertEqual("[2606:4700::1111]:443", NetworkEndpoint.FormatEndpoint("2606:4700::1111", 443));
+        AssertEqual("example.com:443", NetworkEndpoint.FormatEndpoint("example.com", 443));
+        AssertEqual("System", NetworkActivityTracker.DisplayName("System"));
+    }),
+    ("network verdict maps cache entries", () =>
+    {
+        AssertEqual(NetworkVerdictKind.NotScanned, NetworkVerdict.FromCache(null).Kind);
+        AssertEqual("Malicious (3)", NetworkVerdict.FromCache(new CacheEntry { Status = "malicious", Malicious = 3 }).Label);
+        AssertEqual(NetworkVerdictKind.Suspicious, NetworkVerdict.FromCache(new CacheEntry { Status = "suspicious", Suspicious = 1 }).Kind);
+        AssertEqual(NetworkVerdictKind.Clean, NetworkVerdict.FromCache(new CacheEntry { Status = "clean/seen" }).Kind);
+        AssertEqual(NetworkVerdictKind.Unknown, NetworkVerdict.FromCache(new CacheEntry { Status = "unknown" }).Kind);
+    }),
+    ("untrusted means flagged, or not a trusted publisher and unsigned or not known clean", () =>
+    {
+        AssertTrue(NetworkVerdict.IsUntrusted(NetworkVerdictKind.Malicious, signed: true, trustedPublisher: true));
+        AssertFalse(NetworkVerdict.IsUntrusted(NetworkVerdictKind.NotScanned, signed: true, trustedPublisher: true));
+        AssertFalse(NetworkVerdict.IsUntrusted(NetworkVerdictKind.Clean, signed: true, trustedPublisher: false));
+        AssertTrue(NetworkVerdict.IsUntrusted(NetworkVerdictKind.Clean, signed: false, trustedPublisher: false));
+        AssertTrue(NetworkVerdict.IsUntrusted(NetworkVerdictKind.NotScanned, signed: true, trustedPublisher: false));
+        AssertEqual(NetworkNotifyModes.Untrusted, NetworkNotifyModes.Normalize(null));
+        AssertEqual(NetworkNotifyModes.Never, NetworkNotifyModes.Normalize("never"));
+        AssertEqual(NetworkNotifyModes.Untrusted, NetworkNotifyModes.Normalize("bogus"));
+    }),
+    ("firewall rule names are readable and unique per path", () =>
+    {
+        var a = FirewallRules.RuleName(@"C:\Tools\app.exe", inbound: false);
+        var b = FirewallRules.RuleName(@"D:\Other\app.exe", inbound: false);
+        AssertTrue(a.StartsWith("HashGuard block: app.exe (", StringComparison.Ordinal));
+        AssertTrue(a != b);
+        AssertEqual(FirewallRules.ShortPathHash(@"C:\Tools\app.exe"), FirewallRules.ShortPathHash("\"c:\\tools\\APP.exe\""));
+        AssertTrue(FirewallRules.RuleName(@"C:\Tools\app.exe", inbound: true).StartsWith("HashGuard block inbound: app.exe", StringComparison.Ordinal));
+        AssertEqual(8, FirewallRules.ShortPathHash(@"C:\Tools\app.exe").Length);
+    }),
+    ("firewall paths compare case-insensitively and ignore quotes and slashes", () =>
+    {
+        AssertTrue(FirewallRules.PathsEqual(@"C:\Tools\App.exe", "\"c:/tools/app.EXE\" "));
+        AssertFalse(FirewallRules.PathsEqual(@"C:\Tools\app.exe", @"C:\Tools\app2.exe"));
+        AssertFalse(FirewallRules.PathsEqual(null, @"C:\x.exe"));
+    }),
+    ("firewall warns before blocking windows parts and hashguard itself", () =>
+    {
+        const string windows = @"C:\Windows";
+        const string self = @"C:\Program Files\HashGuard\HashGuard.exe";
+        AssertTrue(FirewallRules.IsSensitivePath(@"C:\Windows\System32\svchost.exe", windows, self));
+        AssertTrue(FirewallRules.IsSensitivePath("System", windows, self));
+        AssertTrue(FirewallRules.IsSensitivePath(@"c:\program files\hashguard\hashguard.exe", windows, self));
+        AssertFalse(FirewallRules.IsSensitivePath(@"C:\WindowsApps\thing.exe", windows, self));
+        AssertFalse(FirewallRules.IsSensitivePath(@"C:\Program Files\Mozilla Firefox\firefox.exe", windows, self));
+    }),
 };
 
 var failures = new List<string>();
@@ -625,3 +798,21 @@ static void AssertThrows<TException>(Action action) where TException : Exception
 
     throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
 }
+
+static void WriteUInt32(byte[] buffer, int offset, uint value) =>
+    System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buffer.AsSpan(offset), value);
+
+static void WriteTcp4Row(byte[] buffer, int offset, uint state, byte[] local, int localPort, byte[] remote, int remotePort, uint pid)
+{
+    WriteUInt32(buffer, offset, state);
+    local.CopyTo(buffer, offset + 4);
+    buffer[offset + 8] = (byte)(localPort >> 8);
+    buffer[offset + 9] = (byte)localPort;
+    remote.CopyTo(buffer, offset + 12);
+    buffer[offset + 16] = (byte)(remotePort >> 8);
+    buffer[offset + 17] = (byte)remotePort;
+    WriteUInt32(buffer, offset + 20, pid);
+}
+
+static TcpConnection Conn(int pid, int localPort, string remote, int remotePort) =>
+    new(pid, System.Net.IPAddress.Parse("10.0.0.2"), localPort, System.Net.IPAddress.Parse(remote), remotePort, TcpState.Established);

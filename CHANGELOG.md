@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.74 - 2026-11-26
+
+- **New: Network Monitor.** A globe button in the header (and "Network Monitor" in the tray menu) opens a live list of every app connecting to another machine: its HashGuard verdict and signer, the host and port it talks to, how many connections it has now and this session, and whether it is blocked. Apps online now come first, untrusted ones at the top; flagged apps are shown in red or amber. Search by app, path, publisher or host, hide trusted publishers, and open **Connections…** to see every host the app reached this session.
+- **Block and Unblock in Windows Firewall.** Block adds a rule that stops the app's outgoing connections (optionally incoming too); Unblock removes it. HashGuard keeps its rules in their own "HashGuard" group and never touches your other firewall rules. **Remove all HashGuard rules** undoes every block. Blocking a part of Windows or HashGuard itself asks you to confirm with a warning first. Needs Run elevated.
+- **Alerts for new apps (Settings → Network).** With background monitoring on, HashGuard tells you when an app goes online for the first time: by default only untrusted ones (unsigned, unknown or flagged), or every new app, or never. Apps already online the first time are recorded silently. Click the alert to open the Network Monitor on that app.
+- **Optional auto-block of malicious apps.** Off by default. When on, an app whose HashGuard verdict is malicious is blocked as soon as it connects, and you get an alert.
+- The monitor is off unless the window is open or background monitoring is turned on. It reads Windows' TCP table, so it does not slow your connections; very short connections and UDP traffic are not shown.
+
 ## v1.0.73 - 2026-11-26
 
 - **No UAC prompt at sign-in when "Run elevated" is on.** With both "Start with Windows" and "Run elevated" on, HashGuard now starts at sign-in through a Task Scheduler task (`\HashGuard\Start at sign-in`) that runs it with your admin rights, so Windows no longer asks every time. The task has no time limit and ignores battery rules, so Windows never stops the tray app. With "Run elevated" off, the per-user startup entry is used as before. Only one of the two is ever registered.

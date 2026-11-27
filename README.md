@@ -20,6 +20,7 @@ HashGuard is a Windows desktop tool for checking the reputation of running proce
 - Can schedule a daily full scan, export CSV/HTML reports, highlight files new since the last scan, and bulk-ignore a publisher from the Review Queue.
 - Delta scan option: skip re-hashing and provider lookups for files already cached clean and unchanged on disk (size + last-write time).
 - Verifies update downloads with SHA-256 and, when the current build is signed, matching Authenticode publisher.
+- Network Monitor: shows which apps connect where, with each app's HashGuard verdict and signer, and blocks or unblocks an app in Windows Firewall with one click.
 
 ## How Scanning Works
 
@@ -30,6 +31,20 @@ When "Scan files I open or select" is enabled, HashGuard watches Windows Recent 
 Files are marked for action when a provider reports malicious or suspicious detections, or when a scan error needs review. Clean and recently cached hashes are skipped when the hash cache is enabled.
 
 HashGuard also adds local trust and triage context. It checks whether scanned files are signed, whether they live in risky user-writable paths, whether they were recently modified, and whether they are referenced by common persistence locations such as Run keys, Startup folders, scheduled tasks, and Windows services.
+
+## Network Monitor
+
+Open it with the globe button in the header or **Network Monitor** in the tray menu. It lists every program with an open TCP connection to another machine (loopback is hidden), with its HashGuard verdict from the hash cache, its signer, the host it talks to (reverse DNS, falling back to the IP address), how many connections it has open now and this session, and whether HashGuard has blocked it. **Scan app** runs a normal HashGuard scan of the program; **Connections…** lists every host and port it reached this session.
+
+**Block** adds a Windows Firewall rule that blocks the program's outgoing connections, optionally incoming too. **Unblock** removes it. Every rule HashGuard creates is in the Windows Firewall group **HashGuard** and named `HashGuard block: <file> (<id>)`; HashGuard lists, changes and removes only rules in that group, never your other rules. **Remove all HashGuard rules** undoes every block at once. Blocking needs HashGuard to run elevated (Settings → Behavior → Run elevated). Blocking parts of Windows (for example `svchost.exe`) or HashGuard itself shows an extra warning, because it can break Windows Update, DNS or sign-in.
+
+Settings → Network:
+
+- **Watch network connections in the background** (off by default). Without it, HashGuard only watches while the Network Monitor window is open, and sends no alerts.
+- **Alerts:** when an untrusted app connects for the first time (default), when any app connects for the first time, or never. "Untrusted" means flagged by a provider, or not from a trusted publisher and either unsigned or not known clean. The first time background monitoring runs, apps that are already online are recorded without alerts. At most one alert is shown every 10 seconds; several new apps are combined into one.
+- **Automatically block apps HashGuard flags as malicious** (off by default, needs Run elevated).
+
+Limitations: this is a monitor, not a prompt-first firewall. Windows only lets a signed kernel driver hold a connection while asking the user, so traffic is allowed until you block an app, and connections an app already has open may continue until it reconnects. HashGuard reads the TCP table about once a second while the window is open (every 5 seconds in the background), so very short connections can be missed, and UDP traffic is not shown. All Windows services that share `svchost.exe` appear as one app. Seen apps are remembered in `network-apps.json` in the config folder; firewall actions are logged to `logs/network-actions.log`.
 
 ## Privacy Notes
 

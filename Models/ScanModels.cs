@@ -192,6 +192,12 @@ internal sealed class AppSettings
     /// <summary>Suppress repeated tray balloons for the same action-needed hash until the hash set changes.</summary>
     public bool SuppressRepeatTrayAlerts { get; set; } = true;
     public string LastTrayAlertSignature { get; set; } = "";
+    /// <summary>Network Monitor polls the TCP table in the background (off by default).</summary>
+    public bool NetworkMonitorEnabled { get; set; }
+    /// <summary>When to alert about a program connecting for the first time; see <see cref="NetworkNotifyModes"/>.</summary>
+    public string NetworkNotifyMode { get; set; } = NetworkNotifyModes.Untrusted;
+    /// <summary>Block a program in Windows Firewall as soon as it connects if its cached verdict is malicious.</summary>
+    public bool AutoBlockMalicious { get; set; }
     public List<string> TrustedPublishers { get; set; } =
     [
         "Microsoft Corporation",

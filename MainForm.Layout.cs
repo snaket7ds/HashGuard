@@ -34,6 +34,7 @@ public sealed partial class MainForm : Form
             RestoreFromTray();
             ShowQuarantineDialog();
         });
+        trayIcon.ContextMenuStrip.Items.Add("Network Monitor", null, (_, _) => ShowNetworkMonitor());
         trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) =>
         {
             exitRequested = true;
@@ -94,6 +95,11 @@ public sealed partial class MainForm : Form
         updateButton.Margin = new Padding(0, 0, 8, 0);
         updateButton.TextAlign = ContentAlignment.MiddleCenter;
         toolTip.SetToolTip(updateButton, "Check for HashGuard updates");
+        ConfigureHeaderButton(networkButton);
+        networkButton.Margin = new Padding(0, 0, 8, 0);
+        networkButton.TextAlign = ContentAlignment.MiddleCenter;
+        networkButton.AccessibleName = "Network Monitor";
+        toolTip.SetToolTip(networkButton, "Network Monitor: which apps connect where");
         ConfigureHeaderButton(settingsButton);
         settingsButton.Margin = new Padding(0, 0, 8, 0);
         settingsButton.TextAlign = ContentAlignment.MiddleCenter;
@@ -103,6 +109,7 @@ public sealed partial class MainForm : Form
         scanButton.TextAlign = ContentAlignment.MiddleCenter;
         SetScanButtonReadyStyle();
         headerButtons.Controls.Add(updateButton);
+        headerButtons.Controls.Add(networkButton);
         headerButtons.Controls.Add(settingsButton);
         headerButtons.Controls.Add(scanButton);
         header.Controls.Add(headerButtons, 1, 0);
