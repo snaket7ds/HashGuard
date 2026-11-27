@@ -83,6 +83,9 @@ public sealed partial class MainWindow : Window
             case "Quarantine":
                 Navigate(typeof(QuarantinePage), null);
                 break;
+            case "Activity":
+                Navigate(typeof(ActivityPage), null);
+                break;
             case not null:
                 Navigate(typeof(PlaceholderPage), tag);
                 break;

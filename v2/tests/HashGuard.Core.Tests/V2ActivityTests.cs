@@ -181,6 +181,35 @@ internal static class V2ActivityTests
             True(ActivityFeed.IsHandled(row, hashes, new HashSet<string>(), new HashSet<string>()));
             False(ActivityFeed.IsHandled(row, new HashSet<string>(), new HashSet<string>(), new HashSet<string>()));
         }),
+        ("Activity view: batches fold until expanded; filters and search list rows on their own", () =>
+        {
+            var start = new DateTime(2026, 11, 27, 9, 0, 0);
+            var feed = ActivityFeed.Build(
+                [
+                    Row(start, "clean", "a.exe"),
+                    Row(start.AddSeconds(10), "clean", "b.exe"),
+                    Row(start.AddSeconds(20), "unknown", "c.exe"),
+                    Row(start.AddSeconds(30), "error", "d.exe"),
+                    Row(start.AddSeconds(40), "unknown", "e.exe") with { Malicious = 2 },
+                ],
+                [new QuarantineEntry { OriginalPath = @"C:\q.exe", QuarantinePath = @"X:\q", QuarantinedAtUtc = new DateTimeOffset(start.AddHours(1)) }],
+                [],
+                _ => false);
+            var none = new HashSet<int>();
+
+            var all = ActivityFeed.Visible(feed, ActivityShow.All, null, none);
+            Equal(5, all.Count); // quarantine, summary, c, d, e
+            True(all.Any(entry => entry.Summary));
+            Equal(7, ActivityFeed.Visible(feed, ActivityShow.All, "", new HashSet<int>([all.Single(e => e.Summary).BatchId])).Count);
+
+            var action = ActivityFeed.Visible(feed, ActivityShow.NeedsAction, null, none);
+            Equal(2, action.Count); // d (error) and e (malicious); c is only unknown
+            Equal(1, ActivityFeed.Visible(feed, ActivityShow.Unknown, null, none).Count); // c; e has detections, so it's a threat
+            Equal(1, ActivityFeed.Visible(feed, ActivityShow.Actions, null, none).Count);
+
+            var search = ActivityFeed.Visible(feed, ActivityShow.All, "B.EXE", none);
+            Equal("b.exe is clean", search.Single().Title);
+        }),
     ];
 
     private static QuarantineStore Store(string dir) =>

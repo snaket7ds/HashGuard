@@ -19,6 +19,15 @@ public sealed record ActivityEntry(
     bool Folded = false,
     int BatchId = 0);
 
+/// <summary>The Activity page's filter buttons.</summary>
+public enum ActivityShow
+{
+    All,
+    NeedsAction,
+    Unknown,
+    Actions,
+}
+
 /// <summary>
 /// Turns the scan history, quarantine list and firewall log into the Activity timeline. Pure, so
 /// it is unit-tested.
@@ -27,6 +36,44 @@ public static class ActivityFeed
 {
     /// <summary>Checks closer together than this belong to the same batch.</summary>
     public static readonly TimeSpan BatchGap = TimeSpan.FromMinutes(3);
+
+    /// <summary>
+    /// The rows to show. With "All" and no search, batches show as their summary and their clean
+    /// rows stay folded unless the batch is in <paramref name="expandedBatches"/>. Any other
+    /// filter or a search lists matching rows on their own, folded ones included, without summaries.
+    /// </summary>
+    public static List<ActivityEntry> Visible(IReadOnlyList<ActivityEntry> entries, ActivityShow show, string? search, IReadOnlySet<int> expandedBatches)
+    {
+        var query = search?.Trim() ?? "";
+        if (show == ActivityShow.All && query.Length == 0)
+        {
+            return [.. entries.Where(entry => !entry.Folded || expandedBatches.Contains(entry.BatchId))];
+        }
+
+        return [.. entries.Where(entry => !entry.Summary && Matches(entry, show) && (query.Length == 0 || Contains(entry, query)))];
+    }
+
+    /// <summary>A check the user should still look at: flagged, failed or high risk, and not handled.</summary>
+    public static bool NeedsAction(ActivityEntry entry) =>
+        entry.Row is { } row
+        && entry.Kind != ActivityKind.Handled
+        && HashGuardLogic.NeedsAction(row.Status, $"{row.RiskLevel} {row.RiskScore}", row.Malicious, row.Suspicious);
+
+    private static bool Matches(ActivityEntry entry, ActivityShow show) => show switch
+    {
+        ActivityShow.NeedsAction => NeedsAction(entry),
+        ActivityShow.Unknown => entry.Kind == ActivityKind.Unknown,
+        ActivityShow.Actions => entry.Kind is ActivityKind.Quarantine or ActivityKind.Firewall,
+        _ => true,
+    };
+
+    private static bool Contains(ActivityEntry entry, string query)
+    {
+        bool Has(string? value) => value?.Contains(query, StringComparison.OrdinalIgnoreCase) == true;
+        return Has(entry.Title) || Has(entry.Detail) || Has(entry.Path) || Has(entry.Pill)
+            || (entry.Row is { } row && (Has(row.Sha256) || Has(row.ProcessNames) || Has(row.Notes)))
+            || (entry.Quarantine is { } q && Has(q.Sha256));
+    }
 
     /// <summary>
     /// Whether a logged check was dealt with: ignored at the time, or marked handled, or its file
