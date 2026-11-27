@@ -90,8 +90,10 @@ public static class UpdateVerifier
     {
         try
         {
+#pragma warning disable SYSLIB0057 // No replacement API reads the Authenticode signer of a PE file.
             var certificate = X509Certificate.CreateFromSignedFile(path);
             using var cert2 = new X509Certificate2(certificate);
+#pragma warning restore SYSLIB0057
             return cert2.GetNameInfo(X509NameType.SimpleName, forIssuer: false);
         }
         catch

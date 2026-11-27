@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!-- The engine: no UI types allowed here, so every rule can be unit-tested. -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>HashGuard.Core</RootNamespace>
   </PropertyGroup>
   <ItemGroup>

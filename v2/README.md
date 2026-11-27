@@ -33,7 +33,9 @@ Not yet verified: clicking the tray icon/menu, running elevated, 125–150% disp
 ## Phases
 
 0. Spike: shell, Home, tray, single-file publish. **Done.**
-1. Core: move the engine (hash cache, providers behind `IReputationProvider`, firewall rules, update verifier, telemetry) into `HashGuard.Core` with tests.
+1. Core: move the engine into `HashGuard.Core` with tests. **In progress.**
+   - Done: v1's 24 UI-free engine files and their 80 tests; `IReputationProvider` (VirusTotal, MetaDefender, Team Cymru) with one `VirusTotalPacer`; `FileAnalyzer` (per-file pipeline), `RiskScorer`, `SignatureReader`; 19 new tests.
+   - Left in v1's `MainForm`: scan orchestration (process and auto-start collection), settings and API-key storage, ignore lists, quarantine, activity log, updates, network monitoring service, Explorer queue/pipe and single-instance start-up (`Program.cs`).
 2. Pages: Scan, Quarantine, Firewall, Activity, Settings, stored/ignored hashes, tray alerts.
 3. Upgrade path: read v1's config, hash cache, quarantine manifest and the "HashGuard" firewall rule group; same release signing key and `HashGuard.exe` asset name so v1's updater can install v2.
 4. Beta, then 2.0.
