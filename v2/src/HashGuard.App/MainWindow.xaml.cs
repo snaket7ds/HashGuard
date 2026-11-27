@@ -271,6 +271,9 @@ public sealed partial class MainWindow : Window
     /// <summary>True while the Firewall page is on screen, so alerts about what it already shows can be skipped.</summary>
     public bool FirewallPageVisible => AppWindow.IsVisible && ContentFrame.Content is FirewallPage;
 
+    /// <summary>Opens Settings.</summary>
+    public void ShowSettings() => Nav.SelectedItem = Nav.SettingsItem;
+
     /// <summary>Selects the navigation item with this tag, which opens its page.</summary>
     public void ShowPage(string tag) =>
         Nav.SelectedItem = Nav.MenuItems.OfType<NavigationViewItem>().First(i => (string)i.Tag == tag);

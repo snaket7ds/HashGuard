@@ -160,6 +160,35 @@ public sealed partial class SettingsPage : Page
         saveTimer.Start();
     }
 
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e) => await ViewModel.CheckForUpdateAsync();
+
+    private async void InstallUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.Offer is not { } offer)
+        {
+            return;
+        }
+
+        var notes = string.IsNullOrWhiteSpace(offer.Notes) ? "" : $"\n\n{offer.Notes.Trim()}";
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = $"Install HashGuard {offer.Version}?",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 360,
+                Content = new TextBlock { Text = $"HashGuard closes, updates and starts again.{notes}", TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true },
+            },
+            PrimaryButtonText = "Install",
+            CloseButtonText = "Not now",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && await ViewModel.InstallUpdateAsync())
+        {
+            (Application.Current as App)?.ExitApp();
+        }
+    }
+
     private bool askingAboutFiles;
 
     /// <summary>The first time file watching is switched on, explain what it watches (as v1 did).</summary>

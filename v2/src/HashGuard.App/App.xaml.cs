@@ -68,6 +68,19 @@ public partial class App : Application
             window.Activate();
         }
 
+        // First start without settings: setup, once the window has its content.
+        if (Services.AppServices.Instance.IsFirstRun && launch.Kind == LaunchKind.Show)
+        {
+            window.ShowFromTray();
+            window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, async () =>
+            {
+                if (window.Content.XamlRoot is { } root)
+                {
+                    await FirstRunSetup.ShowAsync(window, root);
+                }
+            });
+        }
+
         // The tray icon is created after the window is up, so it never delays the first frame.
         window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, CreateTrayIcon);
 
@@ -100,6 +113,32 @@ public partial class App : Application
         {
             _ = Task.Run(() => services.Integration.RepairAtStartup(services.Settings));
         }
+
+        // Update checks: a minute after start, then every 6 hours, when switched on. Installing waits for you.
+        services.UpdateFound += offer => window.DispatcherQueue.TryEnqueue(() => tray?.ShowNotification(
+            $"HashGuard {offer.Version} is available",
+            "Open HashGuard, then Settings → Updates, to install it.",
+            NotificationIcon.Info));
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1));
+            while (true)
+            {
+                if (services.Settings.AutoUpdateChecks)
+                {
+                    try
+                    {
+                        await services.CheckForUpdateAsync();
+                    }
+                    catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException or System.Text.Json.JsonException)
+                    {
+                        // Offline or GitHub busy: try again next time.
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromHours(6));
+            }
+        });
 
         background.Start(startupScan: services.Settings.AutoProcessScan && launch.Kind is (LaunchKind.Show or LaunchKind.Minimized));
     }
@@ -220,7 +259,7 @@ public partial class App : Application
     }
 
     /// <summary>Exit from the tray menu. Runs after the menu has closed, not inside the tray icon's own callback.</summary>
-    private void ExitApp() => window?.DispatcherQueue.TryEnqueue(() =>
+    internal void ExitApp() => window?.DispatcherQueue.TryEnqueue(() =>
     {
         background?.Dispose();
         Services.AppServices.Instance.Network.Dispose();

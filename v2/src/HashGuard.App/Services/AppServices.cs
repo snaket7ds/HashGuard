@@ -15,6 +15,7 @@ public sealed class AppServices
     private AppServices()
     {
         SettingsStore = new SettingsStore();
+        IsFirstRun = !File.Exists(SettingsStore.Path);
         settings = SettingsStore.Load();
         keys = SettingsStore.ReadKeys(settings);
         IgnoreList = new IgnoreList();
@@ -77,6 +78,48 @@ public sealed class AppServices
 
     /// <summary>Which programs connect where, and HashGuard's firewall blocks.</summary>
     public NetworkMonitor Network { get; }
+
+    /// <summary>True when HashGuard started without a settings file: first-run setup is shown.</summary>
+    public bool IsFirstRun { get; private set; }
+
+    /// <summary>Saves the settings for the first time, so setup isn't shown again.</summary>
+    public void FinishFirstRun()
+    {
+        UpdateSettings(s => s.FirstRunSetupShown = true);
+        IsFirstRun = false;
+    }
+
+    /// <summary>This build's version.</summary>
+    public ReleaseVersion Version { get; } = UpdateService.CurrentVersion();
+
+    /// <summary>A newer release found by the last check, or null.</summary>
+    public UpdateOffer? AvailableUpdate { get; private set; }
+
+    /// <summary>Raised (on a worker thread) when a check finds a newer release.</summary>
+    public event Action<UpdateOffer>? UpdateFound;
+
+    /// <summary>Asks GitHub for a newer release. Throws on network or release problems.</summary>
+    public async Task<UpdateOffer?> CheckForUpdateAsync(CancellationToken cancellationToken = default)
+    {
+        using var http = UpdateService.CreateClient(Version);
+        var offer = await new UpdateService(http, Version).CheckAsync(cancellationToken);
+        AvailableUpdate = offer;
+        if (offer is not null)
+        {
+            UpdateFound?.Invoke(offer);
+        }
+
+        return offer;
+    }
+
+    /// <summary>Downloads and checks the update, then starts the swap; the caller exits HashGuard when this returns true.</summary>
+    public async Task<bool> DownloadAndInstallAsync(UpdateOffer offer, IProgress<string>? status = null)
+    {
+        var exe = Environment.ProcessPath ?? throw new InvalidOperationException("HashGuard couldn't find its own program file.");
+        using var http = UpdateService.CreateClient(Version);
+        var download = await new UpdateService(http, Version).DownloadAsync(offer, exe, status);
+        return UpdateService.StartInstall(exe, download);
+    }
 
     /// <summary>Start with Windows, the daily scan task and the Explorer menu, for this copy's exe.</summary>
     public WindowsIntegration Integration { get; } = new(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "HashGuard.exe"), IsRunningElevated());

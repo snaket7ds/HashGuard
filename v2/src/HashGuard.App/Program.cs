@@ -8,7 +8,7 @@ namespace HashGuard.App;
 /// Entry point. Before any window opens, checks whether HashGuard is already running for this
 /// user; if so, hands this launch to it (show the window, scan a file, run the daily scan) and exits.
 /// </summary>
-public static class Program
+public static partial class Program
 {
     /// <summary>What this launch asked for, read by <see cref="App"/>.</summary>
     internal static LaunchRequest Launch { get; private set; } = new(LaunchKind.Show);
@@ -19,6 +19,11 @@ public static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Contains(Installer.InstallArgument, StringComparer.OrdinalIgnoreCase))
+        {
+            return RunInstall(args);
+        }
+
         Launch = LaunchRequest.Parse(args);
         Instance = SingleInstance.TryClaim();
         if (Instance is null)
@@ -48,6 +53,40 @@ public static class Program
             Instance?.Dispose();
         }
     }
+
+    /// <summary>
+    /// The elevated install step started by first-run setup: no window. Waits for the copy that
+    /// started it to close (so the installed copy becomes the running one), installs, starts it.
+    /// </summary>
+    private static int RunInstall(string[] args)
+    {
+        try
+        {
+            for (var waited = 0; waited < 75; waited++)
+            {
+                using var claim = SingleInstance.TryClaim();
+                if (claim is not null)
+                {
+                    break;
+                }
+
+                Thread.Sleep(200);
+            }
+
+            var exe = Environment.ProcessPath ?? throw new InvalidOperationException("HashGuard couldn't find its own program file.");
+            new Installer(exe).Install(new InstallOptions(args.Contains(Installer.DesktopShortcutArgument, StringComparer.OrdinalIgnoreCase)));
+            return 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception or System.Runtime.InteropServices.COMException)
+        {
+            App.WriteCrashLog(ex);
+            _ = MessageBoxW(0, $"HashGuard couldn't be installed:\n{ex.Message}\n\nYou can keep using it from the folder it's in.", "HashGuard setup", 0x10);
+            return 1;
+        }
+    }
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16)]
+    private static partial int MessageBoxW(nint window, string text, string caption, uint type);
 
     /// <summary>
     /// "Run as administrator" is on but this copy isn't: start an elevated copy (Windows asks) and

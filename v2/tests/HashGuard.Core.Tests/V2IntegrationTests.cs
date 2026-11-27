@@ -80,6 +80,44 @@ internal static class V2IntegrationTests
             integration.SetRightClickMenu(false);
             Equal<string?>(null, store.Menu);
         })),
+        ("Installer: copies the exe and brings data along without overwriting what's installed", () => WithTemp(dir =>
+        {
+            var source = Write(dir, "portable", "HashGuard.exe");
+            File.WriteAllText(Path.Combine(dir, "portable", "HashGuard.exe"), "new build");
+            Write(dir, Path.Combine("portable", "config"), "settings.json");
+            Write(dir, Path.Combine("portable", "logs"), "scan-log-20261127.csv");
+            var target = Path.Combine(dir, "Program Files", "HashGuard");
+            Directory.CreateDirectory(Path.Combine(target, "config"));
+            File.WriteAllText(Path.Combine(target, "config", "settings.json"), "installed settings");
+
+            var shortcuts = new List<string>();
+            string? started = null;
+            var installer = new Installer(source, target, Path.Combine(dir, "Start"), Path.Combine(dir, "Desktop"))
+            {
+                CreateShortcutOverride = (link, _) => shortcuts.Add(link),
+                StartOverride = exe => started = exe,
+                FindRunningOverride = _ => [],
+            };
+            installer.Install(new InstallOptions(DesktopShortcut: true));
+
+            Equal("new build", File.ReadAllText(Path.Combine(target, "HashGuard.exe")));
+            Equal("installed settings", File.ReadAllText(Path.Combine(target, "config", "settings.json")));
+            True(File.Exists(Path.Combine(target, "logs", "scan-log-20261127.csv")));
+            Equal(2, shortcuts.Count);
+            Equal(installer.InstalledExe, started);
+        })),
+        ("Installer: refuses while the installed copy is running, and needs no copy when run from there", () => WithTemp(dir =>
+        {
+            var source = Write(dir, "portable", "HashGuard.exe");
+            var target = Path.Combine(dir, "Program Files", "HashGuard");
+            Write(dir, Path.Combine("Program Files", "HashGuard"), "HashGuard.exe");
+            var busy = new Installer(source, target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, FindRunningOverride = _ => [42] };
+            Throws<IOException>(() => busy.Install(new InstallOptions(false)));
+
+            var installed = new Installer(Path.Combine(target, "HashGuard.exe"), target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { } };
+            True(installed.IsRunningInstalled);
+            installed.Install(new InstallOptions(false));
+        })),
     ];
 
     private sealed class FakeStore : IIntegrationStore

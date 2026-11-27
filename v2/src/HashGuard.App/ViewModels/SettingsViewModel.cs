@@ -36,6 +36,68 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public bool IsElevated => AppServices.Instance.Network.IsElevated;
 
+    [ObservableProperty] public partial bool AutoUpdateChecks { get; set; }
+    [ObservableProperty] public partial string UpdateStatus { get; set; } = "";
+    [ObservableProperty] public partial bool UpdateBusy { get; set; }
+    [ObservableProperty] public partial UpdateOffer? Offer { get; set; }
+
+    public string VersionText => $"HashGuard {AppServices.Instance.Version}";
+
+    public bool HasOffer => Offer is not null;
+
+    public bool CanCheck => !UpdateBusy;
+
+    partial void OnOfferChanged(UpdateOffer? value) => OnPropertyChanged(nameof(HasOffer));
+
+    partial void OnUpdateBusyChanged(bool value) => OnPropertyChanged(nameof(CanCheck));
+
+    partial void OnAutoUpdateChecksChanged(bool value) => Save();
+
+    public async Task CheckForUpdateAsync()
+    {
+        UpdateBusy = true;
+        UpdateStatus = "Checking…";
+        try
+        {
+            Offer = await AppServices.Instance.CheckForUpdateAsync();
+            UpdateStatus = Offer is null ? $"Up to date, as of {DateTime.Now:HH:mm}." : $"HashGuard {Offer.Version} is available.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            UpdateStatus = $"Couldn't check: {ex.Message}";
+        }
+        finally
+        {
+            UpdateBusy = false;
+        }
+    }
+
+    /// <summary>Downloads, checks and starts installing the update; returns true when HashGuard should now exit.</summary>
+    public async Task<bool> InstallUpdateAsync()
+    {
+        if (Offer is not { } offer)
+        {
+            return false;
+        }
+
+        UpdateBusy = true;
+        try
+        {
+            var started = await AppServices.Instance.DownloadAndInstallAsync(offer, new Progress<string>(text => UpdateStatus = text));
+            UpdateStatus = started ? "Installing… HashGuard restarts in a moment." : "Installing needs administrator permission, which was declined.";
+            return started;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or IOException or UnauthorizedAccessException or TaskCanceledException)
+        {
+            UpdateStatus = ex.Message;
+            return false;
+        }
+        finally
+        {
+            UpdateBusy = false;
+        }
+    }
+
     // Windows integration: read from Windows itself, applied by the page when switched.
     [ObservableProperty] public partial bool StartWithWindows { get; set; }
     [ObservableProperty] public partial bool StartMinimized { get; set; }
@@ -138,6 +200,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             HashCacheEnabled = s.HashCacheEnabled;
             DeltaScanEnabled = s.DeltaScanEnabled;
             ThemeIndex = ThemeIndexOf(s);
+            AutoUpdateChecks = s.AutoUpdateChecks;
+            Offer = AppServices.Instance.AvailableUpdate;
             StartMinimized = s.StartMinimized;
             RunElevated = s.RunElevated;
             DailyScanHour = s.ScheduledScanHour;
@@ -229,6 +293,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.UseSystemDefaultColors = ThemeIndex == 0;
         settings.ColorMode = ThemeName(ThemeIndex);
         settings.TrustedPublishers = [.. TrustedPublishers];
+        settings.AutoUpdateChecks = AutoUpdateChecks;
         settings.StartMinimized = StartMinimized;
         settings.RunElevated = RunElevated;
         settings.ScheduledDailyScan = IntegrationReady ? DailyScan : settings.ScheduledDailyScan;
