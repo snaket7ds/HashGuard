@@ -17,10 +17,14 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Spike-only: HASHGUARD_THEME=Dark|Light overrides the Windows theme for screenshots.
+        // HASHGUARD_THEME=Dark|Light overrides the saved theme, for screenshots.
         if (Enum.TryParse<ElementTheme>(Environment.GetEnvironmentVariable("HASHGUARD_THEME"), out var theme))
         {
             Root.RequestedTheme = theme;
+        }
+        else
+        {
+            ApplyTheme(ViewModels.SettingsViewModel.ThemeOf(Services.AppServices.Instance.Settings));
         }
 
         ExtendsContentIntoTitleBar = true;
@@ -178,7 +182,7 @@ public sealed partial class MainWindow : Window
     {
         if (args.IsSettingsSelected)
         {
-            Navigate(typeof(PlaceholderPage), "Settings");
+            Navigate(typeof(SettingsPage), null);
             return;
         }
 
@@ -221,6 +225,23 @@ public sealed partial class MainWindow : Window
 
         pendingScanParameter = parameter;
         Nav.SelectedItem = scanItem;
+    }
+
+    /// <summary>Applies "system", "light" or "dark" (settings.json's names) to the whole window.</summary>
+    public void ApplyTheme(string colorMode)
+    {
+        Root.RequestedTheme = colorMode switch
+        {
+            HashGuard.Core.AppConstants.ColorModeLight => ElementTheme.Light,
+            HashGuard.Core.AppConstants.ColorModeDark => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
+
+        // The caption buttons (minimise, maximise, close) don't follow the content theme by themselves.
+        var dark = Root.ActualTheme == ElementTheme.Dark;
+        AppWindow.TitleBar.ButtonForegroundColor = dark ? Microsoft.UI.Colors.White : Microsoft.UI.Colors.Black;
+        AppWindow.TitleBar.ButtonHoverForegroundColor = AppWindow.TitleBar.ButtonForegroundColor;
+        AppWindow.TitleBar.ButtonHoverBackgroundColor = dark ? Windows.UI.Color.FromArgb(0x19, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x19, 0, 0, 0);
     }
 
     /// <summary>Selects the navigation item with this tag, which opens its page.</summary>

@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="HashGuard.App.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:HashGuard.App.Pages">
+
+    <Page.Resources>
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="2,20,0,6" />
+        </Style>
+        <Style x:Key="RowStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Padding" Value="20,14" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style x:Key="RowTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}" />
+        <Style x:Key="RowHintStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Setter Property="TextWrapping" Value="WrapWholeWords" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="1040" Padding="32,4,32,32">
+            <Grid>
+                <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock Text="{x:Bind ViewModel.SavedText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right"
+                           VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            </Grid>
+            <TextBlock Text="Changes are saved as you make them." Style="{StaticResource RowHintStyle}" Margin="0,4,0,0" />
+
+            <!-- Reputation sources -->
+            <TextBlock Text="Reputation sources" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="VirusTotal" Style="{StaticResource RowTitleStyle}" />
+                            <TextBlock Text="Asks about 70 antivirus engines about each file's hash. Free keys allow 4 lookups a minute and 500 a day." Style="{StaticResource RowHintStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.VirusTotalEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                      AutomationProperties.Name="VirusTotal" />
+                    </Grid>
+                    <StackPanel Spacing="4">
+                        <PasswordBox x:Name="VirusTotalKeyBox" Header="API key" PlaceholderText="Paste your VirusTotal API key" MaxWidth="520" HorizontalAlignment="Left" Width="520"
+                                     PasswordRevealMode="Peek" PasswordChanged="VirusTotalKey_Changed" />
+                        <TextBlock Text="{x:Bind ViewModel.VirusTotalKeyStatus, Mode=OneWay}" Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="MetaDefender Cloud" Style="{StaticResource RowTitleStyle}" />
+                            <TextBlock Text="OPSWAT's multi-engine hash lookup. Needs its own free API key." Style="{StaticResource RowHintStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.MetaDefenderEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                      AutomationProperties.Name="MetaDefender Cloud" />
+                    </Grid>
+                    <StackPanel Spacing="4">
+                        <PasswordBox x:Name="MetaDefenderKeyBox" Header="API key" PlaceholderText="Paste your MetaDefender API key" HorizontalAlignment="Left" Width="520"
+                                     PasswordRevealMode="Peek" PasswordChanged="MetaDefenderKey_Changed" />
+                        <TextBlock Text="{x:Bind ViewModel.MetaDefenderKeyStatus, Mode=OneWay}" Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Team Cymru Malware Hash Registry" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="A free hash lookup over DNS. No key needed." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.CymruEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  AutomationProperties.Name="Team Cymru" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Offer to send unknown files to VirusTotal" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Files no source knows get a &quot;Send to VirusTotal&quot; button. Nothing is uploaded until you approve that file." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.UploadUnknown, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  AutomationProperties.Name="Offer to send unknown files to VirusTotal" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Keep to free API limits" Style="{StaticResource RowTitleStyle}" />
+                            <TextBlock Text="Paces VirusTotal to 4 lookups a minute and 500 a day. Turn off only with a paid key." Style="{StaticResource RowHintStyle}" />
+                        </StackPanel>
+                        <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.FreeApiLimits, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                      AutomationProperties.Name="Keep to free API limits" />
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <NumberBox Header="Seconds between VirusTotal lookups" Value="{x:Bind ViewModel.DelaySeconds, Mode=TwoWay}" Minimum="0" Maximum="600"
+                                   SpinButtonPlacementMode="Compact" Width="250" ValueChanged="Number_Changed" />
+                        <NumberBox Header="Request timeout (seconds)" Value="{x:Bind ViewModel.TimeoutSeconds, Mode=TwoWay}" Minimum="5" Maximum="600"
+                                   SpinButtonPlacementMode="Compact" Width="200" ValueChanged="Number_Changed" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Scanning -->
+            <TextBlock Text="Scanning" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Remember results (hash cache)" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Reuses earlier answers for files already checked, so scans are faster and use fewer lookups." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.HashCacheEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  AutomationProperties.Name="Remember results" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Skip re-hashing unchanged files" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Files whose size and date haven't changed since the last check aren't read again. Faster; needs the hash cache." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.DeltaScanEnabled, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.HashCacheEnabled, Mode=OneWay}"
+                                  OnContent="On" OffContent="Off" MinWidth="0" AutomationProperties.Name="Skip re-hashing unchanged files" />
+                </Grid>
+            </Border>
+
+            <!-- Trusted publishers -->
+            <TextBlock Text="Trusted publishers" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Files with a valid signature from these exact names get a lower risk score." Style="{StaticResource RowHintStyle}" />
+                    <Grid ColumnSpacing="8" MaxWidth="520" HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{x:Bind ViewModel.NewPublisher, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Publisher name, as shown in a file's signature"
+                                 Width="400" KeyDown="NewPublisher_KeyDown" AutomationProperties.Name="New trusted publisher" />
+                        <Button Grid.Column="1" Content="Add" Click="AddPublisher_Click" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.TrustedPublishers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Grid ColumnSpacing="8" Padding="0,2" MaxWidth="520" HorizontalAlignment="Left">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="400" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="1" Tag="{x:Bind}" Click="RemovePublisher_Click" AutomationProperties.Name="Remove publisher" ToolTipService.ToolTip="Remove">
+                                        <FontIcon Glyph="&#xE711;" FontSize="12" />
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Ignored -->
+            <TextBlock Text="Ignored files and locations" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Nothing is ignored. When you ignore a file or a location from a scan, it's listed here." Style="{StaticResource RowHintStyle}"
+                               Visibility="{x:Bind local:SettingsPage.VisibleWhenNot(ViewModel.HasIgnored), Mode=OneWay}" />
+                    <TextBlock Text="Locations" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                               Visibility="{x:Bind local:SettingsPage.VisibleWhenAny(ViewModel.IgnoredPaths.Count), Mode=OneWay}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.IgnoredPaths}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Grid ColumnSpacing="8" Padding="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+                                    <Button Grid.Column="1" Content="Stop ignoring" Tag="{x:Bind}" Click="RemoveIgnoredPath_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="Files (by SHA-256)" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                               Visibility="{x:Bind local:SettingsPage.VisibleWhenAny(ViewModel.IgnoredHashes.Count), Mode=OneWay}" />
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.IgnoredHashes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Grid ColumnSpacing="8" Padding="0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind}" VerticalAlignment="Center" FontFamily="Consolas" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+                                    <Button Grid.Column="1" Content="Stop ignoring" Tag="{x:Bind}" Click="RemoveIgnoredHash_Click" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- Appearance -->
+            <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Theme" Style="{StaticResource RowTitleStyle}" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1" SelectedIndex="{x:Bind ViewModel.ThemeIndex, Mode=TwoWay}" MinWidth="180" AutomationProperties.Name="Theme">
+                        <ComboBoxItem Content="Use Windows setting" />
+                        <ComboBoxItem Content="Light" />
+                        <ComboBoxItem Content="Dark" />
+                    </ComboBox>
+                </Grid>
+            </Border>
+
+            <!-- Later -->
+            <TextBlock Text="Coming in later previews" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="6">
+                    <TextBlock Style="{StaticResource RowHintStyle}"
+                               Text="Start with Windows, run as administrator, the daily scan, the Explorer right-click menu, scanning files you open, firewall monitoring and auto-block, automatic updates and usage data. Until then, HashGuard 1.x keeps managing them, and their settings are left as they are." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
