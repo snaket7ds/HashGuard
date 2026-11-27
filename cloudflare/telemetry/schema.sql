@@ -36,7 +36,11 @@ CREATE TABLE IF NOT EXISTS installs (
   os_version TEXT NOT NULL,
   starts INTEGER NOT NULL DEFAULT 0,
   pings INTEGER NOT NULL DEFAULT 0,
-  last_ping TEXT
+  last_ping TEXT,
+  -- Latest firewall snapshot from app_ping (1.1.8+; NULL for older versions).
+  fw_monitoring INTEGER,
+  fw_online INTEGER,
+  fw_blocked INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_installs_last_seen ON installs(last_seen);
 CREATE INDEX IF NOT EXISTS idx_installs_last_start ON installs(last_start);
@@ -61,3 +65,14 @@ CREATE TABLE IF NOT EXISTS scan_days (
   PRIMARY KEY (install_id, day)
 );
 CREATE INDEX IF NOT EXISTS idx_scan_days_day ON scan_days(day);
+
+-- Firewall actions per install per day (1.1.8+). Counts only.
+CREATE TABLE IF NOT EXISTS firewall_days (
+  install_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  user_blocks INTEGER NOT NULL DEFAULT 0,
+  auto_blocks INTEGER NOT NULL DEFAULT 0,
+  unblocks INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (install_id, day)
+);
+CREATE INDEX IF NOT EXISTS idx_firewall_days_day ON firewall_days(day);

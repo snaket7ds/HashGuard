@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace HashGuardScanner;
 
-/// <summary>Anonymous usage events (install ID + version only; no paths/hashes).</summary>
+/// <summary>Anonymous usage events (install ID, version and counts only; no paths, hashes or app names).</summary>
 internal static class TelemetryClient
 {
     public static object BuildPayload(
@@ -25,7 +25,7 @@ internal static class TelemetryClient
     }
 
     public static bool IsSafeEventType(string eventType) =>
-        eventType is "app_install" or "app_start" or "app_ping" or "scan_complete";
+        eventType is "app_install" or "app_start" or "app_ping" or "scan_complete" or "firewall_block";
 
     public static async Task<bool> SendAsync(
         string endpointUrl,

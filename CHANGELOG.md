@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.8 - 2026-11-27
+
+- **Usage reporting now covers the firewall, as counts only.** With **Send anonymous usage data** on (Settings → Behavior → Updates and privacy), HashGuard adds:
+  - to the 5-minute heartbeat: whether firewall monitoring is on, and how many apps are online and blocked right now;
+  - one event per firewall action: a block you made, an auto-block of a malicious app, or an unblock.
+- It never sends which apps: no names, paths, hashes or addresses, the same rule as for scans. The first-run note and the README say so.
+- The telemetry dashboard has a new **Firewall** section and a **Daily Blocks** chart. Earlier versions keep reporting as before; they show "-" in the roster's new Firewall column.
+
 ## v1.1.7 - 2026-11-27
 
 - **Stored & ignored hashes are back, as buttons.** A new window has two tabs, each with search:

@@ -157,6 +157,26 @@ var tests = new (string Name, Action Test)[]
         AssertTrue(TelemetryClient.IsSafeEventType("app_ping"));
         AssertFalse(TelemetryClient.IsSafeEventType("file_path"));
     }),
+    ("telemetry firewall payloads are counts only", () =>
+    {
+        var snapshot = HashGuardLogic.BuildFirewallSnapshotTelemetry(true, 12, -3);
+        AssertEqual(true, (bool)snapshot["fw_monitoring"]);
+        AssertEqual(12, (int)snapshot["fw_online"]);
+        AssertEqual(0, (int)snapshot["fw_blocked"]);
+        AssertEqual(3, snapshot.Count);
+        var ping = JsonSerializer.Serialize(TelemetryClient.BuildPayload("app_ping", "install123456", "1.1.8", "Windows", snapshot));
+        AssertTrue(HashGuardLogic.TelemetryPayloadLooksSafe(ping));
+
+        AssertTrue(TelemetryClient.IsSafeEventType("firewall_block"));
+        var block = HashGuardLogic.BuildFirewallActionTelemetry("auto_blocks")!;
+        AssertEqual(1, (int)block["auto_blocks"]);
+        AssertEqual(1, block.Count);
+        AssertEqual(1000, (int)HashGuardLogic.BuildFirewallActionTelemetry("unblocks", 5000)!["unblocks"]);
+        AssertTrue(HashGuardLogic.BuildFirewallActionTelemetry("unblocks", 0) is null);
+        AssertTrue(HashGuardLogic.BuildFirewallActionTelemetry("app_name") is null);
+        var json = JsonSerializer.Serialize(TelemetryClient.BuildPayload("firewall_block", "install123456", "1.1.8", "Windows", block));
+        AssertTrue(HashGuardLogic.TelemetryPayloadLooksSafe(json));
+    }),
     ("virus total file report stats map correctly", () =>
     {
         using var doc = JsonDocument.Parse("""

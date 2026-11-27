@@ -411,6 +411,7 @@ public sealed partial class MainForm : Form
         networkBlockedPaths.Add(FirewallRules.NormalizePath(path));
         ForgetUserAllowed(path);
         LogNetworkAction("Blocked outgoing (from alert)", path);
+        SendFirewallActionTelemetry("user_blocks");
         refreshNetworkWindow?.Invoke();
         return true;
     }
@@ -460,6 +461,7 @@ public sealed partial class MainForm : Form
                 FirewallRules.Block(app.Path, alsoInbound: false);
                 networkBlockedPaths.Add(app.Path);
                 LogNetworkAction("Auto-blocked (malicious verdict)", app.Path);
+                SendFirewallActionTelemetry("auto_blocks");
                 var blockedPath = app.Path;
                 var blockedName = app.Name;
                 ShowAlert(
@@ -570,6 +572,7 @@ public sealed partial class MainForm : Form
         networkBlockedPaths.Add(FirewallRules.NormalizePath(path));
         ForgetUserAllowed(path);
         LogNetworkAction(page.Verification.Checked ? "Blocked outgoing and incoming" : "Blocked outgoing", path);
+        SendFirewallActionTelemetry("user_blocks");
         return true;
     }
 
@@ -635,6 +638,7 @@ public sealed partial class MainForm : Form
             }
 
             LogNetworkAction("Unblocked (auto-block will leave this file alone)", path);
+            SendFirewallActionTelemetry("unblocks");
             return true;
         }
         catch (Exception ex)
@@ -704,6 +708,7 @@ public sealed partial class MainForm : Form
                 RememberUserAllowed(unblockedPath);
             }
             LogNetworkAction($"Removed all HashGuard firewall rules ({removed})", "Windows Firewall");
+            SendFirewallActionTelemetry("unblocks", unblockedPaths.Count);
         }
         catch (Exception ex)
         {

@@ -359,6 +359,28 @@ export function renderAppleDashboard() {
     </section>
 
     <section class="section">
+      <div class="section-head"><h2>Firewall</h2><div class="sub" id="firewallSub">Installs on 1.1.8 or later &middot; counts only</div></div>
+      <div class="stat-grid" id="firewallStats"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>Daily Blocks</h2>
+        <div class="sub">Last 30 days &middot; by the user and auto-blocks together</div>
+      </div>
+      <div class="panel">
+        <div class="chart-wrap">
+          <div class="chart" id="blocksChart" title="Daily blocks"></div>
+          <div class="chart-legend">
+            <span id="blocksStart">-</span>
+            <span id="blocksEnd">-</span>
+          </div>
+        </div>
+        <div class="chart-peak" id="blocksPeak">Peak: -</div>
+      </div>
+    </section>
+
+    <section class="section">
       <div class="section-head">
         <h2>Install Roster</h2>
         <div class="sub">Unique install IDs &middot; offline &gt; 7 days are hidden</div>
@@ -375,6 +397,7 @@ export function renderAppleDashboard() {
               <th style="width:70px">Starts</th>
               <th style="width:70px">Pings</th>
               <th style="width:70px">Scans</th>
+              <th>Firewall</th>
             </tr>
           </thead>
           <tbody id="installs"></tbody>
@@ -450,10 +473,56 @@ export function renderAppleDashboard() {
         formatTime(row.last_seen) + (row.age_minutes != null ? ' <span style="color:var(--label-2);font-size:12px">(' + formatAge(row.age_minutes) + ')</span>' : ''),
         formatNumber(row.starts || 0),
         formatNumber(row.pings || 0),
-        formatNumber(row.scans || 0)
+        formatNumber(row.scans || 0),
+        firewallCell(row)
       ], "No installs recorded yet");
 
       renderDailyChart(data.daily || []);
+      renderFirewall(data.firewall || {});
+    }
+
+    function renderFirewall(fw) {
+      const all = fw.allTime || {};
+      const d30 = fw.thirtyDays || {};
+      document.getElementById("firewallSub").innerHTML = formatNumber(fw.reporting || 0) +
+        " install(s) on 1.1.8 or later, seen in 7 days &middot; counts only";
+      document.getElementById("firewallStats").innerHTML =
+        plainCard("Monitoring On", formatNumber(fw.monitoringOn || 0), "of " + formatNumber(fw.reporting || 0) + " reporting") +
+        plainCard("Apps Online Now", formatNumber(fw.appsOnlineNow || 0), "Across installs online now") +
+        plainCard("Apps Blocked", formatNumber(fw.appsBlocked || 0), "HashGuard rules in place") +
+        plainCard("Blocks", formatNumber((all.user_blocks || 0) + (all.auto_blocks || 0)),
+          "User " + formatNumber(all.user_blocks || 0) + " &middot; auto " + formatNumber(all.auto_blocks || 0) +
+          " &middot; 30d " + formatNumber((d30.user_blocks || 0) + (d30.auto_blocks || 0))) +
+        plainCard("Unblocks", formatNumber(all.unblocks || 0), "30d: " + formatNumber(d30.unblocks || 0));
+
+      const daily = fw.daily || [];
+      const totals = daily.map(d => (d.user_blocks || 0) + (d.auto_blocks || 0));
+      const max = Math.max(1, ...totals);
+      document.getElementById("blocksChart").innerHTML = daily.map((d, i) => {
+        const v = totals[i];
+        const h = Math.max(2, Math.round((v / max) * 100));
+        return '<div class="' + (v === 0 ? "bar zero" : "bar") + '" style="height:' + h + '%" title="' +
+          escapeHtml(formatDate(d.day) + ': ' + (d.user_blocks || 0) + ' by the user, ' + (d.auto_blocks || 0) + ' auto, ' + (d.unblocks || 0) + ' unblocked') + '"></div>';
+      }).join("");
+      document.getElementById("blocksStart").textContent = daily.length ? formatDate(daily[0].day) : "-";
+      document.getElementById("blocksEnd").textContent = daily.length ? formatDate(daily[daily.length - 1].day) : "-";
+      let peakIdx = -1;
+      totals.forEach((v, i) => { if (v > 0 && (peakIdx < 0 || v > totals[peakIdx])) peakIdx = i; });
+      document.getElementById("blocksPeak").innerHTML = peakIdx >= 0
+        ? 'Peak: <strong>' + formatNumber(totals[peakIdx]) + '</strong> on ' + formatDate(daily[peakIdx].day)
+        : 'Peak: none yet';
+    }
+
+    function firewallCell(row) {
+      if (row.fw_monitoring == null) return '<span style="color:var(--label-2)">-</span>';
+      if (!row.fw_monitoring) return 'Off';
+      return 'On &middot; ' + formatNumber(row.fw_online || 0) + ' online &middot; ' + formatNumber(row.fw_blocked || 0) + ' blocked';
+    }
+
+    function plainCard(label, value, hint) {
+      return '<div class="card"><div class="label">' + escapeHtml(label) + '</div>' +
+        '<div class="value">' + value + '</div>' +
+        '<div class="hint">' + hint + '</div></div>';
     }
 
     function statCard(label, allTime, last30) {

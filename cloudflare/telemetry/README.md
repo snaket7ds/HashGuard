@@ -29,6 +29,10 @@ Ingest is **rollup-on-write**: no per-heartbeat event rows are stored. Each acce
 - `installs` — one row per install ID with lifetime counters (`starts`, `pings`) and a latest-status snapshot (`app_version`, `os_version`, `first_seen`, `last_seen`, `last_start`, `last_ping`).
 - `presence_days` — one row per install per UTC day, which drives the daily chart.
 - `scan_days` — per-install, per-day scan totals summed from `scan_complete` payloads.
+- `firewall_days` — per-install, per-day firewall action counts (`user_blocks`, `auto_blocks`, `unblocks`) from `firewall_block` events (HashGuard 1.1.8+).
+- `installs.fw_monitoring` / `fw_online` / `fw_blocked` — the latest firewall snapshot from `app_ping` (1.1.8+). NULL means the install's version doesn't report it, not zero.
+
+Firewall telemetry is counts only: never app names, paths, hashes or remote addresses. The dashboard's **Firewall** section and **Daily Blocks** chart read these.
 
 This keeps `/api/summary` reads at O(#installs + #days) instead of scanning the full heartbeat history, which is what pushed the database past the D1 free-tier read limits in 2026-09. The legacy append-only `events` table is no longer written to and has been dropped; `migration-rollup.sql` is the one-time backfill that copied its history into the rollup tables.
 
@@ -60,6 +64,12 @@ If `installs` already exists from an earlier rollup deploy, it may be missing th
 
 ```bash
 wrangler d1 execute hashguard_telemetry --remote --command "ALTER TABLE installs ADD COLUMN last_ping TEXT"
+```
+
+A database created before 2026-11-27 also needs the firewall columns and table (run once; applied to the live database on 2026-11-27):
+
+```bash
+wrangler d1 execute hashguard_telemetry --remote --file=./migration-firewall.sql
 ```
 
 5. Set a dashboard token.

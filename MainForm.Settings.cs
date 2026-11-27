@@ -389,6 +389,22 @@ public sealed partial class MainForm : Form
         }
     }
 
+    /// <summary>Counts for the heartbeat: the same numbers as the Firewall page's stat cards.</summary>
+    private Dictionary<string, object> BuildFirewallSnapshotTelemetry()
+    {
+        var monitoring = appSettings.NetworkMonitorEnabled && networkTracker is not null;
+        var online = networkTracker?.Apps.Count(app => app.CurrentConnections > 0 && !networkBlockedPaths.Contains(app.Path)) ?? 0;
+        return HashGuardLogic.BuildFirewallSnapshotTelemetry(monitoring, online, networkBlockedPaths.Count);
+    }
+
+    private void SendFirewallActionTelemetry(string kind, int count = 1)
+    {
+        if (HashGuardLogic.BuildFirewallActionTelemetry(kind, count) is { } data)
+        {
+            _ = SendTelemetryEventAsync("firewall_block", data);
+        }
+    }
+
     private async Task<bool> SendTelemetryEventAsync(string eventType, Dictionary<string, object>? data = null)
     {
         if (!appSettings.TelemetryEnabled || string.IsNullOrWhiteSpace(AppConstants.TelemetryEndpointUrl))
@@ -425,7 +441,7 @@ public sealed partial class MainForm : Form
             "• Local-only (default): scores unsigned files, risky paths, persistence, recent changes, and the local hash cache — no cloud API keys required.",
             "• Cloud reputation: add free VirusTotal and/or MetaDefender API keys in Settings for multi-engine hash checks.",
             "Uploading unknown files to VirusTotal is optional and privacy-sensitive. Keep uploads off for private, personal, proprietary, or sensitive files.",
-            "Anonymous usage reporting is on: a random install ID, the app and Windows version, and scan counts. Never file names, paths, hashes or user names. Turn it off in Settings. You can also enable scheduled daily scans and export reports there.",
+            "Anonymous usage reporting is on: a random install ID, the app and Windows version, and scan and firewall counts. Never file or app names, paths, hashes, addresses or user names. Turn it off in Settings. You can also enable scheduled daily scans and export reports there.",
             "Open Settings now?",
         });
         var openSettings = MessageBox.Show(this, message, "HashGuard first-run setup", MessageBoxButtons.YesNo, MessageBoxIcon.Information);

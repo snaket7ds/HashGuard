@@ -498,6 +498,34 @@ internal static class HashGuardLogic
         };
     }
 
+    /// <summary>
+    /// Firewall snapshot sent with the heartbeat: whether monitoring is on and how many apps are
+    /// online and blocked. Counts only; never which apps.
+    /// </summary>
+    public static Dictionary<string, object> BuildFirewallSnapshotTelemetry(bool monitoring, int appsOnline, int appsBlocked)
+    {
+        return new Dictionary<string, object>
+        {
+            ["fw_monitoring"] = monitoring,
+            ["fw_online"] = Math.Clamp(appsOnline, 0, 100000),
+            ["fw_blocked"] = Math.Clamp(appsBlocked, 0, 100000),
+        };
+    }
+
+    /// <summary>
+    /// One firewall action as counts: "user_blocks", "auto_blocks" or "unblocks". Returns null for
+    /// an unknown kind or a count below 1; the count is capped at what the backend accepts (1000).
+    /// </summary>
+    public static Dictionary<string, object>? BuildFirewallActionTelemetry(string kind, int count = 1)
+    {
+        if (kind is not ("user_blocks" or "auto_blocks" or "unblocks") || count < 1)
+        {
+            return null;
+        }
+
+        return new Dictionary<string, object> { [kind] = Math.Min(count, 1000) };
+    }
+
     public static bool TelemetryPayloadLooksSafe(string json)
     {
         if (string.IsNullOrWhiteSpace(json))

@@ -242,7 +242,7 @@ public sealed partial class MainForm : Form
         processMonitorTimer.Tick += async (_, _) => await ScanNewProcessFilesAsync();
         allFileScanTimer.Tick += async (_, _) => await ScanQueuedAllFileAsync();
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
-        telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
+        telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping", BuildFirewallSnapshotTelemetry());
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
         uploadUnknownBox.CheckedChanged += (_, _) => ConfirmUploads();
         rightClickScanBox.CheckedChanged += (_, _) => RightClickScanPreferenceChanged();

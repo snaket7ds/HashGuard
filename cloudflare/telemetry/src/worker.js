@@ -1,5 +1,5 @@
 import { renderAppleDashboard } from "./dashboard-apple.js";
-const ALLOWED_EVENTS = new Set(["app_install", "app_start", "app_ping", "scan_complete"]);
+const ALLOWED_EVENTS = new Set(["app_install", "app_start", "app_ping", "scan_complete", "firewall_block"]);
 // Serve cached /api/summary responses so dashboard auto-refresh / tab-focus
 // reloads don't rescan D1 on every request. 120s keeps "Online Now" fresh
 // (heartbeats arrive every 5 min anyway).
@@ -133,17 +133,50 @@ async function recordEvent(request, env) {
       ).bind(installId, nowIso, nowIso, nowIso, appVersion, osVersion)
     );
   } else if (eventType === "app_ping") {
+    // 1.1.8+ pings carry a firewall snapshot (counts only). Older versions send
+    // none, so the columns keep NULL ("not reported") instead of a false 0.
+    const fwMonitoring = flagValue(data.fw_monitoring);
+    const fwOnline = optionalNumber(data.fw_online);
+    const fwBlocked = optionalNumber(data.fw_blocked);
     stmts.push(
       env.DB.prepare(
-        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings, last_ping)
-         VALUES (?, ?, ?, NULL, ?, ?, 0, 1, ?)
+        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings, last_ping, fw_monitoring, fw_online, fw_blocked)
+         VALUES (?, ?, ?, NULL, ?, ?, 0, 1, ?, ?, ?, ?)
          ON CONFLICT(install_id) DO UPDATE SET
            last_seen = excluded.last_seen,
            app_version = excluded.app_version,
            os_version = excluded.os_version,
            last_ping = excluded.last_ping,
-           pings = pings + 1`
-      ).bind(installId, nowIso, nowIso, appVersion, osVersion, nowIso)
+           pings = pings + 1,
+           fw_monitoring = excluded.fw_monitoring,
+           fw_online = excluded.fw_online,
+           fw_blocked = excluded.fw_blocked`
+      ).bind(installId, nowIso, nowIso, appVersion, osVersion, nowIso, fwMonitoring, fwOnline, fwBlocked)
+    );
+  } else if (eventType === "firewall_block") {
+    const userBlocks = numberValue(data.user_blocks);
+    const autoBlocks = numberValue(data.auto_blocks);
+    const unblocks = numberValue(data.unblocks);
+    if (userBlocks + autoBlocks + unblocks === 0 || userBlocks + autoBlocks + unblocks > 1000) {
+      return json({ error: "invalid_event" }, 400);
+    }
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO installs (install_id, first_seen, last_seen, last_start, app_version, os_version, starts, pings)
+         VALUES (?, ?, ?, NULL, ?, ?, 0, 0)
+         ON CONFLICT(install_id) DO UPDATE SET
+           last_seen = excluded.last_seen,
+           app_version = excluded.app_version,
+           os_version = excluded.os_version`
+      ).bind(installId, nowIso, nowIso, appVersion, osVersion),
+      env.DB.prepare(
+        `INSERT INTO firewall_days (install_id, day, user_blocks, auto_blocks, unblocks)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(install_id, day) DO UPDATE SET
+           user_blocks = user_blocks + excluded.user_blocks,
+           auto_blocks = auto_blocks + excluded.auto_blocks,
+           unblocks = unblocks + excluded.unblocks`
+      ).bind(installId, day, userBlocks, autoBlocks, unblocks)
     );
   } else if (eventType === "scan_complete") {
     stmts.push(
@@ -218,6 +251,10 @@ async function buildSummary(env) {
     scanStats30,
     daily,
     installRoster,
+    firewallNow,
+    firewallAll,
+    firewall30,
+    firewallDaily,
   ] = await Promise.all([
     // "Total installs" = unique IDs seen in the last 7 days (not lifetime stale).
     countInstallsSeen(env, sinceRoster),
@@ -287,12 +324,56 @@ async function buildSummary(env) {
          last_seen,
          starts,
          pings,
+         fw_monitoring,
+         fw_online,
+         fw_blocked,
          COALESCE((SELECT SUM(scans) FROM scan_days s WHERE s.install_id = installs.install_id), 0) AS scans
        FROM installs
        WHERE last_seen >= ?
        ORDER BY last_seen DESC
        LIMIT 50`,
       sinceRoster
+    ),
+    // Firewall snapshot: installs seen in 7 days that report (1.1.8+). Apps online
+    // only counts installs whose last heartbeat is live, so it means "right now".
+    first(
+      env,
+      `SELECT
+         COUNT(fw_monitoring) AS reporting,
+         COALESCE(SUM(CASE WHEN fw_monitoring = 1 THEN 1 ELSE 0 END), 0) AS monitoring_on,
+         COALESCE(SUM(fw_blocked), 0) AS apps_blocked,
+         COALESCE(SUM(CASE WHEN last_ping >= ? THEN fw_online ELSE 0 END), 0) AS apps_online_now
+       FROM installs
+       WHERE last_seen >= ?`,
+      sinceLive,
+      sinceRoster
+    ),
+    first(
+      env,
+      `SELECT
+         COALESCE(SUM(user_blocks), 0) AS user_blocks,
+         COALESCE(SUM(auto_blocks), 0) AS auto_blocks,
+         COALESCE(SUM(unblocks), 0) AS unblocks
+       FROM firewall_days`
+    ),
+    first(
+      env,
+      `SELECT
+         COALESCE(SUM(user_blocks), 0) AS user_blocks,
+         COALESCE(SUM(auto_blocks), 0) AS auto_blocks,
+         COALESCE(SUM(unblocks), 0) AS unblocks
+       FROM firewall_days
+       WHERE day >= ?`,
+      since30DaysDay
+    ),
+    all(
+      env,
+      `SELECT day, SUM(user_blocks) AS user_blocks, SUM(auto_blocks) AS auto_blocks, SUM(unblocks) AS unblocks
+       FROM firewall_days
+       WHERE day >= ?
+       GROUP BY day
+       ORDER BY day ASC`,
+      since30DaysDay
     ),
   ]);
 
@@ -330,6 +411,15 @@ async function buildSummary(env) {
     scanStats: normalizeScanStats(scanStats),
     scanStats30d: normalizeScanStats(scanStats30),
     daily: filledDaily,
+    firewall: {
+      reporting: firewallNow?.reporting ?? 0,
+      monitoringOn: firewallNow?.monitoring_on ?? 0,
+      appsOnlineNow: firewallNow?.apps_online_now ?? 0,
+      appsBlocked: firewallNow?.apps_blocked ?? 0,
+      allTime: normalizeFirewallStats(firewallAll),
+      thirtyDays: normalizeFirewallStats(firewall30),
+      daily: fillFirewallSeries(firewallDaily, 30),
+    },
     installs,
     retentionDays: rosterRetentionDays,
   };
@@ -343,6 +433,32 @@ function normalizeScanStats(row) {
     total_high_risk: row?.total_high_risk ?? 0,
     total_scans: row?.total_scans ?? 0,
   };
+}
+
+function normalizeFirewallStats(row) {
+  return {
+    user_blocks: row?.user_blocks ?? 0,
+    auto_blocks: row?.auto_blocks ?? 0,
+    unblocks: row?.unblocks ?? 0,
+  };
+}
+
+function fillFirewallSeries(rows, days) {
+  const byDay = new Map(rows.map((r) => [r.day, r]));
+  const result = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    const key = d.toISOString().slice(0, 10);
+    const row = byDay.get(key);
+    result.push({
+      day: key,
+      user_blocks: row?.user_blocks ?? 0,
+      auto_blocks: row?.auto_blocks ?? 0,
+      unblocks: row?.unblocks ?? 0,
+    });
+  }
+  return result;
 }
 
 function countInstallsSeen(env, since) {
@@ -466,6 +582,17 @@ function stringValue(value, maxLength) {
 
 function numberValue(value) {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+/** A count the client may omit: NULL when absent or invalid (older app versions). */
+function optionalNumber(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 100000 ? value : null;
+}
+
+function flagValue(value) {
+  if (value === true || value === 1) return 1;
+  if (value === false || value === 0) return 0;
+  return null;
 }
 
 function isoHoursAgo(hours) {
