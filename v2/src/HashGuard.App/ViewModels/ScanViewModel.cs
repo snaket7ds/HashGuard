@@ -181,6 +181,51 @@ public sealed partial class ScanViewModel : ObservableObject
         services.NotifyFindingsChanged();
     }
 
+    /// <summary>How many processes are running this finding's file right now.</summary>
+    public static Task<int> CountRunningAsync(FindingViewModel finding) =>
+        Task.Run(() => ProcessCollector.FindRunning(finding.Result.Path).Count);
+
+    /// <summary>
+    /// Stops the file if asked, moves it to quarantine and drops the row. Returns an error message,
+    /// or null when it worked.
+    /// </summary>
+    public async Task<string?> QuarantineAsync(FindingViewModel finding, bool stopRunning)
+    {
+        var services = AppServices.Instance;
+        var result = finding.Result;
+        finding.IsBusy = true;
+        try
+        {
+            var entry = await Task.Run(() =>
+            {
+                if (stopRunning)
+                {
+                    ProcessCollector.StopRunning(result.Path);
+                }
+
+                return services.Quarantine.Quarantine(result.Path, result.Sha256, result.Notes);
+            });
+            result.AppendNote($"Quarantined to {entry.QuarantinePath}");
+            Findings.Remove(finding);
+            UpdateCounts();
+            services.NotifyFindingsChanged();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex switch
+            {
+                UnauthorizedAccessException => $"Windows didn't allow moving {finding.Name}. Run HashGuard as administrator to quarantine files in protected folders.",
+                IOException when ex is not FileNotFoundException => $"{finding.Name} is in use, so it couldn't be moved. {ex.Message}",
+                _ => ex.Message,
+            };
+        }
+        finally
+        {
+            finding.IsBusy = false;
+        }
+    }
+
     public async Task SendToVirusTotalAsync(FindingViewModel finding)
     {
         var services = AppServices.Instance;

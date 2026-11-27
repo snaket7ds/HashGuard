@@ -28,7 +28,7 @@ public sealed partial class HomeViewModel : ObservableObject
     public string FwOnline => NotYet;
     public string FwBlocked => NotYet;
     public string FwAlerts => NotYet;
-    public string QuarantineCount => NotYet;
+    [ObservableProperty] public partial string QuarantineCount { get; set; } = "0";
 
     public void Refresh()
     {
@@ -56,5 +56,6 @@ public sealed partial class HomeViewModel : ObservableObject
         AvSources = names.Count == 0 ? "None" : string.Join(" · ", names);
         DecisionCount = decisions.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
         HasDecisions = decisions.Count > 0;
+        QuarantineCount = services.Quarantine.RestorableCount.ToString(System.Globalization.CultureInfo.CurrentCulture);
     }
 }

@@ -156,6 +156,8 @@
                                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                     <ProgressRing Width="20" Height="20" IsActive="{x:Bind IsBusy, Mode=OneWay}" Visibility="{x:Bind IsBusy, Mode=OneWay}" />
                                     <ToggleButton Content="Details" IsChecked="{x:Bind IsExpanded, Mode=TwoWay}" />
+                                    <Button Content="Quarantine" Tag="{x:Bind Self}" Click="Quarantine_Click" IsEnabled="{x:Bind local:ScanPage.Not(IsBusy), Mode=OneWay}"
+                                            ToolTipService.ToolTip="Move the file somewhere it can't run; you can restore it later" />
                                     <DropDownButton Content="Ignore" IsEnabled="{x:Bind local:ScanPage.Not(IsBusy), Mode=OneWay}">
                                         <DropDownButton.Flyout>
                                             <MenuFlyout Placement="BottomEdgeAlignedRight">

@@ -16,10 +16,18 @@ public sealed partial class HomePage : Page
     {
         InitializeComponent();
         ViewModel.PropertyChanged += OnViewModelChanged;
-        Loaded += (_, _) => ApplyTone(useTransitions: false);
-        AppServices.Instance.OutcomeChanged += () => DispatcherQueue.TryEnqueue(ViewModel.Refresh);
+        Loaded += (_, _) =>
+        {
+            AppServices.Instance.OutcomeChanged += OnOutcomeChanged;
+            ApplyTone(useTransitions: false);
+        };
+        Unloaded += (_, _) => AppServices.Instance.OutcomeChanged -= OnOutcomeChanged;
         ViewModel.Refresh();
     }
+
+    private void OnOutcomeChanged() => DispatcherQueue.TryEnqueue(ViewModel.Refresh);
+
+    private void Quarantine_Click(object sender, RoutedEventArgs e) => App.MainWindow?.ShowPage("Quarantine");
 
     protected override void OnNavigatedTo(NavigationEventArgs e) => ViewModel.Refresh();
 

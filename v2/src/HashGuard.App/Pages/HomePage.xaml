@@ -133,11 +133,11 @@
                     </Grid>
                 </Button>
                 <Button x:Name="QuarantineTile" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="20,16"
-                        AutomationProperties.Name="Quarantine">
+                        Click="Quarantine_Click" AutomationProperties.Name="Quarantine">
                     <Grid>
                         <StackPanel Spacing="2">
                             <TextBlock Text="In quarantine" Style="{StaticResource FactLabelStyle}" />
-                            <TextBlock Text="{x:Bind ViewModel.QuarantineCount}" FontSize="28" FontWeight="SemiBold" />
+                            <TextBlock Text="{x:Bind ViewModel.QuarantineCount, Mode=OneWay}" FontSize="28" FontWeight="SemiBold" />
                         </StackPanel>
                         <FontIcon Glyph="&#xE76C;" FontSize="14" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                     </Grid>

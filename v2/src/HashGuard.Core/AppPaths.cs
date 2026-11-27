@@ -56,6 +56,7 @@ public static class AppPaths
     public static string GetQuotaPath() => Path.Combine(GetConfigDirectory(), "free-api-quota.json");
 
     public static string GetLogDirectory() => Path.Combine(GetConfigRoot(), "logs");
+    public static string GetNetworkActionLogPath() => Path.Combine(GetLogDirectory(), "network-actions.log");
 
     /// <summary>Log folders to read from. In fallback mode, older logs next to the app are still read.</summary>
     public static IEnumerable<string> GetLogDirectories()

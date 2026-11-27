@@ -26,9 +26,14 @@ public sealed class AppServices
             LastOutcome = outcome;
             OutcomeChanged?.Invoke();
         };
+        Quarantine.Changed += () => OutcomeChanged?.Invoke();
     }
 
     public static AppServices Instance { get; private set; } = null!;
+
+    public QuarantineStore Quarantine { get; } = new();
+
+    public ActivityLogReader ActivityLog { get; } = new();
 
     public SettingsStore SettingsStore { get; }
 
@@ -44,7 +49,7 @@ public sealed class AppServices
     /// <summary>The last full scan's time from v1's snapshot until this session runs one.</summary>
     public DateTime? LastFullScanLocal { get; private set; }
 
-    /// <summary>Raised (on a worker thread) when a scan finishes or a finding is handled.</summary>
+    /// <summary>Raised (on any thread) when a scan finishes, a finding is handled or quarantine changes.</summary>
     public event Action? OutcomeChanged;
 
     public AppSettings Settings

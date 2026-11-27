@@ -80,6 +80,9 @@ public sealed partial class MainWindow : Window
                 Navigate(typeof(ScanPage), pendingScanParameter);
                 pendingScanParameter = null;
                 break;
+            case "Quarantine":
+                Navigate(typeof(QuarantinePage), null);
+                break;
             case not null:
                 Navigate(typeof(PlaceholderPage), tag);
                 break;
@@ -101,6 +104,10 @@ public sealed partial class MainWindow : Window
         pendingScanParameter = startScan ? "start" : null;
         Nav.SelectedItem = scanItem;
     }
+
+    /// <summary>Selects the navigation item with this tag, which opens its page.</summary>
+    public void ShowPage(string tag) =>
+        Nav.SelectedItem = Nav.MenuItems.OfType<NavigationViewItem>().First(i => (string)i.Tag == tag);
 
     private void Navigate(Type page, object? parameter)
     {
