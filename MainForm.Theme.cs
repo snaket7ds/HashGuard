@@ -37,7 +37,6 @@ public sealed partial class MainForm : Form
         resultsView.BackColor = palette.Surface;
         resultsView.ForeColor = palette.Text;
         resultsEmptyLabel.ForeColor = palette.MutedText;
-        summaryLabel.PillColor = palette.PillBack;
         statusSubtitle.ForeColor = palette.MutedText;
         UpdateReviewCount();
         UpdateReputationTile();
@@ -242,6 +241,13 @@ public sealed partial class MainForm : Form
                 break;
             case CheckBox:
             case Label:
+                if (control.Tag as string == "warn-banner")
+                {
+                    control.BackColor = palette.AttentionTint;
+                    control.ForeColor = palette.AttentionText;
+                    break;
+                }
+
                 if (control.Tag as string == "callout")
                 {
                     control.BackColor = palette.CalloutBack;
@@ -306,6 +312,12 @@ public sealed partial class MainForm : Form
                     break;
                 }
 
+                if (control.Tag as string == "hairline")
+                {
+                    control.BackColor = palette.Hairline;
+                    break;
+                }
+
                 if (control.Tag as string == "separator")
                 {
                     control.BackColor = palette.Border;
@@ -345,15 +357,4 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static Label SectionLabel(string text)
-    {
-        return new Label
-        {
-            Text = text,
-            AutoSize = true,
-            Font = new Font("Segoe UI", 9, FontStyle.Bold),
-            ForeColor = Color.FromArgb(35, 35, 35),
-            Margin = new Padding(0, 10, 0, 4),
-        };
-    }
 }

@@ -20,8 +20,6 @@ internal sealed class HashCache
 
     public int Count => entries.Count;
     public bool IsLoaded => loaded;
-    public bool IsDirty => dirty;
-
     /// <summary>Load cache from disk once; keep it warm in memory for the process lifetime.</summary>
     public async Task EnsureLoadedAsync()
     {

@@ -25,6 +25,17 @@ internal sealed class CardListItem
     public string Pill { get; init; } = "";
     public string Trailing { get; init; } = "";
     public object? Tag { get; init; }
+    /// <summary>Buttons drawn in the row, left to right (e.g. Details, Ignore, Quarantine).</summary>
+    public IReadOnlyList<string> Actions { get; init; } = [];
+    /// <summary>Index of the action drawn as a solid red button, or -1.</summary>
+    public int DangerAction { get; init; } = -1;
+    /// <summary>Index of the action drawn as a solid dark button, or -1.</summary>
+    public int PrimaryAction { get; init; } = -1;
+    /// <summary>An on/off switch at the right end of the row (null = none).</summary>
+    public bool? Toggle { get; init; }
+    public string ToggleLabel { get; init; } = "";
+    /// <summary>A rounded letter avatar instead of the glyph (Firewall app rows).</summary>
+    public bool LetterAvatar { get; init; }
 }
 
 /// <summary>
@@ -37,6 +48,12 @@ internal sealed class CardList : Control
 {
     public const int RowHeight = 64;
     public const int HeaderHeight = 36;
+    // Created once: OnPaint runs on every scroll, hover and refresh.
+    private static readonly Font TitleFont = new("Segoe UI Semibold", 10.5f, FontStyle.Regular);
+    private static readonly Font DetailFont = new("Segoe UI", 9f, FontStyle.Regular);
+    private static readonly Font PillFont = new("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+    private static readonly Font GlyphFont = new("Segoe MDL2 Assets", 11f, FontStyle.Regular);
+    private static readonly Font ActionFont = new("Segoe UI Semibold", 9f, FontStyle.Regular);
     private readonly VScrollBar scroll = new() { Dock = DockStyle.Right, Visible = false };
     private IReadOnlyList<CardListItem> items = [];
     private int[] tops = [];
@@ -57,6 +74,10 @@ internal sealed class CardList : Control
     public event EventHandler? SelectionChanged;
     public event EventHandler? ItemActivated;
     public event Action<Point>? MenuRequested;
+    /// <summary>A row button was clicked: (item, action index).</summary>
+    public event Action<CardListItem, int>? ActionClicked;
+    /// <summary>A row's switch was clicked (or Space pressed on a row with a switch).</summary>
+    public event Action<CardListItem>? ToggleClicked;
 
     public string EmptyText { get; set; } = "Nothing here yet.";
     public Color Surface { get; set; } = Color.White;
@@ -66,6 +87,10 @@ internal sealed class CardList : Control
     public Color HeaderBack { get; set; } = Color.FromArgb(250, 250, 251);
     public Color SelectedBack { get; set; } = Color.FromArgb(243, 248, 244);
     public Color HoverBack { get; set; } = Color.FromArgb(248, 249, 250);
+    public Color ButtonBorder { get; set; } = Color.FromArgb(213, 217, 223);
+    public Color PrimaryButton { get; set; } = Color.FromArgb(17, 24, 39);
+    public Color ToggleOn { get; set; } = Color.FromArgb(24, 134, 74);
+    public Color ToggleOff { get; set; } = Color.FromArgb(201, 205, 212);
     public Dictionary<CardTone, (Color Tint, Color Ink)> Tones { get; } = new()
     {
         [CardTone.Good] = (Color.FromArgb(230, 244, 234), Color.FromArgb(17, 98, 54)),
@@ -98,6 +123,19 @@ internal sealed class CardList : Control
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>Selects (and scrolls to) the row whose Tag equals <paramref name="tag"/>.</summary>
+    public bool SelectTag(object tag)
+    {
+        var index = FindIndex(item => Equals(item.Tag, tag) || (item.Tag is string text && tag is string wanted && string.Equals(text, wanted, StringComparison.OrdinalIgnoreCase)));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        Select(index);
+        return true;
+    }
+
     public void ApplyPalette(ThemePalette palette)
     {
         Surface = palette.Surface;
@@ -108,6 +146,7 @@ internal sealed class CardList : Control
         HeaderBack = palette.SurfaceHover;
         SelectedBack = palette.AccentTint;
         HoverBack = palette.SurfaceHover;
+        ButtonBorder = palette.Border;
         Tones[CardTone.Good] = (palette.AccentTint, palette.AccentText);
         Tones[CardTone.Warn] = (palette.AttentionTint, palette.AttentionText);
         Tones[CardTone.Bad] = (palette.DangerTint, palette.DangerText);
@@ -153,6 +192,64 @@ internal sealed class CardList : Control
     }
 
     private int Offset => scroll.Visible ? scroll.Value : 0;
+
+    private sealed record RowLayout(Rectangle Toggle, Rectangle[] Actions, int Right);
+
+    /// <summary>Right-hand controls of a row: switch, then trailing text, then buttons (right to left).</summary>
+    private RowLayout LayoutRow(CardListItem item, int top, int width, Font actionFont, Font smallFont)
+    {
+        var right = width - 22;
+        var toggle = Rectangle.Empty;
+        if (item.Toggle is not null)
+        {
+            toggle = new Rectangle(right - 46, top + (RowHeight - 26) / 2, 46, 26);
+            right -= 46 + 14;
+        }
+
+        if (!string.IsNullOrEmpty(item.Trailing))
+        {
+            right -= TextRenderer.MeasureText(item.Trailing, smallFont).Width + 16;
+        }
+
+        var rects = new Rectangle[item.Actions.Count];
+        for (var index = item.Actions.Count - 1; index >= 0; index--)
+        {
+            var buttonWidth = TextRenderer.MeasureText(item.Actions[index], actionFont).Width + 26;
+            rects[index] = new Rectangle(right - buttonWidth, top + (RowHeight - 34) / 2, buttonWidth, 34);
+            right -= buttonWidth + 8;
+        }
+
+        if (item.Actions.Count > 0)
+        {
+            right -= 8;
+        }
+
+        return new RowLayout(toggle, rects, right);
+    }
+
+    private (int Action, bool Toggle) HitTest(int index, Point point)
+    {
+        if (index < 0 || index >= items.Count || items[index].IsHeader)
+        {
+            return (-1, false);
+        }
+
+        var layout = LayoutRow(items[index], tops[index] - Offset, ContentWidth, ActionFont, DetailFont);
+        if (layout.Toggle.Contains(point))
+        {
+            return (-1, true);
+        }
+
+        for (var action = 0; action < layout.Actions.Length; action++)
+        {
+            if (layout.Actions[action].Contains(point))
+            {
+                return (action, false);
+            }
+        }
+
+        return (-1, false);
+    }
     private int ContentWidth => ClientSize.Width - (scroll.Visible ? scroll.Width : 0);
 
     private int IndexAt(int y)
@@ -227,7 +324,7 @@ internal sealed class CardList : Control
     }
 
     protected override bool IsInputKey(Keys keyData) =>
-        keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown or Keys.Enter || base.IsInputKey(keyData);
+        keyData is Keys.Up or Keys.Down or Keys.Home or Keys.End or Keys.PageUp or Keys.PageDown or Keys.Enter or Keys.Space || base.IsInputKey(keyData);
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -241,6 +338,7 @@ internal sealed class CardList : Control
             case Keys.Home: selected = -1; MoveSelection(1); break;
             case Keys.End: selected = -1; MoveSelection(-1); break;
             case Keys.Enter when SelectedItem is not null: ItemActivated?.Invoke(this, EventArgs.Empty); break;
+            case Keys.Space when SelectedItem is { Toggle: not null } toggled: ToggleClicked?.Invoke(toggled); break;
             case Keys.Apps when SelectedItem is not null:
                 MenuRequested?.Invoke(new Point(40, tops[selected] - Offset + RowHeight / 2));
                 break;
@@ -266,6 +364,24 @@ internal sealed class CardList : Control
         Focus();
         var index = IndexAt(e.Y);
         Select(index, ensureVisible: false);
+        if (e.Button == MouseButtons.Left && SelectedItem is { } clicked && index == selected)
+        {
+            var (action, toggle) = HitTest(index, e.Location);
+            if (toggle)
+            {
+                ToggleClicked?.Invoke(clicked);
+                base.OnMouseDown(e);
+                return;
+            }
+
+            if (action >= 0)
+            {
+                ActionClicked?.Invoke(clicked, action);
+                base.OnMouseDown(e);
+                return;
+            }
+        }
+
         if (e.Button == MouseButtons.Right && SelectedItem is not null)
         {
             MenuRequested?.Invoke(e.Location);
@@ -276,7 +392,8 @@ internal sealed class CardList : Control
 
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
-        if (SelectedItem is not null && IndexAt(e.Y) == selected)
+        var hit = HitTest(IndexAt(e.Y), e.Location);
+        if (SelectedItem is not null && IndexAt(e.Y) == selected && hit.Action < 0 && !hit.Toggle)
         {
             ItemActivated?.Invoke(this, EventArgs.Empty);
         }
@@ -334,11 +451,12 @@ internal sealed class CardList : Control
         }
 
         var first = Math.Max(0, IndexAt(0));
-        using var bold = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular);
-        using var small = new Font("Segoe UI", 9f, FontStyle.Regular);
-        using var pillFont = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular);
-        using var headerFont = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular);
-        using var glyphFont = new Font("Segoe MDL2 Assets", 11f, FontStyle.Regular);
+        var bold = TitleFont;
+        var small = DetailFont;
+        var pillFont = PillFont;
+        var headerFont = PillFont;
+        var glyphFont = GlyphFont;
+        var actionFont = ActionFont;
         using var hairline = new Pen(Hairline);
         for (var index = first; index < items.Count; index++)
         {
@@ -373,19 +491,48 @@ internal sealed class CardList : Control
             var (tint, ink) = Tones.TryGetValue(item.Tone, out var tone) ? tone : Tones[CardTone.Neutral];
             var iconRect = new RectangleF(22, top + (RowHeight - 38) / 2f, 38, 38);
             RoundedPaint.FillRounded(g, iconRect, 10, tint);
-            var glyphIsSymbol = item.Glyph.Length == 1 && item.Glyph[0] >= '';
-            TextRenderer.DrawText(g, item.Glyph, glyphIsSymbol ? glyphFont : bold, Rectangle.Round(iconRect), ink,
+            var glyphText = item.LetterAvatar ? (item.Title.Length > 0 ? item.Title[..1].ToUpperInvariant() : "?") : item.Glyph;
+            var glyphIsSymbol = !item.LetterAvatar && glyphText.Length == 1 && glyphText[0] >= '\uE000';
+            TextRenderer.DrawText(g, glyphText, glyphIsSymbol ? glyphFont : bold, Rectangle.Round(iconRect), ink,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
-            var right = width - 22;
+            var layout = LayoutRow(item, top, width, actionFont, small);
+            if (item.Toggle is { } on)
+            {
+                var track = new RectangleF(layout.Toggle.X, layout.Toggle.Y, layout.Toggle.Width, layout.Toggle.Height);
+                RoundedPaint.FillRounded(g, track, track.Height / 2, on ? ToggleOn : ToggleOff);
+                var knob = on ? new RectangleF(track.Right - track.Height + 3, track.Y + 3, track.Height - 6, track.Height - 6) : new RectangleF(track.X + 3, track.Y + 3, track.Height - 6, track.Height - 6);
+                using var knobBrush = new SolidBrush(Color.White);
+                g.FillEllipse(knobBrush, knob);
+            }
+
             if (!string.IsNullOrEmpty(item.Trailing))
             {
                 var trailingWidth = TextRenderer.MeasureText(item.Trailing, small).Width;
-                TextRenderer.DrawText(g, item.Trailing, small, new Rectangle(right - trailingWidth, top, trailingWidth, RowHeight), Muted,
+                var trailingRight = item.Toggle is null ? width - 22 : layout.Toggle.X - 14;
+                TextRenderer.DrawText(g, item.Trailing, small, new Rectangle(trailingRight - trailingWidth, top, trailingWidth, RowHeight), Muted,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPrefix);
-                right -= trailingWidth + 16;
             }
 
+            for (var action = 0; action < layout.Actions.Length; action++)
+            {
+                var rect = layout.Actions[action];
+                var danger = action == item.DangerAction;
+                var primary = action == item.PrimaryAction;
+                var fill = danger ? Color.FromArgb(180, 35, 24) : primary ? PrimaryButton : Surface;
+                RoundedPaint.FillRounded(g, rect, 9, fill);
+                if (!danger && !primary)
+                {
+                    using var border = RoundedPaint.RoundedRect(new RectangleF(rect.X + 0.5f, rect.Y + 0.5f, rect.Width - 1, rect.Height - 1), 9);
+                    using var borderPen = new Pen(ButtonBorder);
+                    g.DrawPath(borderPen, border);
+                }
+
+                TextRenderer.DrawText(g, item.Actions[action], actionFont, rect, danger || primary ? Color.White : TextColor,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+            }
+
+            var right = layout.Right;
             if (!string.IsNullOrEmpty(item.Pill))
             {
                 var pillWidth = TextRenderer.MeasureText(item.Pill, pillFont, Size.Empty, TextFormatFlags.NoPadding).Width + 20;
@@ -453,7 +600,7 @@ internal sealed class ChipButton : Button
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Parent?.BackColor ?? Back);
+        g.Clear(ToggleSwitch.SurfaceBehind(this));
         var rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
         RoundedPaint.FillRounded(g, rect, 10, Selected ? SelectedBack : Back);
         if (!Selected)

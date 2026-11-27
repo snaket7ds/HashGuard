@@ -290,12 +290,11 @@ public sealed partial class MainForm : Form
                 // the uploaded row is removed and selection is cleared.
             }
 
-            if (approveUploadButton is not null)
-            {
-                approveUploadButton.Enabled = GetSelectedVirusTotalUploadTargets(resultsView).Count > 0;
-            }
 
             scanGate.Exit();
+
+
+            UpdateHomePage();
         }
     }
 }

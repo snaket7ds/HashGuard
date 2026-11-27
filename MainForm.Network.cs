@@ -19,7 +19,6 @@ public sealed partial class MainForm : Form
     private static readonly TimeSpan NetworkAssessmentTtl = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan NetworkAlertSpacing = TimeSpan.FromSeconds(10);
 
-    private readonly Button networkButton = new() { Text = "", Width = 36, Height = 36, Font = new Font("Segoe MDL2 Assets", 11, FontStyle.Regular) };
     private readonly System.Windows.Forms.Timer networkTimer = new();
     private readonly Dictionary<int, (string Path, DateTime ExpiresUtc)> networkPidPaths = [];
     private readonly ConcurrentDictionary<string, string> networkHostNames = new(StringComparer.OrdinalIgnoreCase);
@@ -297,8 +296,9 @@ public sealed partial class MainForm : Form
     private void QueueFirstSeenNetworkAlert(NetworkAppActivity app)
     {
         var mode = NetworkNotifyModes.Normalize(appSettings.NetworkNotifyMode);
-        if (mode == NetworkNotifyModes.Never)
+        if (mode == NetworkNotifyModes.Never || FirewallRules.PathsEqual(app.Path, Application.ExecutablePath))
         {
+            // HashGuard's own lookups and update checks are not a "new app".
             return;
         }
 
@@ -445,6 +445,7 @@ public sealed partial class MainForm : Form
         foreach (var app in networkTracker.Apps.Where(app => app.CurrentConnections > 0).ToList())
         {
             if (networkBlockedPaths.Contains(app.Path)
+                || FirewallRules.PathsEqual(app.Path, Application.ExecutablePath)
                 || networkAutoBlockAttempted.Contains(app.Path)
                 || !File.Exists(app.Path)
                 || GetNetworkVerdict(app.Path).Kind != NetworkVerdictKind.Malicious
@@ -776,21 +777,6 @@ public sealed partial class MainForm : Form
         : age.TotalHours < 24 ? $"{(int)age.TotalHours} h ago"
         : $"{(int)age.TotalDays} d ago";
 
-    private string BuildNetworkDetail(string path)
-    {
-        var assessment = AssessNetworkApp(path);
-        var lines = new List<string> { path, $"Verdict: {assessment.Verdict.Label} · Signed by: {assessment.Signer}{(networkBlockedPaths.Contains(path) ? " · Blocked in Windows Firewall" : "")}" };
-        if (networkTracker is not null && networkTracker.TryGetApp(path, out var app))
-        {
-            lines.Add($"PIDs: {string.Join(", ", app.Pids.OrderBy(pid => pid).Take(12))} · first seen {app.FirstSeenUtc.LocalDateTime:t} · {app.Endpoints.Count} endpoint(s)");
-            var recent = app.Endpoints.Values.OrderByDescending(endpoint => endpoint.LastSeenUtc).Take(4)
-                .Select(endpoint => $"{DescribeEndpoint(endpoint)} ({(endpoint.Scope == RemoteScope.Lan ? "LAN" : "internet")})");
-            lines.Add("Recent: " + string.Join(", ", recent));
-        }
-
-        return string.Join(Environment.NewLine, lines);
-    }
-
     private void ShowNetworkMonitor(string? selectPath = null)
     {
         RestoreFromTray();
@@ -798,322 +784,6 @@ public sealed partial class MainForm : Form
         if (selectPath is not null)
         {
             selectNetworkApp?.Invoke(selectPath);
-        }
-    }
-
-    /// <summary>The Firewall page (was the Network Monitor window before v1.1.0).</summary>
-    private Control BuildNetworkView()
-    {
-        EnsureNetworkTracker();
-        ReloadNetworkBlockedPaths();
-        var firewallState = FirewallRules.GetProfileState();
-        var elevated = IsRunningElevated();
-
-        var dialog = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
-        var heading = new Label
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = false,
-            Height = 30,
-            Font = new Font("Segoe UI Semibold", 11, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft,
-        };
-        var bannerText = new List<string>();
-        if (!firewallState.AllActiveProfilesEnabled)
-        {
-            bannerText.Add(firewallState.Description);
-        }
-
-        if (!elevated)
-        {
-            bannerText.Add("HashGuard isn't running elevated, so Block and Unblock are off and some system processes show as \"Unknown process\". Turn on Settings → Behavior → Run elevated.");
-        }
-
-        if (!appSettings.NetworkMonitorEnabled)
-        {
-            bannerText.Add("Background monitoring is off: HashGuard only watches while this window is open, and sends no alerts. Turn it on in Settings → Firewall.");
-        }
-
-        var banner = new Label
-        {
-            Text = string.Join(Environment.NewLine, bannerText),
-            Dock = DockStyle.Fill,
-            AutoSize = false,
-            Height = 22 + 18 * bannerText.Count,
-            Padding = new Padding(10, 6, 10, 6),
-            BackColor = Color.FromArgb(255, 250, 220),
-            ForeColor = Color.FromArgb(80, 60, 0),
-            BorderStyle = BorderStyle.FixedSingle,
-            Visible = bannerText.Count > 0,
-            Tag = "callout",
-            Margin = new Padding(0, 0, 0, 8),
-        };
-        var tips = new ToolTip();
-        var searchBox = new TextBox { PlaceholderText = "Search app, path, publisher, or host", Width = 360, Margin = new Padding(0, 0, 12, 0) };
-        var hideTrusted = new CheckBox { Text = "Hide trusted publishers", AutoSize = true, Margin = new Padding(0, 3, 12, 0) };
-        var showIdle = new CheckBox { Text = "Show apps not connected now", AutoSize = true, Checked = true, Margin = new Padding(0, 3, 0, 0) };
-        var filters = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 8) };
-        filters.Controls.AddRange([searchBox, hideTrusted, showIdle]);
-        var modeMonitor = new Button { Text = "Monitor", AutoSize = true, Margin = new Padding(24, 0, 0, 0), Tag = "segment-on", AccessibleDescription = "Current firewall mode" };
-        var modeAsk = new Button { Text = "Ask first · Soon", AutoSize = true, Enabled = false, Margin = new Padding(0), Tag = "segment-off" };
-        tips.SetToolTip(modeAsk, "Coming in a later version: ask before an app connects for the first time.");
-        filters.Controls.AddRange([modeMonitor, modeAsk]);
-
-        var view = new ListView
-        {
-            Dock = DockStyle.Fill,
-            View = View.Details,
-            FullRowSelect = true,
-            GridLines = false,
-            HideSelection = false,
-            MultiSelect = false,
-            BorderStyle = BorderStyle.FixedSingle,
-        };
-        view.Columns.Add("App", 170);
-        view.Columns.Add("Verdict", 110);
-        view.Columns.Add("Signed by", 190);
-        view.Columns.Add("Connected to", 300);
-        view.Columns.Add("Connections", 100);
-        view.Columns.Add("Last seen", 80);
-        view.Columns.Add("Status", 130);
-        var emptyLabel = new Label
-        {
-            Text = "Watching for connections…",
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.DimGray,
-            Font = new Font("Segoe UI", 10, FontStyle.Regular),
-        };
-        var listHost = new Panel { Dock = DockStyle.Fill };
-        listHost.Controls.Add(emptyLabel);
-        listHost.Controls.Add(view);
-        emptyLabel.BringToFront();
-
-        var detail = new Label
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = false,
-            Height = 84,
-            AutoEllipsis = true,
-            Padding = new Padding(10, 8, 10, 8),
-            BackColor = Color.White,
-            ForeColor = Color.FromArgb(35, 35, 35),
-            BorderStyle = BorderStyle.FixedSingle,
-            Tag = "callout",
-            Margin = new Padding(0, 8, 0, 0),
-        };
-
-        var block = new Button { Text = "Block", AutoSize = true };
-        var unblock = new Button { Text = "Unblock", AutoSize = true };
-        var scan = new Button { Text = "Scan app", AutoSize = true };
-        var openLocation = new Button { Text = "Open File Location", AutoSize = true };
-        var details = new Button { Text = "Connections…", AutoSize = true };
-        var removeAll = new Button { Text = "Remove all HashGuard rules", AutoSize = true };
-        if (!elevated)
-        {
-            tips.SetToolTip(block, "Turn on Run elevated in Settings");
-            tips.SetToolTip(unblock, "Turn on Run elevated in Settings");
-        }
-
-        tips.SetToolTip(removeAll, "Removes only the Windows Firewall rules HashGuard created (group \"HashGuard\")");
-        var buttons = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = true,
-            Padding = new Padding(0, 8, 0, 0),
-        };
-        buttons.Controls.AddRange([removeAll, details, openLocation, scan, unblock, block]);
-
-        string? SelectedPath() => view.SelectedItems.Count > 0 ? view.SelectedItems[0].Tag as string : null;
-
-        void UpdateSelectionUi()
-        {
-            var path = SelectedPath();
-            var blocked = path is not null && networkBlockedPaths.Contains(path);
-            var isFile = path is not null && File.Exists(path);
-            block.Enabled = elevated && isFile && !blocked;
-            unblock.Enabled = elevated && blocked;
-            scan.Enabled = isFile;
-            openLocation.Enabled = isFile;
-            details.Enabled = path is not null && networkTracker is not null && networkTracker.TryGetApp(path, out _);
-            removeAll.Enabled = elevated;
-            detail.Text = path is null
-                ? "Select an app to see where it connects. Block adds a Windows Firewall rule for that program; Unblock removes it."
-                : BuildNetworkDetail(path);
-        }
-
-        void RefreshRows()
-        {
-            if (dialog.IsDisposed)
-            {
-                return;
-            }
-
-            var rows = BuildNetworkRows(searchBox.Text.Trim(), hideTrusted.Checked, showIdle.Checked);
-            var selected = SelectedPath();
-            var sameOrder = rows.Count == view.Items.Count
-                && rows.Select(row => row.Path).SequenceEqual(view.Items.Cast<ListViewItem>().Select(item => (string)item.Tag!), StringComparer.OrdinalIgnoreCase);
-            view.BeginUpdate();
-            if (sameOrder)
-            {
-                for (var index = 0; index < rows.Count; index++)
-                {
-                    var item = view.Items[index];
-                    for (var column = 0; column < rows[index].Columns.Length; column++)
-                    {
-                        if (item.SubItems[column].Text != rows[index].Columns[column])
-                        {
-                            item.SubItems[column].Text = rows[index].Columns[column];
-                        }
-                    }
-
-                    StyleNetworkItem(item, rows[index]);
-                }
-            }
-            else
-            {
-                var topPath = view.TopItem?.Tag as string;
-                view.Items.Clear();
-                foreach (var row in rows)
-                {
-                    var item = new ListViewItem(row.Columns[0]) { Tag = row.Path, UseItemStyleForSubItems = true };
-                    for (var column = 1; column < row.Columns.Length; column++)
-                    {
-                        item.SubItems.Add(row.Columns[column]);
-                    }
-
-                    StyleNetworkItem(item, row);
-                    view.Items.Add(item);
-                    if (selected is not null && string.Equals(row.Path, selected, StringComparison.OrdinalIgnoreCase))
-                    {
-                        item.Selected = true;
-                    }
-                }
-
-                var top = view.Items.Cast<ListViewItem>().FirstOrDefault(item => string.Equals(item.Tag as string, topPath, StringComparison.OrdinalIgnoreCase));
-                if (top is not null)
-                {
-                    view.TopItem = top;
-                }
-            }
-
-            view.EndUpdate();
-            emptyLabel.Visible = view.Items.Count == 0;
-            var online = networkTracker?.Apps.Count(app => app.CurrentConnections > 0) ?? 0;
-            heading.Text = $"{online} app{(online == 1 ? "" : "s")} online · {networkBlockedPaths.Count} blocked by HashGuard";
-            UpdateSelectionUi();
-        }
-
-        void SelectApp(string path)
-        {
-            showIdle.Checked = true;
-            searchBox.Text = "";
-            RefreshRows();
-            foreach (ListViewItem item in view.Items)
-            {
-                if (string.Equals(item.Tag as string, path, StringComparison.OrdinalIgnoreCase))
-                {
-                    item.Selected = true;
-                    item.EnsureVisible();
-                    break;
-                }
-            }
-        }
-
-        view.SelectedIndexChanged += (_, _) => UpdateSelectionUi();
-        searchBox.TextChanged += (_, _) => RefreshRows();
-        hideTrusted.CheckedChanged += (_, _) => RefreshRows();
-        showIdle.CheckedChanged += (_, _) => RefreshRows();
-        block.Click += (_, _) =>
-        {
-            if (SelectedPath() is { } path && BlockNetworkApp(dialog, path))
-            {
-                RefreshRows();
-            }
-        };
-        unblock.Click += (_, _) =>
-        {
-            if (SelectedPath() is { } path && UnblockNetworkApp(dialog, path))
-            {
-                RefreshRows();
-            }
-        };
-        scan.Click += async (_, _) =>
-        {
-            if (SelectedPath() is not { } path)
-            {
-                return;
-            }
-
-            networkAssessments.Remove(path);
-            detail.Text = $"Scanning {NetworkActivityTracker.DisplayName(path)}… the result appears in the Review Queue and here.";
-            await ScanSelectedFilesAsync([path]);
-            networkAssessments.Remove(path);
-            RefreshRows();
-        };
-        openLocation.Click += (_, _) =>
-        {
-            if (SelectedPath() is { } path && File.Exists(path))
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-            }
-        };
-        details.Click += (_, _) =>
-        {
-            if (SelectedPath() is { } path && networkTracker is not null && networkTracker.TryGetApp(path, out var app))
-            {
-                ShowNetworkConnectionsDialog(dialog, app);
-            }
-        };
-        view.DoubleClick += (_, _) => details.PerformClick();
-        removeAll.Click += (_, _) =>
-        {
-            RemoveAllNetworkRules(dialog);
-            RefreshRows();
-        };
-
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 6, ColumnCount = 1, Padding = new Padding(0) };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.Controls.Add(heading, 0, 0);
-        layout.Controls.Add(banner, 0, 1);
-        layout.Controls.Add(filters, 0, 2);
-        layout.Controls.Add(listHost, 0, 3);
-        layout.Controls.Add(detail, 0, 4);
-        layout.Controls.Add(buttons, 0, 5);
-        dialog.Controls.Add(layout);
-
-        dialog.Disposed += (_, _) =>
-        {
-            refreshNetworkWindow = null;
-            selectNetworkApp = null;
-            tips.Dispose();
-        };
-
-        refreshNetworkWindow = RefreshRows;
-        selectNetworkApp = SelectApp;
-        RefreshRows();
-        return dialog;
-    }
-
-    private void StyleNetworkItem(ListViewItem item, NetworkRow row)
-    {
-        var color = row.Assessment.Verdict.Kind switch
-        {
-            NetworkVerdictKind.Malicious => Color.FromArgb(190, 30, 30),
-            NetworkVerdictKind.Suspicious => Color.FromArgb(170, 110, 0),
-            _ when row.Blocked => activePalette.MutedText,
-            _ => activePalette.Text,
-        };
-        if (item.ForeColor != color)
-        {
-            item.ForeColor = color;
         }
     }
 

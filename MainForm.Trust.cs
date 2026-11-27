@@ -60,127 +60,116 @@ public sealed partial class MainForm : Form
     {
         var seen = CollectSeenPublishers();
         var counts = seen.ToDictionary(stat => stat.Name, stat => stat.Files, StringComparer.OrdinalIgnoreCase);
-        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Padding = new Padding(4), BackColor = Color.White };
+        var grid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Padding = new Padding(0, 4, 0, 4), BackColor = SoftAppBack };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        // Left: trusted publishers.
-        var trustedTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
+        // Left card: trusted publishers. Both cards fill the same height and scroll inside.
+        var trustedTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
         var trustedHelp = new Label
         {
             Text = "Only files with a valid signature and this exact publisher name count. They get a lower risk score and no new-app alerts, and are still checked for malware.",
             AutoSize = false,
             Dock = DockStyle.Top,
             Height = 40,
-            ForeColor = Color.DimGray,
+            Tag = "muted",
+            UseMnemonic = false,
         };
-        var trustedView = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HideSelection = false, HeaderStyle = ColumnHeaderStyle.Nonclickable, BorderStyle = BorderStyle.FixedSingle };
-        trustedView.Columns.Add("Publisher", 260);
-        trustedView.Columns.Add("On this PC", 140);
-        var remove = new Button { Text = "Remove", AutoSize = true, Enabled = false };
-        var leftButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(0, 8, 0, 0), WrapContents = false };
-        leftButtons.Controls.Add(remove);
-        var left = new Panel { Dock = DockStyle.Fill, Padding = new Padding(8, 4, 12, 4) };
-        left.Controls.Add(trustedView);
-        left.Controls.Add(leftButtons);
-        left.Controls.Add(trustedHelp);
-        left.Controls.Add(trustedTitle);
+        var trustedList = new CardList { Dock = DockStyle.Fill, AccessibleName = "Trusted publishers", EmptyText = "No trusted publishers. Pick some from the list on the right." };
+        var leftHead = new Panel { Dock = DockStyle.Top, Height = 84, Padding = new Padding(20, 12, 20, 6), BackColor = Color.White, Tag = "surface" };
+        leftHead.Controls.Add(trustedHelp);
+        leftHead.Controls.Add(trustedTitle);
+        var leftCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10), Margin = new Padding(0, 0, 8, 0) };
+        leftCard.Controls.Add(trustedList);
+        leftCard.Controls.Add(leftHead);
 
-        // Right: publishers seen on this PC, searchable and sortable.
-        var seenTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 28, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
-        var controls = new TableLayoutPanel { Dock = DockStyle.Top, Height = 40, ColumnCount = 2, RowCount = 1, Margin = new Padding(0) };
-        controls.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        controls.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
-        var search = new TextBox { Dock = DockStyle.Fill, PlaceholderText = "Search publishers or apps", Margin = new Padding(0, 4, 8, 4), AccessibleName = "Search publishers" };
-        var sort = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, Margin = new Padding(0, 4, 0, 4), AccessibleName = "Sort publishers" };
-        sort.Items.AddRange(["Most files", "A–Z"]);
-        sort.SelectedIndex = 0;
-        controls.Controls.Add(search, 0, 0);
-        controls.Controls.Add(sort, 1, 0);
-        var seenView = new ListView { Dock = DockStyle.Fill, View = View.Details, FullRowSelect = true, HideSelection = false, VirtualMode = true, HeaderStyle = ColumnHeaderStyle.Nonclickable, BorderStyle = BorderStyle.FixedSingle };
-        seenView.Columns.Add("Publisher", 220);
-        seenView.Columns.Add("Files", 60);
-        seenView.Columns.Add("Apps", 220);
-        var trust = new Button { Text = "Trust", AutoSize = true, Enabled = false, Tag = "primary-button" };
-        var fromFile = new Button { Text = "Choose a file…", AutoSize = true };
-        var rightButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 46, Padding = new Padding(0, 8, 0, 0), WrapContents = false };
-        rightButtons.Controls.Add(trust);
-        rightButtons.Controls.Add(fromFile);
-        var right = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12, 4, 8, 4) };
-        right.Controls.Add(seenView);
-        right.Controls.Add(rightButtons);
-        right.Controls.Add(controls);
-        right.Controls.Add(seenTitle);
-        grid.Controls.Add(left, 0, 0);
-        grid.Controls.Add(right, 1, 0);
+        // Right card: publishers seen on this PC, searchable and sortable.
+        var seenTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
+        var search = new TextBox { Width = 150, PlaceholderText = "Search publishers", AccessibleName = "Search publishers", Margin = new Padding(0, 0, 8, 0) };
+        var sortFiles = new ChipButton("Most files");
+        var sortName = new ChipButton("A–Z");
+        var fromFile = new LinkLabel { Text = "Choose a file…", AutoSize = true, Margin = new Padding(8, 8, 0, 0), Tag = "accent-link" };
+        var controls = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, WrapContents = false, BackColor = Color.White, Tag = "surface" };
+        sortFiles.Margin = new Padding(0, 0, 4, 0);
+        controls.Controls.AddRange([search, sortFiles, sortName, fromFile]);
+        var seenList = new CardList { Dock = DockStyle.Fill, AccessibleName = "Publishers on this PC", EmptyText = "No other signed publishers seen yet. Run a scan to find more." };
+        var rightHead = new Panel { Dock = DockStyle.Top, Height = 84, Padding = new Padding(20, 12, 20, 6), BackColor = Color.White, Tag = "surface" };
+        rightHead.Controls.Add(controls);
+        rightHead.Controls.Add(seenTitle);
+        var rightCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10), Margin = new Padding(8, 0, 0, 0) };
+        rightCard.Controls.Add(seenList);
+        rightCard.Controls.Add(rightHead);
+        grid.Controls.Add(leftCard, 0, 0);
+        grid.Controls.Add(rightCard, 1, 0);
 
-        var filtered = new List<PublisherStat>();
+        var byName = false;
         void Refresh()
         {
-            trustedView.BeginUpdate();
-            trustedView.Items.Clear();
-            foreach (var name in pendingTrusted.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
-            {
-                var item = new ListViewItem(name) { Tag = name };
-                item.SubItems.Add(counts.TryGetValue(name, out var files) ? $"{files} file{(files == 1 ? "" : "s")}" : "Not seen yet");
-                trustedView.Items.Add(item);
-            }
-
-            trustedView.EndUpdate();
+            trustedList.SetItems(pendingTrusted
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .Select(name => new CardListItem
+                {
+                    LetterAvatar = true,
+                    Tone = CardTone.Blue,
+                    Title = name,
+                    Detail = counts.TryGetValue(name, out var files) ? $"Signs {files} file{(files == 1 ? "" : "s")} on this PC" : "Not seen on this PC yet",
+                    Actions = ["Remove"],
+                    Tag = name,
+                })
+                .ToList(), keepScroll: true);
             trustedTitle.Text = $"Trusted publishers  ({pendingTrusted.Count})";
             var query = search.Text.Trim();
-            filtered = seen
+            var filtered = seen
                 .Where(stat => !pendingTrusted.Any(name => HashGuardLogic.PublisherEquals(name, stat.Name)))
                 .Where(stat => query.Length == 0
                     || stat.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                     || stat.Apps.Contains(query, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(stat => sort.SelectedIndex == 1 ? 0 : -stat.Files)
+                .OrderBy(stat => byName ? 0 : -stat.Files)
                 .ThenBy(stat => stat.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            seenView.SelectedIndices.Clear();
-            seenView.VirtualListSize = filtered.Count;
-            seenView.Invalidate();
+            seenList.SetItems(filtered.Select(stat => new CardListItem
+            {
+                LetterAvatar = true,
+                Tone = CardTone.Blue,
+                Title = stat.Name,
+                Detail = $"{stat.Files} file{(stat.Files == 1 ? "" : "s")} · {stat.Apps}",
+                Actions = ["Trust"],
+                PrimaryAction = 0,
+                Tag = stat.Name,
+            }).ToList(), keepScroll: true);
             seenTitle.Text = $"Publishers on this PC  ({filtered.Count})";
-            remove.Enabled = trustedView.SelectedItems.Count > 0;
-            trust.Enabled = false;
+            sortFiles.SetState("", !byName);
+            sortName.SetState("", byName);
         }
 
-        seenView.RetrieveVirtualItem += (_, e) =>
+        trustedList.ActionClicked += (item, _) =>
         {
-            var stat = e.ItemIndex >= 0 && e.ItemIndex < filtered.Count ? filtered[e.ItemIndex] : new PublisherStat("", 0, "");
-            var item = new ListViewItem(stat.Name);
-            item.SubItems.Add(stat.Files.ToString(System.Globalization.CultureInfo.CurrentCulture));
-            item.SubItems.Add(stat.Apps);
-            e.Item = item;
+            pendingTrusted.RemoveAll(name => string.Equals(name, item.Tag as string, StringComparison.OrdinalIgnoreCase));
+            Refresh();
+            statusLabel.Text = "Click Save to apply your trust changes.";
         };
-        seenView.SelectedIndexChanged += (_, _) => trust.Enabled = seenView.SelectedIndices.Count > 0;
-        trustedView.SelectedIndexChanged += (_, _) => remove.Enabled = trustedView.SelectedItems.Count > 0;
+        seenList.ActionClicked += (item, _) =>
+        {
+            if (item.Tag is string name)
+            {
+                pendingTrusted.Add(name);
+                Refresh();
+                statusLabel.Text = $"\"{name}\" will be trusted when you save.";
+            }
+        };
+        seenList.ItemActivated += (_, _) =>
+        {
+            if (seenList.SelectedItem is { } item)
+            {
+                pendingTrusted.Add((string)item.Tag!);
+                Refresh();
+            }
+        };
         search.TextChanged += (_, _) => Refresh();
-        sort.SelectedIndexChanged += (_, _) => Refresh();
-        trust.Click += (_, _) =>
-        {
-            foreach (int index in seenView.SelectedIndices)
-            {
-                if (index >= 0 && index < filtered.Count)
-                {
-                    pendingTrusted.Add(filtered[index].Name);
-                }
-            }
-
-            Refresh();
-        };
-        seenView.DoubleClick += (_, _) => trust.PerformClick();
-        remove.Click += (_, _) =>
-        {
-            foreach (ListViewItem item in trustedView.SelectedItems)
-            {
-                pendingTrusted.RemoveAll(name => string.Equals(name, item.Tag as string, StringComparison.OrdinalIgnoreCase));
-            }
-
-            Refresh();
-        };
-        fromFile.Click += (_, _) =>
+        sortFiles.Click += (_, _) => { byName = false; Refresh(); };
+        sortName.Click += (_, _) => { byName = true; Refresh(); };
+        fromFile.LinkClicked += (_, _) =>
         {
             using var picker = new OpenFileDialog { Title = "Choose a signed file to trust its publisher", Filter = "Programs and libraries|*.exe;*.dll;*.msi;*.sys|All files|*.*", CheckFileExists = true };
             if (picker.ShowDialog(this) != DialogResult.OK)

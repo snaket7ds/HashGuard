@@ -195,31 +195,6 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private void UpdateReviewQueueActionButtons(
-        Button openReport,
-        Button openLocation,
-        Button ignoreSelected,
-        Button ignorePublisher,
-        Button quarantineSelected)
-    {
-        var selected = SafeSelectedItems(resultsView);
-        var hasSelection = selected.Count > 0;
-        openReport.Enabled = hasSelection;
-        openLocation.Enabled = hasSelection;
-        ignoreSelected.Enabled = hasSelection;
-        ignorePublisher.Enabled = hasSelection;
-        quarantineSelected.Enabled = hasSelection;
-        if (approveUploadButton is not null)
-        {
-            approveUploadButton.Enabled = GetVirusTotalUploadTargets(selected).Count > 0;
-        }
-
-        if (hasSelection)
-        {
-            UpdateIgnoreButtonText(resultsView, ignoreSelected);
-        }
-    }
-
     private ScanResult? FindResultForReviewQueueRow(ListViewItem item)
     {
         var sha256 = GetSubItemText(item, ColSha256);
@@ -358,7 +333,7 @@ public sealed partial class MainForm : Form
             progressBar.Value = completed;
         }
 
-        SyncScanRing();
+        SyncScanRing(countsToo: false);
 
         scanUiDirty++;
         if (scanUiDirty >= ScanUiFlushEvery || DateTime.UtcNow - scanUiLastFlushUtc >= ScanUiFlushInterval)
@@ -395,17 +370,10 @@ public sealed partial class MainForm : Form
     {
         var actionsNeeded = results.Count(ResultNeedsAction);
         var alerts = results.Count(result => ResultNeedsAction(result) && result.IsAlert);
-        var unknown = results.Count(result => result.Status is "unknown" or "uploaded");
         var errors = results.Count(result => ResultNeedsAction(result) && result.Status == "error");
         var highRisk = results.Count(result => ResultNeedsAction(result) && result.RiskScore >= 70);
-        var persistent = results.Count(result => result.PersistenceSources.Count > 0);
-        var unsigned = results.Count(result => result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase));
-        summaryLabel.Text = $"Items scanned: {results.Count}";
-        actionLabel.Text = $"Needs review: {actionsNeeded}";
         UpdateReviewCount(actionsNeeded);
         UpdateHomePage();
-        toolTip.SetToolTip(summaryLabel, $"{results.Count} scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown");
-        toolTip.SetToolTip(actionLabel, $"{actionsNeeded} file(s) need action | {alerts} detections | {highRisk} high risk | {errors} errors");
         if (scanCancellation is not null || scanGate.IsBusy)
         {
             return;
@@ -489,10 +457,4 @@ public sealed partial class MainForm : Form
         Process.Start(new ProcessStartInfo(logDir) { UseShellExecute = true });
     }
 
-    private void OpenHashCacheFolder()
-    {
-        var configDir = AppPaths.GetConfigDirectory();
-        Directory.CreateDirectory(configDir);
-        Process.Start(new ProcessStartInfo(configDir) { UseShellExecute = true });
-    }
 }

@@ -26,11 +26,11 @@ public sealed partial class MainForm : Form
         var chipClean = new ChipButton("Clean");
         var chipErrors = new ChipButton("Errors");
         var chips = new[] { (chipAll, ActivityFilter.All), (chipAction, ActivityFilter.ActionNeeded), (chipUnknown, ActivityFilter.Unknown), (chipClean, ActivityFilter.Clean), (chipErrors, ActivityFilter.Errors) };
-        var search = new TextBox { Width = 280, PlaceholderText = "Search files, apps or hashes", AccessibleName = "Search activity", Margin = new Padding(0, 6, 10, 0), Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var search = new TextBox { Width = 200, PlaceholderText = "Search files, apps or hashes", AccessibleName = "Search activity", Margin = new Padding(0, 6, 10, 0), Font = new Font("Segoe UI", 10, FontStyle.Regular) };
         var export = new Button { Text = "Export report", AutoSize = true, Height = 36, Margin = new Padding(0, 4, 8, 0) };
-        var openLogs = new Button { Text = "Open logs", AutoSize = true, Height = 36, Margin = new Padding(0, 4, 0, 0), Tag = "quiet-button" };
+        var openLogs = new LinkLabel { Text = "Open logs", AutoSize = true, Margin = new Padding(0, 14, 0, 0), Tag = "accent-link" };
         export.Click += (_, _) => ExportScanReport();
-        openLogs.Click += (_, _) => OpenLogFolder();
+        openLogs.LinkClicked += (_, _) => OpenLogFolder();
 
         var bar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 52, ColumnCount = 2, RowCount = 1, Margin = new Padding(0), BackColor = SoftAppBack };
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -48,7 +48,7 @@ public sealed partial class MainForm : Form
         bar.Controls.Add(rightFlow, 1, 0);
 
         var list = new CardList { Dock = DockStyle.Fill, EmptyText = "Loading activity…", AccessibleName = "Activity history" };
-        var card = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(1, 1, 1, 4) };
+        var card = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10) };
         card.Controls.Add(list);
         var spacer = new Panel { Dock = DockStyle.Top, Height = 12, BackColor = SoftAppBack };
         page.Controls.Add(card);
@@ -117,11 +117,11 @@ public sealed partial class MainForm : Form
                     ActivityKind.Threat => ("!", CardTone.Bad),
                     ActivityKind.Suspicious => ("!", CardTone.Warn),
                     ActivityKind.Unknown => ("?", CardTone.Warn),
-                    ActivityKind.Error => ("×", CardTone.Neutral),
+                    ActivityKind.Error => ("\uE711", CardTone.Neutral),
                     ActivityKind.Handled => ("–", CardTone.Neutral),
                     ActivityKind.Firewall => ("", CardTone.Blue),
                     ActivityKind.Quarantine => ("", CardTone.Bad),
-                    _ => ("✓", CardTone.Good),
+                    _ => ("\uE73E", CardTone.Good),
                 };
                 items.Add(new CardListItem
                 {

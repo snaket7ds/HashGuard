@@ -57,8 +57,6 @@ public sealed partial class MainForm : Form
         progressBar.Value = 0;
         countLabel.Text = "";
         statusLabel.Text = "Collecting running processes...";
-        summaryLabel.Text = "Preparing scan";
-        actionLabel.Text = "Needs review: 0";
         UpdateReviewCount(0);
         SetDashboardState("Scanning", "Checking running process files with enabled reputation services.", false);
 
@@ -219,6 +217,8 @@ public sealed partial class MainForm : Form
             }
 
             scanGate.Exit();
+
+            UpdateHomePage();
         }
     }
 
@@ -316,6 +316,7 @@ public sealed partial class MainForm : Form
 
             EndScanUiBatch();
             scanGate.Exit();
+            UpdateHomePage();
         }
     }
 

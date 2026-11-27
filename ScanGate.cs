@@ -15,7 +15,6 @@ internal sealed class ScanGate
 
     public void Exit() => Interlocked.Exchange(ref entered, 0);
 
-    public ScanGateScope? TryEnterScope() => TryEnter() ? new ScanGateScope(this) : null;
 }
 
 internal readonly struct ScanGateScope : IDisposable

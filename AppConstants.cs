@@ -25,10 +25,6 @@ internal static class AppConstants
     public const int MaxConcurrentFileLookups = 3;
 
     public static readonly TimeSpan CleanCacheMaxAge = TimeSpan.FromDays(7);
-    public static readonly TimeSpan UnknownCacheMaxAge = TimeSpan.FromHours(12);
-    public static readonly TimeSpan ErrorCacheMaxAge = TimeSpan.FromHours(1);
-    public static readonly TimeSpan DeferredCacheMaxAge = TimeSpan.FromMinutes(30);
-
     public const string ColorModeSystem = "system";
     public const string ColorModeLight = "light";
     public const string ColorModeDark = "dark";

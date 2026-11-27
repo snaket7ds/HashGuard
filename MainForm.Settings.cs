@@ -31,31 +31,31 @@ public sealed partial class MainForm : Form
         var dialog = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
         var pendingTrusted = appSettings.TrustedPublishers.ToList();
 
-        var vtEnabled = new CheckBox { Text = "Enable VirusTotal", Checked = virusTotalEnabledBox.Checked, AutoSize = true };
-        var mdEnabled = new CheckBox { Text = "Enable MetaDefender Cloud", Checked = metaDefenderEnabledBox.Checked, AutoSize = true };
-        var mhrEnabled = new CheckBox { Text = "Enable Team Cymru MHR", Checked = mhrEnabledBox.Checked, AutoSize = true };
+        var vtEnabled = new ToggleSwitch { Text = "Enable VirusTotal", Checked = virusTotalEnabledBox.Checked, AutoSize = true };
+        var mdEnabled = new ToggleSwitch { Text = "Enable MetaDefender Cloud", Checked = metaDefenderEnabledBox.Checked, AutoSize = true };
+        var mhrEnabled = new ToggleSwitch { Text = "Enable Team Cymru MHR", Checked = mhrEnabledBox.Checked, AutoSize = true };
         var apiKey = new TextBox { UseSystemPasswordChar = true, Text = apiKeyBox.Text, Dock = DockStyle.Fill };
         var metaDefenderApiKey = new TextBox { UseSystemPasswordChar = true, Text = metaDefenderApiKeyBox.Text, Dock = DockStyle.Fill };
-        var freeLimit = new CheckBox { Text = "Free API limits (4/min, 500/day)", Checked = freeApiLimitBox.Checked, AutoSize = true };
-        var rightClickScan = new CheckBox { Text = "Add Explorer right-click scan", Checked = rightClickScanBox.Checked, AutoSize = true };
-        var startWithWindows = new CheckBox { Text = "Start with Windows", Checked = startWithWindowsBox.Checked, AutoSize = true };
-        var startMinimized = new CheckBox { Text = "Start minimized to tray", Checked = startMinimizedBox.Checked, AutoSize = true };
+        var freeLimit = new ToggleSwitch { Text = "Free API limits (4/min, 500/day)", Checked = freeApiLimitBox.Checked, AutoSize = true };
+        var rightClickScan = new ToggleSwitch { Text = "Add Explorer right-click scan", Checked = rightClickScanBox.Checked, AutoSize = true };
+        var startWithWindows = new ToggleSwitch { Text = "Start with Windows", Checked = startWithWindowsBox.Checked, AutoSize = true };
+        var startMinimized = new ToggleSwitch { Text = "Start minimized to tray", Checked = startMinimizedBox.Checked, AutoSize = true };
         var colorMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
         colorMode.Items.AddRange(["Use Windows setting", "Light", "Dark"]);
         colorMode.SelectedIndex = Math.Clamp(colorModeBox.SelectedIndex, 0, colorMode.Items.Count - 1);
-        var autoProcessScan = new CheckBox { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
-        var runElevated = new CheckBox { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
-        var scanAllFiles = new CheckBox { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
-        var scheduledDaily = new CheckBox { Text = "Daily scan of running apps (catches up if the PC was off)", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
+        var autoProcessScan = new ToggleSwitch { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
+        var runElevated = new ToggleSwitch { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
+        var scanAllFiles = new ToggleSwitch { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
+        var scheduledDaily = new ToggleSwitch { Text = "Daily scan of running apps (catches up if the PC was off)", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
         var scheduledHour = new NumericUpDown { Minimum = 0, Maximum = 23, Value = Math.Clamp(appSettings.ScheduledScanHour, 0, 23), Width = 70 };
-        var preferDelta = new CheckBox { Text = "Highlight new files since last scan", Checked = appSettings.PreferDeltaScan, AutoSize = true };
-        var deltaScan = new CheckBox { Text = "Reuse cached hash for unchanged files (delta scan)", Checked = appSettings.DeltaScanEnabled, AutoSize = true };
-        var suppressTray = new CheckBox { Text = "Suppress repeat tray alerts for same detections", Checked = appSettings.SuppressRepeatTrayAlerts, AutoSize = true };
-        var autoUpdates = new CheckBox { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
-        var telemetryEnabled = new CheckBox { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
-        var hashCache = new CheckBox { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
-        var uploadUnknown = new CheckBox { Text = "Allow VirusTotal uploads (approve each file in Review Queue)", Checked = uploadUnknownBox.Checked, AutoSize = true };
-        var networkMonitor = new CheckBox { Text = "Watch network connections in the background (needed for alerts and auto-block)", Checked = appSettings.NetworkMonitorEnabled, AutoSize = true };
+        var preferDelta = new ToggleSwitch { Text = "Highlight new files since last scan", Checked = appSettings.PreferDeltaScan, AutoSize = true };
+        var deltaScan = new ToggleSwitch { Text = "Reuse cached hash for unchanged files (delta scan)", Checked = appSettings.DeltaScanEnabled, AutoSize = true };
+        var suppressTray = new ToggleSwitch { Text = "Suppress repeat tray alerts for same detections", Checked = appSettings.SuppressRepeatTrayAlerts, AutoSize = true };
+        var autoUpdates = new ToggleSwitch { Text = "Check updates automatically", Checked = autoUpdateChecksBox.Checked, AutoSize = true };
+        var telemetryEnabled = new ToggleSwitch { Text = "Send anonymous usage data", Checked = telemetryEnabledBox.Checked, AutoSize = true };
+        var hashCache = new ToggleSwitch { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
+        var uploadUnknown = new ToggleSwitch { Text = "Allow VirusTotal uploads (approve each file in Review Queue)", Checked = uploadUnknownBox.Checked, AutoSize = true };
+        var networkMonitor = new ToggleSwitch { Text = "Watch network connections in the background (needed for alerts and auto-block)", Checked = appSettings.NetworkMonitorEnabled, AutoSize = true };
         var networkNotify = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 360 };
         networkNotify.Items.AddRange(["When an untrusted app connects for the first time", "When any app connects for the first time", "Never"]);
         networkNotify.SelectedIndex = NetworkNotifyModes.Normalize(appSettings.NetworkNotifyMode) switch
@@ -64,7 +64,7 @@ public sealed partial class MainForm : Form
             NetworkNotifyModes.Never => 2,
             _ => 0,
         };
-        var autoBlockMalicious = new CheckBox { Text = "Automatically block apps HashGuard flags as malicious (needs Run elevated)", Checked = appSettings.AutoBlockMalicious, AutoSize = true };
+        var autoBlockMalicious = new ToggleSwitch { Text = "Automatically block apps HashGuard flags as malicious (needs Run elevated)", Checked = appSettings.AutoBlockMalicious, AutoSize = true };
         var networkInfo = new Label
         {
             Text = "Open the Firewall page from the sidebar to see which apps connect where. Blocking adds Windows Firewall rules in the \"HashGuard\" group; HashGuard never changes your other firewall rules.",
@@ -103,18 +103,12 @@ public sealed partial class MainForm : Form
         };
 
         // Tabs + footer only (no large header strip — frees vertical space for Behavior/Version content).
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(0) };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(0), BackColor = SoftAppBack };
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         dialog.Controls.Add(root);
 
-        var tabs = new TabControl
-        {
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0, 0, 0, 6),
-            Font = new Font("Segoe UI", 10, FontStyle.Regular),
-            Padding = new Point(18, 6),
-        };
+        var tabs = new SegmentTabs { Dock = DockStyle.Fill, Margin = new Padding(0) };
         root.Controls.Add(tabs, 0, 0);
 
         var reputationPage = CreateSettingsPage(
@@ -126,7 +120,7 @@ public sealed partial class MainForm : Form
         var behaviorPage = CreateSettingsPage(
             ("Windows Integration", [runElevated, startWithWindows, startMinimized, rightClickScan, CreateSettingRow("Colors", colorMode), autoUpdates, suppressTray]),
             ("Privacy", [telemetryEnabled]),
-            ("Version and Updates", [updateInfo, updateButton]));
+            ("Version and Updates", [updateInfo, CreateSettingRow("Updates", updateButton)]));
         var antivirusPage = CreateSettingsPage(
             ("Scans", [autoProcessScan, scheduledDaily, CreateSettingRow("Daily scan hour (0-23)", scheduledHour), scanAllFiles]),
             ("Speed", [hashCache, deltaScan, preferDelta]));
@@ -134,8 +128,10 @@ public sealed partial class MainForm : Form
         AddSettingsTab(tabs, "Reputation", reputationPage);
         AddSettingsTab(tabs, "Antivirus", antivirusPage);
 
+        var removeRules = new Button { Text = "Remove all…", AutoSize = true, Height = 34, Tag = "danger-button" };
+        removeRules.Click += (_, _) => RemoveAllNetworkRules(this);
         var networkPage = CreateSettingsPage(
-            ("Firewall", [networkMonitor, CreateSettingRow("Alerts", networkNotify), autoBlockMalicious, networkInfo]));
+            ("Firewall", [networkMonitor, CreateSettingRow("New-app alerts", networkNotify), autoBlockMalicious, CreateSettingRow("HashGuard firewall rules", removeRules), networkInfo]));
         AddSettingsTab(tabs, "Firewall", networkPage);
 
         var trustPage = BuildTrustEditor(pendingTrusted);
@@ -146,7 +142,8 @@ public sealed partial class MainForm : Form
             AutoSize = true,
             FlowDirection = FlowDirection.RightToLeft,
             Dock = DockStyle.Fill,
-            Padding = new Padding(18, 4, 18, 12),
+            Padding = new Padding(0, 8, 0, 4),
+            BackColor = SoftAppBack,
         };
         ok.BackColor = BrandGreen;
         ok.ForeColor = Color.FromArgb(20, 40, 10);
@@ -440,157 +437,171 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static void AddSettingsTab(TabControl tabs, string title, Control content)
-    {
-        var page = new TabPage(title) { BackColor = Color.White, Padding = new Padding(8) };
-        content.Dock = DockStyle.Fill;
-        page.Controls.Add(content);
-        tabs.TabPages.Add(page);
-    }
+    private static void AddSettingsTab(SegmentTabs tabs, string title, Control content) => tabs.AddTab(title, content);
 
-    private static FlowLayoutPanel CreateSettingsPage(params (string Title, Control[] Controls)[] sections)
+    /// <summary>Friendly name and one-line explanation for each setting, as in the design.</summary>
+    private static readonly Dictionary<string, (string Label, string Help)> SettingWords = new(StringComparer.Ordinal)
     {
-        var page = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false,
-            // Allow scroll when a tab has many sections (Behavior / Version and Updates).
-            AutoScroll = true,
-            Padding = new Padding(12, 10, 12, 10),
-            BackColor = Color.FromArgb(246, 247, 249),
-        };
-        page.ControlAdded += (_, e) =>
-        {
-            if (e.Control is not null)
-            {
-                ResizeSettingsSection(page, e.Control);
-            }
-        };
-        page.SizeChanged += (_, _) =>
-        {
-            foreach (Control child in page.Controls)
-            {
-                ResizeSettingsSection(page, child);
-            }
-        };
+        ["Enable VirusTotal"] = ("VirusTotal", "Checks each file hash against 70+ antivirus engines"),
+        ["Enable MetaDefender Cloud"] = ("MetaDefender Cloud", "A second multi-engine opinion"),
+        ["Enable Team Cymru MHR"] = ("Team Cymru Malware Hash Registry", "Free hash lookups, no key needed"),
+        ["Free API limits (4/min, 500/day)"] = ("Stay within free API limits", "4 lookups a minute, 500 a day"),
+        ["Allow VirusTotal uploads (approve each file in Review Queue)"] = ("Allow VirusTotal uploads", "Only files VirusTotal has never seen, and only after you approve each one"),
+        ["Add Explorer right-click scan"] = ("Add \u201cScan with HashGuard\u201d to the right-click menu", "For files in File Explorer"),
+        ["Start with Windows"] = ("Start with Windows", "Starts elevated at sign-in without a UAC prompt when Run elevated is on"),
+        ["Start minimized to tray"] = ("Start minimized to the tray", "HashGuard waits quietly next to the clock"),
+        ["Scan automatically at startup"] = ("Scan running apps when HashGuard starts", "A quick check every time you sign in"),
+        ["Run elevated"] = ("Run elevated", "Needed to block apps and to inspect protected processes"),
+        ["Scan files I open or select"] = ("Check files you open or select", "Never uploads anything; skips photos, video and music"),
+        ["Daily scan of running apps (catches up if the PC was off)"] = ("Daily scan", "Scans running apps once a day; catches up if the PC was off"),
+        ["Highlight new files since last scan"] = ("Highlight new files", "Marks files that weren't there at the last scan"),
+        ["Reuse cached hash for unchanged files (delta scan)"] = ("Skip unchanged files", "Reuses the saved hash when a file hasn\u2019t changed on disk"),
+        ["Suppress repeat tray alerts for same detections"] = ("Don\u2019t repeat the same alert", "One alert per threat until something changes"),
+        ["Check updates automatically"] = ("Check for updates automatically", "Updates are verified with HashGuard\u2019s signature before installing"),
+        ["Send anonymous usage data"] = ("Send anonymous usage data", "A random install ID, versions and scan counts. Never file names, paths or hashes"),
+        ["Enable Hash Cache"] = ("Remember results", "Files already known to be clean aren\u2019t looked up again"),
+        ["Watch network connections in the background (needed for alerts and auto-block)"] = ("Watch network connections in the background", "Needed for new-app alerts and auto-block"),
+        ["Automatically block apps HashGuard flags as malicious (needs Run elevated)"] = ("Automatically block apps flagged as malicious", "Adds a Windows Firewall rule as soon as one connects (needs Run elevated)"),
+    };
+
+    private static readonly Dictionary<string, string> SettingRowHelp = new(StringComparer.Ordinal)
+    {
+        ["VirusTotal API key"] = "Kept encrypted on this PC",
+        ["MetaDefender API key"] = "Kept encrypted on this PC",
+        ["VirusTotal delay per request"] = "Seconds between lookups; raise it if you hit the free limit",
+        ["Request timeout"] = "Seconds to wait for a source to answer",
+        ["Colors"] = "Light, dark or follow Windows",
+        ["Daily scan hour (0-23)"] = "When the daily scan runs",
+        ["New-app alerts"] = "When an app goes online for the first time",
+        ["HashGuard firewall rules"] = "Removes every rule HashGuard added; your own rules stay",
+        ["Updates"] = "Download and install the latest signed release",
+    };
+
+    /// <summary>
+    /// Settings tab body as designed: one rounded card per section, spread over two columns, each
+    /// setting a row with its name, a one-line explanation and its switch or field on the right.
+    /// </summary>
+    private static Control CreateSettingsPage(params (string Title, Control[] Controls)[] sections)
+    {
+        var scroller = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = SoftAppBack, Padding = new Padding(0, 4, 0, 4) };
+        var columns = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 2, RowCount = 1, BackColor = SoftAppBack, Margin = new Padding(0) };
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        columns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var stacks = new[] { CreateSettingsColumn(new Padding(0, 0, 8, 0)), CreateSettingsColumn(new Padding(8, 0, 0, 0)) };
+        var heights = new[] { 0, 0 };
         foreach (var section in sections)
         {
-            page.Controls.Add(CreateSettingsSection(section.Title, section.Controls));
+            var card = CreateSettingsCard(section.Title, section.Controls);
+            var column = heights[0] <= heights[1] ? 0 : 1;
+            stacks[column].Controls.Add(card);
+            heights[column] += card.Height + 16;
         }
 
-        return page;
+        columns.Controls.Add(stacks[0], 0, 0);
+        columns.Controls.Add(stacks[1], 1, 0);
+        void Fit()
+        {
+            foreach (var stack in stacks)
+            {
+                var width = Math.Max(240, stack.ClientSize.Width);
+                foreach (Control card in stack.Controls)
+                {
+                    card.Width = width;
+                }
+            }
+        }
+
+        foreach (var stack in stacks)
+        {
+            stack.SizeChanged += (_, _) => Fit();
+        }
+
+        scroller.Controls.Add(columns);
+        return scroller;
     }
 
-    private static Panel CreateSettingsSection(string title, IEnumerable<Control> controls)
+    private static FlowLayoutPanel CreateSettingsColumn(Padding margin) =>
+        new() { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, Margin = margin, BackColor = SoftAppBack };
+
+    private static CardPanel CreateSettingsCard(string title, Control[] controls)
     {
-        var section = new Panel
+        var card = new CardPanel { Radius = 16, Padding = new Padding(20, 12, 20, 10), Margin = new Padding(0, 0, 0, 16), Width = 420 };
+        var rows = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = controls.Length + 1, BackColor = Color.Transparent, Margin = new Padding(0) };
+        rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        rows.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        rows.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false }, 0, 0);
+        var height = 34;
+        for (var index = 0; index < controls.Length; index++)
         {
-            Width = 720,
-            Height = 10,
-            BackColor = Color.White,
-            Padding = new Padding(12, 8, 12, 10),
-            Margin = new Padding(0, 0, 0, 8),
-            BorderStyle = BorderStyle.FixedSingle,
-        };
-
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
-            RowCount = 1,
-            Padding = new Padding(0),
-            Margin = new Padding(0),
-        };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.Controls.Add(new Label
-        {
-            Text = title,
-            Dock = DockStyle.Top,
-            Height = 26,
-            Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
-            ForeColor = Color.FromArgb(35, 35, 35),
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0, 0, 0, 4),
-        });
-
-        foreach (var control in controls)
-        {
-            control.Margin = new Padding(0, 1, 0, 4);
-            control.Dock = DockStyle.Top;
-            NormalizeSettingsControl(control);
-            layout.Controls.Add(control);
+            var row = CreateSettingsCardRow(controls[index]);
+            rows.RowStyles.Add(new RowStyle(SizeType.Absolute, row.Height));
+            rows.Controls.Add(row, 0, index + 1);
+            height += row.Height;
         }
 
-        section.Controls.Add(layout);
-        MeasureSettingsSectionHeight(section, layout);
-        return section;
+        card.Controls.Add(rows);
+        card.Height = height + card.Padding.Vertical + 6;
+        return card;
     }
 
-    private static void NormalizeSettingsControl(Control control)
+    private static Control CreateSettingsCardRow(Control control)
     {
-        if (control is CheckBox checkBox)
+        string label;
+        string help;
+        Control editor;
+        if (control is ToggleSwitch toggle)
         {
-            checkBox.AutoSize = false;
-            checkBox.Height = 24;
-            checkBox.TextAlign = ContentAlignment.MiddleLeft;
-            checkBox.UseMnemonic = false;
+            (label, help) = SettingWords.TryGetValue(toggle.Text, out var words) ? words : (toggle.Text, "");
+            toggle.AccessibleName = label;
+            toggle.AccessibleDescription = help;
+            editor = toggle;
+        }
+        else if (control.Tag is SettingRowTag tag)
+        {
+            label = tag.Label;
+            help = SettingRowHelp.TryGetValue(tag.Label, out var helpText) ? helpText : "";
+            editor = tag.Editor;
+        }
+        else
+        {
+            control.Dock = DockStyle.Fill;
+            control.Margin = new Padding(0, 6, 0, 6);
+            var holder = new Panel { Dock = DockStyle.Fill, Height = Math.Max(40, control.Height + 12), BackColor = Color.Transparent, Margin = new Padding(0) };
+            holder.Controls.Add(control);
+            return holder;
         }
 
-        if (control is Label label)
-        {
-            label.AutoSize = false;
-            label.UseMnemonic = false;
-        }
-    }
-
-    private static void ResizeSettingsSection(FlowLayoutPanel page, Control section)
-    {
-        var availableWidth = page.ClientSize.Width - page.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth;
-        section.Width = Math.Max(560, availableWidth - section.Margin.Horizontal);
-        if (section is Panel panel
-            && panel.Controls.Count > 0
-            && panel.Controls[0] is TableLayoutPanel layout)
-        {
-            MeasureSettingsSectionHeight(panel, layout);
-        }
-    }
-
-    private static void MeasureSettingsSectionHeight(Panel section, TableLayoutPanel layout)
-    {
-        layout.PerformLayout();
-        var contentHeight = layout.PreferredSize.Height;
-        if (contentHeight <= 0)
-        {
-            contentHeight = layout.Height;
-        }
-
-        section.Height = Math.Max(58, contentHeight + section.Padding.Vertical + 6);
-    }
-
-    private static Control CreateSettingRow(string labelText, Control editor)
-    {
-        var row = new TableLayoutPanel
-        {
-            Dock = DockStyle.Top,
-            ColumnCount = 2,
-            Height = 30,
-            Margin = new Padding(0, 1, 0, 4),
-        };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 250));
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, Height = string.IsNullOrEmpty(help) ? 46 : 58, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0), Tag = "settings-row" };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        row.Controls.Add(new Label
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var text = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 4, 12, 4) };
+        if (!string.IsNullOrEmpty(help))
         {
-            Text = labelText,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            ForeColor = Color.FromArgb(35, 35, 35),
-            Margin = new Padding(0, 0, 12, 0),
-        }, 0, 0);
-        editor.Dock = DockStyle.Fill;
+            text.Controls.Add(new Label { Text = help, AutoSize = false, Dock = DockStyle.Top, Height = 20, Tag = "muted", AutoEllipsis = true, UseMnemonic = false });
+        }
+
+        text.Controls.Add(new Label { Text = label, AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 9.75f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false, TextAlign = ContentAlignment.BottomLeft });
+        editor.Dock = DockStyle.None;
+        editor.Anchor = AnchorStyles.Right;
+        editor.Margin = new Padding(0);
+        if (editor is TextBox or ComboBox)
+        {
+            editor.Width = 230;
+        }
+        else if (editor is NumericUpDown)
+        {
+            editor.Width = 80;
+        }
+
+        row.Controls.Add(text, 0, 0);
         row.Controls.Add(editor, 1, 0);
         return row;
     }
+
+    private sealed record SettingRowTag(string Label, Control Editor);
+
+    /// <summary>A labelled field; laid out as a settings row by <see cref="CreateSettingsCardRow"/>.</summary>
+    private static Control CreateSettingRow(string labelText, Control editor) =>
+        new Panel { Tag = new SettingRowTag(labelText, editor), Height = 1 };
 }
