@@ -229,6 +229,8 @@ public sealed partial class MainForm : Form
             enableScanAllFiles = false;
         }
 
+        var startupWasInstalled = startWithWindowsBox.Checked;
+        var runElevatedWasOn = runElevatedBox.Checked;
         suppressSettingEvents = true;
         try
         {
@@ -246,6 +248,23 @@ public sealed partial class MainForm : Form
         finally
         {
             suppressSettingEvents = false;
+        }
+
+        // The boxes above were set with change events suppressed, so apply startup here. Before
+        // v1.0.73 the dialog never wrote it: ticking "Start with Windows" in Settings did nothing.
+        if (startWithWindows.Checked != startupWasInstalled || runElevated.Checked != runElevatedWasOn)
+        {
+            try
+            {
+                ApplyStartWithWindows();
+            }
+            catch (Exception ex)
+            {
+                suppressSettingEvents = true;
+                startWithWindowsBox.Checked = IsStartWithWindowsInstalled();
+                suppressSettingEvents = false;
+                MessageBox.Show(this, $"Could not update Windows startup:{Environment.NewLine}{ex.Message}", "Startup setting failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         autoUpdateChecksBox.Checked = autoUpdates.Checked;
@@ -268,7 +287,7 @@ public sealed partial class MainForm : Form
         SaveCurrentAppSettings();
         try
         {
-            ScheduledScan.Apply(appSettings.ScheduledDailyScan, appSettings.ScheduledScanHour, Application.ExecutablePath);
+            ScheduledScan.Apply(appSettings.ScheduledDailyScan, appSettings.ScheduledScanHour, Application.ExecutablePath, appSettings.RunElevated && IsRunningElevated());
         }
         catch
         {

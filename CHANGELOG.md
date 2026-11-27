@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.73 - 2026-11-26
+
+- **No UAC prompt at sign-in when "Run elevated" is on.** With both "Start with Windows" and "Run elevated" on, HashGuard now starts at sign-in through a Task Scheduler task (`\HashGuard\Start at sign-in`) that runs it with your admin rights, so Windows no longer asks every time. The task has no time limit and ignores battery rules, so Windows never stops the tray app. With "Run elevated" off, the per-user startup entry is used as before. Only one of the two is ever registered.
+- **Existing installs switch on their own.** The first time HashGuard runs elevated with both settings on, it replaces its old startup entry with the task. It also repoints the task if `HashGuard.exe` moves.
+- **The daily scheduled scan runs elevated too.** With "Run elevated" on, the daily scan task is registered with highest privileges, so it no longer asks for admin each day.
+- **Fixed: "Start with Windows" in Settings did nothing.** Changing it (or "Run elevated") in the Settings dialog now updates Windows startup.
+- Opening HashGuard by hand, or a right-click scan while it isn't running, still asks for admin when "Run elevated" is on: Windows only skips the prompt for programs that Task Scheduler starts.
+
 ## v1.0.72 - 2026-10-12
 
 - **Faster scans.** HashGuard now looks up 3 files at a time instead of one. Results still appear in the same order. While the free VirusTotal limit or a "VirusTotal delay per request" is set, VirusTotal requests still go out one at a time with that delay between them. MetaDefender and Team Cymru lookups for other files run in the meantime.

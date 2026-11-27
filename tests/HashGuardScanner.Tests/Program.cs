@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Xml.Linq;
 using HashGuardScanner;
 
 var tests = new (string Name, Action Test)[]
@@ -516,6 +517,48 @@ var tests = new (string Name, Action Test)[]
             Directory.Delete(root, recursive: true);
         }
     }),
+    ("startup task runs elevated at logon for the given user", () =>
+    {
+        var xml = ElevatedStartupTask.BuildTaskXml(@"C:\Program Files\HashGuard\HashGuard.exe", "S-1-5-21-1-2-3-1001");
+        var doc = System.Xml.Linq.XDocument.Parse(xml);
+        System.Xml.Linq.XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+        AssertEqual("HighestAvailable", doc.Descendants(ns + "RunLevel").Single().Value);
+        AssertEqual("InteractiveToken", doc.Descendants(ns + "LogonType").Single().Value);
+        AssertEqual("S-1-5-21-1-2-3-1001", doc.Descendants(ns + "LogonTrigger").Elements(ns + "UserId").Single().Value);
+        AssertEqual("S-1-5-21-1-2-3-1001", doc.Descendants(ns + "Principal").Elements(ns + "UserId").Single().Value);
+        AssertEqual(@"C:\Program Files\HashGuard\HashGuard.exe", doc.Descendants(ns + "Command").Single().Value);
+        AssertEqual("--minimized", doc.Descendants(ns + "Arguments").Single().Value);
+        AssertEqual(@"C:\Program Files\HashGuard", doc.Descendants(ns + "WorkingDirectory").Single().Value);
+    }),
+    ("startup task is never killed by the 72h default or battery rules", () =>
+    {
+        var doc = System.Xml.Linq.XDocument.Parse(ElevatedStartupTask.BuildTaskXml(@"C:\HG\HashGuard.exe", "S-1-5-21-9"));
+        System.Xml.Linq.XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+        AssertEqual("PT0S", doc.Descendants(ns + "ExecutionTimeLimit").Single().Value);
+        AssertEqual("false", doc.Descendants(ns + "DisallowStartIfOnBatteries").Single().Value);
+        AssertEqual("false", doc.Descendants(ns + "StopIfGoingOnBatteries").Single().Value);
+        AssertEqual("IgnoreNew", doc.Descendants(ns + "MultipleInstancesPolicy").Single().Value);
+        AssertTrue(xmlDeclaresUtf16(ElevatedStartupTask.BuildTaskXml(@"C:\HG\HashGuard.exe", "S-1-5-21-9")));
+    }),
+    ("startup task xml escapes odd paths and round-trips the command", () =>
+    {
+        var path = @"C:\Users\R&D <test>\HashGuard.exe";
+        var xml = ElevatedStartupTask.BuildTaskXml(path, "S-1-5-21-9");
+        AssertEqual(path, ElevatedStartupTask.ReadCommand(xml));
+        AssertEqual(null, ElevatedStartupTask.ReadCommand("not xml"));
+        AssertEqual(null, ElevatedStartupTask.ReadCommand(""));
+    }),
+    ("startup task working directory is the exe folder", () =>
+    {
+        AssertEqual(@"C:\Program Files\HashGuard", ElevatedStartupTask.WindowsDirectoryOf(@"C:\Program Files\HashGuard\HashGuard.exe"));
+        AssertEqual(@"C:\", ElevatedStartupTask.WindowsDirectoryOf(@"C:\HashGuard.exe"));
+        AssertEqual("", ElevatedStartupTask.WindowsDirectoryOf("HashGuard.exe"));
+    }),
+    ("startup task requires a path and a user", () =>
+    {
+        AssertThrows<ArgumentException>(() => ElevatedStartupTask.BuildTaskXml("", "S-1-5-21-9"));
+        AssertThrows<ArgumentException>(() => ElevatedStartupTask.BuildTaskXml(@"C:\HG\HashGuard.exe", " "));
+    }),
 };
 
 var failures = new List<string>();
@@ -564,4 +607,21 @@ static void AssertFalse(bool value)
     {
         throw new Exception("Expected false");
     }
+}
+
+static bool xmlDeclaresUtf16(string xml) =>
+    xml.StartsWith("<?xml version=\"1.0\" encoding=\"UTF-16\"?>", StringComparison.Ordinal);
+
+static void AssertThrows<TException>(Action action) where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
 }

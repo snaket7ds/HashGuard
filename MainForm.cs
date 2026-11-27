@@ -244,6 +244,7 @@ public sealed partial class MainForm : Form
         rightClickScanBox.Checked = IsRightClickScanInstalled();
         startWithWindowsBox.Checked = IsStartWithWindowsInstalled();
         suppressSettingEvents = false;
+        MigrateStartupToElevatedTaskIfNeeded();
 
         scanButton.Click += async (_, _) => await StartScanAsync();
         processMonitorTimer.Tick += async (_, _) => await ScanNewProcessFilesAsync();
