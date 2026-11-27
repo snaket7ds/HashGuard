@@ -7,7 +7,12 @@ internal static class ScheduledScan
 {
     public const string TaskName = "HashGuardDailyScan";
 
-    public static void Apply(bool enabled, int hourLocal, string executablePath)
+    /// <param name="highestPrivileges">
+    /// Register with /RL HIGHEST so the task starts HashGuard elevated. Use it when "Run elevated" is
+    /// on: a limited task's HashGuard would relaunch itself through UAC every day. Registering it
+    /// needs an elevated process.
+    /// </param>
+    public static void Apply(bool enabled, int hourLocal, string executablePath, bool highestPrivileges = false)
     {
         if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
         {
@@ -24,7 +29,7 @@ internal static class ScheduledScan
         // /SC DAILY at HH:00, start HashGuard (not minimized so user sees results if interactive).
         var startTime = $"{hourLocal:00}:00";
         TryRunSchtasks(
-            $"/Create /F /TN \"{TaskName}\" /SC DAILY /ST {startTime} /TR \"\\\"{executablePath}\\\"\"");
+            $"/Create /F /TN \"{TaskName}\" /SC DAILY /ST {startTime}{(highestPrivileges ? " /RL HIGHEST" : "")} /TR \"\\\"{executablePath}\\\"\"");
     }
 
     public static bool IsRegistered()

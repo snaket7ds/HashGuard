@@ -307,16 +307,7 @@ public sealed partial class MainForm : Form
 
         try
         {
-            if (startWithWindowsBox.Checked)
-            {
-                InstallStartWithWindows();
-                statusLabel.Text = "Start with Windows enabled.";
-            }
-            else
-            {
-                RemoveStartWithWindows();
-                statusLabel.Text = "Start with Windows disabled.";
-            }
+            ApplyStartWithWindows();
         }
         catch (Exception ex)
         {
@@ -327,20 +318,110 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static bool IsStartWithWindowsInstalled()
+    /// <summary>
+    /// Registers how HashGuard starts at sign-in, from "Start with Windows" and "Run elevated":
+    /// elevated → a Task Scheduler logon task with highest privileges (no UAC prompt);
+    /// not elevated → the per-user Run key. The other mechanism is removed so only one starts it.
+    /// </summary>
+    private void ApplyStartWithWindows()
+    {
+        var exePath = Application.ExecutablePath;
+        if (!startWithWindowsBox.Checked)
+        {
+            RemoveRunKeyStartup();
+            RemoveElevatedStartupTaskIfPossible();
+            statusLabel.Text = "Start with Windows disabled.";
+            return;
+        }
+
+        if (runElevatedBox.Checked)
+        {
+            if (!IsRunningElevated())
+            {
+                // Only an elevated process can register a highest-privileges task. Keep the Run key
+                // so HashGuard still starts; the next (elevated) launch finishes the switch.
+                InstallRunKeyStartup();
+                statusLabel.Text = "Start with Windows enabled. Restart HashGuard once (it will ask for admin) to start elevated without a prompt.";
+                return;
+            }
+
+            ElevatedStartupTask.Install(exePath, CurrentUserSid());
+            RemoveRunKeyStartup();
+            statusLabel.Text = "Start with Windows enabled: HashGuard starts elevated at sign-in without a UAC prompt.";
+            return;
+        }
+
+        InstallRunKeyStartup();
+        RemoveElevatedStartupTaskIfPossible();
+        statusLabel.Text = "Start with Windows enabled.";
+    }
+
+    /// <summary>
+    /// Called once at launch: when HashGuard runs elevated with both settings on, move an existing
+    /// Run-key startup to the elevated task, or repoint the task after HashGuard.exe moved.
+    /// </summary>
+    private void MigrateStartupToElevatedTaskIfNeeded()
+    {
+        if (!runElevatedBox.Checked || !IsRunningElevated() || !IsStartWithWindowsInstalled())
+        {
+            return;
+        }
+
+        var exePath = Application.ExecutablePath;
+        if (!IsRunKeyStartupInstalled() && ElevatedStartupTask.IsInstalledFor(exePath))
+        {
+            return;
+        }
+
+        try
+        {
+            ElevatedStartupTask.Install(exePath, CurrentUserSid());
+            RemoveRunKeyStartup();
+            statusLabel.Text = "HashGuard now starts elevated at sign-in without a UAC prompt.";
+        }
+        catch (Exception ex)
+        {
+            // Keep the Run key; startup still works, just with a prompt.
+            statusLabel.Text = $"Could not set up prompt-free elevated startup: {ex.Message}";
+        }
+    }
+
+    private void RemoveElevatedStartupTaskIfPossible()
+    {
+        try
+        {
+            ElevatedStartupTask.Remove();
+        }
+        catch (Exception ex) when (!IsRunningElevated())
+        {
+            throw new InvalidOperationException(
+                $"The elevated startup task can only be removed while HashGuard runs elevated. {ex.Message}", ex);
+        }
+    }
+
+    private static string CurrentUserSid()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return identity.User?.Value ?? throw new InvalidOperationException("Could not read the current user's SID.");
+    }
+
+    private static bool IsStartWithWindowsInstalled() =>
+        IsRunKeyStartupInstalled() || ElevatedStartupTask.IsInstalledFor(Application.ExecutablePath);
+
+    private static bool IsRunKeyStartupInstalled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunRegistryPath);
         return key?.GetValue(RunRegistryValueName) is string value
             && value.Contains(Application.ExecutablePath, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void InstallStartWithWindows()
+    private static void InstallRunKeyStartup()
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunRegistryPath);
-        key.SetValue(RunRegistryValueName, $"\"{Application.ExecutablePath}\" --minimized");
+        key.SetValue(RunRegistryValueName, $"\"{Application.ExecutablePath}\" {ElevatedStartupTask.StartupArguments}");
     }
 
-    private static void RemoveStartWithWindows()
+    private static void RemoveRunKeyStartup()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunRegistryPath, writable: true);
         key?.DeleteValue(RunRegistryValueName, throwOnMissingValue: false);

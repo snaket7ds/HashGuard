@@ -23,5 +23,6 @@
     <Compile Include="../../Storage/ScanSnapshotStore.cs" Link="Storage/ScanSnapshotStore.cs" />
     <Compile Include="../../Telemetry/TelemetryClient.cs" Link="Telemetry/TelemetryClient.cs" />
     <Compile Include="../../Updates/UpdateVerifier.cs" Link="Updates/UpdateVerifier.cs" />
+    <Compile Include="../../Startup/ElevatedStartupTask.cs" Link="Startup/ElevatedStartupTask.cs" />
   </ItemGroup>
 </Project>
