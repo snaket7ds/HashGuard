@@ -57,12 +57,19 @@
         </StackPanel>
 
         <!-- Filters -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12">
-            <AutoSuggestBox Width="280" PlaceholderText="Search programs, publishers or hosts" QueryIcon="Find" TextChanged="Search_TextChanged"
+        <!-- Full width, so the checkboxes never sit under the details pane. -->
+        <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MaxWidth="340" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <AutoSuggestBox MinWidth="180" PlaceholderText="Search programs, publishers or hosts" QueryIcon="Find" TextChanged="Search_TextChanged"
                             AutomationProperties.Name="Search programs" />
-            <CheckBox Content="Hide trusted publishers" IsChecked="{x:Bind ViewModel.HideTrusted, Mode=TwoWay}" />
-            <CheckBox Content="Show idle" IsChecked="{x:Bind ViewModel.ShowIdle, Mode=TwoWay}" />
-        </StackPanel>
+            <CheckBox Grid.Column="1" Content="Hide trusted publishers" IsChecked="{x:Bind ViewModel.HideTrusted, Mode=TwoWay}" />
+            <CheckBox Grid.Column="2" Content="Show idle" IsChecked="{x:Bind ViewModel.ShowIdle, Mode=TwoWay}" />
+        </Grid>
 
         <!-- Program list -->
         <Grid Grid.Row="3">
@@ -108,7 +115,7 @@
         </Grid>
 
         <!-- Details -->
-        <Border x:Name="DetailPane" Grid.Row="2" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource CardStyle}" Padding="20" VerticalAlignment="Top">
+        <Border x:Name="DetailPane" Grid.Row="3" Grid.Column="1" Style="{StaticResource CardStyle}" Padding="20" VerticalAlignment="Top">
             <Grid>
                 <TextBlock Text="Select a program to see where it connects, and to block or allow it." Style="{StaticResource BodyTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="WrapWholeWords"
@@ -167,7 +174,7 @@
             <VisualStateGroup>
                 <VisualState x:Name="Wide">
                     <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="1100" />
+                        <AdaptiveTrigger MinWindowWidth="1200" />
                     </VisualState.StateTriggers>
                 </VisualState>
                 <VisualState x:Name="Narrow">
@@ -178,7 +185,6 @@
                         <Setter Target="DetailColumn.Width" Value="0" />
                         <Setter Target="DetailPane.(Grid.Column)" Value="0" />
                         <Setter Target="DetailPane.(Grid.Row)" Value="4" />
-                        <Setter Target="DetailPane.(Grid.RowSpan)" Value="1" />
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
