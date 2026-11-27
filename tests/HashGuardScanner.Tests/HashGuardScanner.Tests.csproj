@@ -24,6 +24,8 @@
     <Compile Include="../../Telemetry/TelemetryClient.cs" Link="Telemetry/TelemetryClient.cs" />
     <Compile Include="../../Updates/UpdateVerifier.cs" Link="Updates/UpdateVerifier.cs" />
     <Compile Include="../../Startup/ElevatedStartupTask.cs" Link="Startup/ElevatedStartupTask.cs" />
+    <Compile Include="../../Scanning/ScheduledScan.cs" Link="Scanning/ScheduledScan.cs" />
+    <Compile Include="../../Ui/HomeStatus.cs" Link="Ui/HomeStatus.cs" />
     <Compile Include="../../Network/ConnectionTable.cs" Link="Network/ConnectionTable.cs" />
     <Compile Include="../../Network/NetworkActivityTracker.cs" Link="Network/NetworkActivityTracker.cs" />
     <Compile Include="../../Network/FirewallRules.cs" Link="Network/FirewallRules.cs" />

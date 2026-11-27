@@ -96,6 +96,51 @@ public sealed partial class MainForm : Form
 
     private static void ApplyTheme(Control control, ThemePalette palette, bool inHeader)
     {
+        if (control is AlertCard alert)
+        {
+            alert.Surface = palette.Surface;
+            alert.Edge = palette.Hairline;
+            alert.TextColor = palette.Text;
+            alert.MutedColor = palette.MutedText;
+            alert.ButtonBack = palette.ButtonBack;
+            alert.ButtonBorder = palette.Border;
+            alert.ApplyColors();
+            return;
+        }
+
+        if (control is SidebarNav nav)
+        {
+            var dark = palette.AppBack == ThemePalette.Dark.AppBack;
+            nav.BackColor = dark ? palette.HeaderBack : Color.FromArgb(251, 251, 252);
+            nav.BrandColor = ShieldGreen;
+            nav.ActiveBack = palette.AccentTint;
+            nav.ActiveText = palette.AccentText;
+            nav.ItemText = palette.Text;
+            nav.HoverBack = palette.SurfaceHover;
+            nav.NeutralBadgeBack = palette.NeutralTint;
+            nav.NeutralBadgeText = palette.MutedText;
+            foreach (Control child in nav.Controls)
+            {
+                child.BackColor = nav.BackColor;
+                child.ForeColor = palette.Text;
+                foreach (Control grandchild in child.Controls)
+                {
+                    grandchild.BackColor = nav.BackColor;
+                }
+            }
+
+            nav.ApplyColors();
+            return;
+        }
+
+        if (control is LinkLabel link)
+        {
+            link.LinkColor = palette.AccentText;
+            link.ActiveLinkColor = palette.AccentText;
+            link.BackColor = Color.Transparent;
+            return;
+        }
+
         var header = inHeader || control.Tag as string == "header";
         var brandStrip = control.Tag as string == "brand-strip";
         switch (control)
@@ -120,7 +165,17 @@ public sealed partial class MainForm : Form
                 comboBox.BackColor = palette.InputBack;
                 comboBox.ForeColor = palette.Text;
                 break;
-            case Button button when button.Text is "Scan Now" or "Run Scan" or "Stop Scan":
+            case Button button when button.Tag as string is "scan-button" or "nav-item":
+                break;
+            case Button button when button.Tag as string is "danger-solid" or "primary-button":
+                var solid = button.Tag as string == "danger-solid" ? Color.FromArgb(180, 35, 24) : ShieldGreen;
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderSize = 0;
+                button.BackColor = solid;
+                button.ForeColor = Color.White;
+                button.Font = new Font("Segoe UI Semibold", button.Font.Size, FontStyle.Regular);
+                button.FlatAppearance.MouseOverBackColor = ControlPaint.Dark(solid, 0.05f);
+                button.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(solid, 0.15f);
                 break;
             case Button button:
                 button.FlatStyle = FlatStyle.Flat;
@@ -177,7 +232,7 @@ public sealed partial class MainForm : Form
                     break;
                 }
 
-                if (control.Tag as string is "header-title")
+                if (control.Tag as string is "header-title" or "page-title")
                 {
                     control.ForeColor = palette.HeaderText;
                     control.BackColor = Color.Transparent;

@@ -142,7 +142,9 @@ var tests = new (string Name, Action Test)[]
     }),
     ("publisher match for ignore is bidirectional contains", () =>
     {
-        AssertTrue(HashGuardLogic.PublisherMatchesForIgnore("Microsoft Corporation", "Microsoft"));
+        AssertTrue(HashGuardLogic.PublisherMatchesForIgnore("Microsoft Corporation", " microsoft   corporation "));
+        AssertFalse(HashGuardLogic.PublisherMatchesForIgnore("Microsoft Corporation", "Microsoft"));
+        AssertFalse(HashGuardLogic.PublisherMatchesForIgnore("Microsoft", "Microsoft Corporation"));
         AssertFalse(HashGuardLogic.PublisherMatchesForIgnore("Adobe Inc.", "Microsoft"));
     }),
     ("telemetry scan payload is aggregate-only", () =>
@@ -731,6 +733,124 @@ var tests = new (string Name, Action Test)[]
         AssertTrue(FirewallRules.IsSensitivePath(@"c:\program files\hashguard\hashguard.exe", windows, self));
         AssertFalse(FirewallRules.IsSensitivePath(@"C:\WindowsApps\thing.exe", windows, self));
         AssertFalse(FirewallRules.IsSensitivePath(@"C:\Program Files\Mozilla Firefox\firefox.exe", windows, self));
+    }),
+    ("anonymous usage data is on for new installs but saved choices are kept", () =>
+    {
+        AssertTrue(new AppSettings().TelemetryEnabled);
+        var saved = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"TelemetryEnabled\":false}")!;
+        AssertFalse(saved.TelemetryEnabled);
+        var older = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"StartMinimized\":true}")!;
+        AssertTrue(older.TelemetryEnabled);
+    }),
+    ("daily scan is on at noon for new installs but saved choices are kept", () =>
+    {
+        var fresh = new AppSettings();
+        AssertTrue(fresh.ScheduledDailyScan);
+        AssertEqual(12, fresh.ScheduledScanHour);
+        var saved = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"ScheduledDailyScan\":false,\"ScheduledScanHour\":2}")!;
+        AssertFalse(saved.ScheduledDailyScan);
+        AssertEqual(2, saved.ScheduledScanHour);
+    }),
+    ("daily scan task catches up after a missed run and passes the scheduled-scan argument", () =>
+    {
+        var xml = ScheduledScan.BuildTaskXml(@"C:\Program Files\HashGuard\HashGuard.exe", "S-1-5-21-9", 12, highestPrivileges: true, new DateTime(2026, 11, 26));
+        var doc = XDocument.Parse(xml);
+        XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+        AssertEqual("true", doc.Descendants(ns + "StartWhenAvailable").Single().Value);
+        AssertEqual("2026-11-26T12:00:00", doc.Descendants(ns + "StartBoundary").Single().Value);
+        AssertEqual("1", doc.Descendants(ns + "DaysInterval").Single().Value);
+        AssertEqual("HighestAvailable", doc.Descendants(ns + "RunLevel").Single().Value);
+        AssertEqual("--scheduled-scan --minimized", doc.Descendants(ns + "Arguments").Single().Value);
+        AssertEqual("LeastPrivilege", XDocument.Parse(ScheduledScan.BuildTaskXml(@"C:\HG\HashGuard.exe", "S-1-5-21-9", 30, false, DateTime.Today)).Descendants(ns + "RunLevel").Single().Value);
+        AssertTrue(ScheduledScan.BuildTaskXml(@"C:\HG\HashGuard.exe", "S-1-5-21-9", 30, false, new DateTime(2026, 1, 2)).Contains("2026-01-02T23:00:00", StringComparison.Ordinal));
+    }),
+    ("daily scan task is re-registered when it predates v1.1.0 or points elsewhere", () =>
+    {
+        var current = ScheduledScan.BuildTaskXml(@"C:\HG\HashGuard.exe", "S-1-5-21-9", 12, false, DateTime.Today);
+        AssertTrue(ScheduledScan.IsCurrent(current, @"c:\hg\hashguard.exe"));
+        AssertFalse(ScheduledScan.IsCurrent(current, @"D:\Other\HashGuard.exe"));
+        AssertFalse(ScheduledScan.IsCurrent(current.Replace("--scheduled-scan ", ""), @"C:\HG\HashGuard.exe"));
+        AssertFalse(ScheduledScan.IsCurrent("not xml", @"C:\HG\HashGuard.exe"));
+    }),
+    ("auto-block and background monitoring are on for new installs but saved choices are kept", () =>
+    {
+        var fresh = new AppSettings();
+        AssertTrue(fresh.AutoBlockMalicious);
+        AssertTrue(fresh.NetworkMonitorEnabled);
+        var saved = System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"AutoBlockMalicious\":false,\"NetworkMonitorEnabled\":false}")!;
+        AssertFalse(saved.AutoBlockMalicious);
+        AssertFalse(saved.NetworkMonitorEnabled);
+    }),
+    ("virustotal uploads are allowed for new installs but saved choices are kept", () =>
+    {
+        AssertTrue(new AppSettings().UploadUnknown);
+        AssertFalse(System.Text.Json.JsonSerializer.Deserialize<AppSettings>("{\"UploadUnknown\":false}")!.UploadUnknown);
+    }),
+    ("trusted publisher needs an exact name and a valid signature chain", () =>
+    {
+        var trusted = new[] { "Microsoft Corporation" };
+        AssertTrue(HashGuardLogic.IsTrustedPublisher("Microsoft Corporation", "Signed by Microsoft Corporation; chain valid", trusted));
+        AssertFalse(HashGuardLogic.IsTrustedPublisher("Microsoft", "Signed by Microsoft; chain valid", trusted));
+        AssertFalse(HashGuardLogic.IsTrustedPublisher("Microsoft Corporation Evil Ltd", "Signed by Microsoft Corporation Evil Ltd; chain valid", trusted));
+        AssertFalse(HashGuardLogic.IsTrustedPublisher("Microsoft Corporation", "Signed by Microsoft Corporation; UntrustedRoot", trusted));
+        AssertFalse(HashGuardLogic.IsTrustedPublisher("Microsoft Corporation", "Signed by Microsoft Corporation; certificate outside validity period; chain valid", trusted));
+        AssertFalse(HashGuardLogic.IsTrustedPublisher("", "Unsigned or signature unavailable", trusted));
+        AssertFalse(HashGuardLogic.IsTrustedPublisher("Micro", "Signed by Micro; chain valid", new[] { "Micro Systems" }));
+    }),
+    ("saved trust lists from before v1.1.0 gain the real certificate names once", () =>
+    {
+        var expanded = HashGuardLogic.ExpandLegacyTrustedPublishers(new[] { "Lenovo", "Advanced Micro Devices", " Contoso  Ltd " });
+        AssertTrue(expanded.Contains("Lenovo (United States) Inc."));
+        AssertTrue(expanded.Contains("Advanced Micro Devices, Inc."));
+        AssertTrue(expanded.Contains("Contoso Ltd"));
+        AssertTrue(expanded.Contains("Lenovo"));
+        var again = HashGuardLogic.ExpandLegacyTrustedPublishers(expanded);
+        AssertEqual(expanded.Count, again.Count);
+        AssertTrue(new AppSettings().TrustedPublishers.Contains("Advanced Micro Devices, Inc."));
+    }),
+    ("home says protected only when scanned, clean and a source is on", () =>
+    {
+        var now = new DateTime(2026, 11, 26, 15, 0, 0);
+        var ok = HomeStatusText.Build(false, 0, 0, 3, 3, now.AddHours(-1), now, true);
+        AssertEqual(HomeTone.Protected, ok.Tone);
+        AssertEqual("You're protected", ok.Title);
+        AssertEqual("3 reputation sources online", ok.SourcesChip);
+        AssertEqual("Last scan today 14:00", ok.LastScanChip);
+        AssertEqual(HomeTone.NotScanned, HomeStatusText.Build(false, 0, 0, 3, 3, null, now, true).Tone);
+        AssertEqual(HomeTone.Attention, HomeStatusText.Build(false, 0, 0, 0, 3, now, now, true).Tone);
+        AssertEqual("2 of 3 reputation sources", HomeStatusText.Build(false, 0, 0, 2, 3, now, now, true).SourcesChip);
+    }),
+    ("home puts threats before decisions and scanning before both", () =>
+    {
+        var now = new DateTime(2026, 11, 26, 15, 0, 0);
+        var threat = HomeStatusText.Build(false, 1, 3, 3, 3, now, now, true);
+        AssertEqual(HomeTone.Danger, threat.Tone);
+        AssertEqual("1 threat needs your attention", threat.Title);
+        AssertEqual("2 threats need your attention", HomeStatusText.Build(false, 2, 2, 3, 3, now, now, true).Title);
+        AssertEqual("3 files need your decision", HomeStatusText.Build(false, 0, 3, 3, 3, now, now, true).Title);
+        AssertEqual(HomeTone.Scanning, HomeStatusText.Build(true, 4, 4, 3, 3, now, now, true).Tone);
+        AssertTrue(HomeStatusText.Build(false, 0, 0, 3, 3, now, now, false).Subtitle.Contains("firewall monitor is off", StringComparison.Ordinal));
+    }),
+    ("last scan reads today, yesterday or a date", () =>
+    {
+        var now = new DateTime(2026, 11, 26, 15, 0, 0);
+        AssertEqual("No scan yet", HomeStatusText.FormatLastScan(null, now));
+        AssertTrue(HomeStatusText.FormatLastScan(now.AddDays(-1), now).StartsWith("Last scan yesterday", StringComparison.Ordinal));
+        AssertFalse(HomeStatusText.FormatLastScan(now.AddDays(-5), now).Contains("today", StringComparison.Ordinal));
+    }),
+    ("sidebar badges hide zero and cap at 99+", () =>
+    {
+        AssertEqual("", HomeStatusText.BadgeText(0));
+        AssertEqual("7", HomeStatusText.BadgeText(7));
+        AssertEqual("99+", HomeStatusText.BadgeText(250));
+    }),
+    ("tray pop-up sits in the bottom-right corner of the working area", () =>
+    {
+        var area = new System.Drawing.Rectangle(0, 0, 1920, 1032);
+        AssertEqual(new System.Drawing.Point(1520, 816), PopupPlacement.BottomRight(area, new System.Drawing.Size(384, 200), 16));
+        var left = new System.Drawing.Rectangle(-1280, 0, 1280, 984);
+        AssertEqual(new System.Drawing.Point(-400, 768), PopupPlacement.BottomRight(left, new System.Drawing.Size(384, 200), 16));
+        AssertEqual(new System.Drawing.Point(0, 0), PopupPlacement.BottomRight(new System.Drawing.Rectangle(0, 0, 300, 100), new System.Drawing.Size(384, 200), 16));
     }),
 };
 

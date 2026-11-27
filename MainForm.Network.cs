@@ -35,7 +35,7 @@ public sealed partial class MainForm : Form
     private DateTime lastNetworkAlertUtc = DateTime.MinValue;
     private DateTime lastNetworkSeenSaveUtc = DateTime.MinValue;
     private string? networkAlertAppPath;
-    private Form? networkWindow;
+    private bool firewallPageVisible;
     private Action? refreshNetworkWindow;
     private Action<string>? selectNetworkApp;
 
@@ -68,7 +68,7 @@ public sealed partial class MainForm : Form
     /// <summary>1 s while the window is open, 5 s in the background when enabled, otherwise off.</summary>
     private void UpdateNetworkTimer()
     {
-        var windowOpen = networkWindow is { IsDisposed: false };
+        var windowOpen = firewallPageVisible && Visible && WindowState != FormWindowState.Minimized;
         var enabled = windowOpen || appSettings.NetworkMonitorEnabled;
         if (enabled)
         {
@@ -321,7 +321,7 @@ public sealed partial class MainForm : Form
             return;
         }
 
-        if (networkWindow is { Visible: true, WindowState: not FormWindowState.Minimized })
+        if (firewallPageVisible && Visible && WindowState != FormWindowState.Minimized)
         {
             // The user is already watching the list.
             pendingNetworkAlerts.Clear();
@@ -330,25 +330,108 @@ public sealed partial class MainForm : Form
 
         var first = pendingNetworkAlerts[0];
         var assessment = AssessNetworkApp(first);
-        string message;
+        var anyUntrusted = pendingNetworkAlerts.Any(path => AssessNetworkApp(path).Untrusted);
         if (pendingNetworkAlerts.Count == 1 && networkTracker is not null && networkTracker.TryGetApp(first, out var app))
         {
             var endpoint = app.MostRecentEndpoint;
             var where = endpoint is null ? "the network" : DescribeEndpoint(endpoint);
-            message = $"{app.Name} connected to {where} for the first time. {assessment.Verdict.Label} · {assessment.Signer}. Click to open Network Monitor.";
+            var path = app.Path;
+            var name = app.Name;
+            ShowAlert(
+                anyUntrusted ? AlertTone.Warning : AlertTone.Info,
+                "New app went online",
+                $"{name} connected to {where} for the first time. {assessment.Verdict.Label} · {assessment.Signer}.",
+                [
+                    new AlertButton("Allow", AlertButtonKind.Normal, card =>
+                    {
+                        card.ShowConfirmation($"{name} is allowed.", null);
+                        KeepAlertBriefly(card);
+                    }),
+                    new AlertButton("Details", AlertButtonKind.Normal, card =>
+                    {
+                        card.Dismiss();
+                        ShowNetworkMonitor(path);
+                    }),
+                    new AlertButton("Block", AlertButtonKind.Danger, card =>
+                    {
+                        if (BlockFromAlert(card.FindForm() ?? this, path))
+                        {
+                            card.ShowConfirmation($"{name} is blocked in Windows Firewall.", () =>
+                            {
+                                if (UnblockNetworkApp(card.FindForm() ?? this, path))
+                                {
+                                    card.ShowConfirmation($"{name} is allowed again.", null);
+                                    KeepAlertBriefly(card);
+                                }
+                            });
+                            KeepAlertBriefly(card);
+                        }
+                    }),
+                ]);
         }
         else
         {
             var names = pendingNetworkAlerts.Select(NetworkActivityTracker.DisplayName).Take(4).ToList();
             var more = pendingNetworkAlerts.Count > names.Count ? $" and {pendingNetworkAlerts.Count - names.Count} more" : "";
-            message = $"{pendingNetworkAlerts.Count} apps went online for the first time: {string.Join(", ", names)}{more}. Click to open Network Monitor.";
+            ShowAlert(
+                anyUntrusted ? AlertTone.Warning : AlertTone.Info,
+                $"{pendingNetworkAlerts.Count} apps went online",
+                $"{string.Join(", ", names)}{more} connected for the first time.",
+                [new AlertButton("Review in Firewall", AlertButtonKind.Normal, card =>
+                {
+                    card.Dismiss();
+                    ShowNetworkMonitor(first);
+                })]);
         }
 
-        var anyUntrusted = pendingNetworkAlerts.Any(path => AssessNetworkApp(path).Untrusted);
-        networkAlertAppPath = first;
-        trayIcon.ShowBalloonTip(6000, "HashGuard Network Monitor", message, anyUntrusted ? ToolTipIcon.Warning : ToolTipIcon.Info);
         lastNetworkAlertUtc = DateTime.UtcNow;
         pendingNetworkAlerts.Clear();
+    }
+
+    /// <summary>Block from an alert: you already chose Block, so only Windows parts and HashGuard itself ask again.</summary>
+    private bool BlockFromAlert(IWin32Window owner, string path)
+    {
+        if (!IsRunningElevated() || !File.Exists(path)
+            || FirewallRules.IsSensitivePath(path, Environment.GetFolderPath(Environment.SpecialFolder.Windows), Application.ExecutablePath))
+        {
+            return BlockNetworkApp(owner, path);
+        }
+
+        try
+        {
+            FirewallRules.Block(path, alsoInbound: false);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(owner, $"Windows Firewall refused the rule:\n{ex.Message}", "Block failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+
+        ReloadNetworkBlockedPaths();
+        networkBlockedPaths.Add(FirewallRules.NormalizePath(path));
+        LogNetworkAction("Blocked outgoing (from alert)", path);
+        refreshNetworkWindow?.Invoke();
+        return true;
+    }
+
+    private static void KeepAlertBriefly(AlertCard card)
+    {
+        if (card.FindForm() is TrayPopup popup)
+        {
+            popup.KeepForSeconds(5);
+            return;
+        }
+
+        var timer = new System.Windows.Forms.Timer { Interval = 5000 };
+        timer.Tick += (_, _) =>
+        {
+            timer.Dispose();
+            if (!card.IsDisposed)
+            {
+                card.Dismiss();
+            }
+        };
+        timer.Start();
     }
 
     private void AutoBlockMaliciousNetworkApps()
@@ -374,8 +457,27 @@ public sealed partial class MainForm : Form
                 FirewallRules.Block(app.Path, alsoInbound: false);
                 networkBlockedPaths.Add(app.Path);
                 LogNetworkAction("Auto-blocked (malicious verdict)", app.Path);
-                networkAlertAppPath = app.Path;
-                trayIcon.ShowBalloonTip(6000, "HashGuard blocked an app", $"{app.Name} was blocked in Windows Firewall because HashGuard flags it as malicious. Click to review.", ToolTipIcon.Warning);
+                var blockedPath = app.Path;
+                var blockedName = app.Name;
+                ShowAlert(
+                    AlertTone.Danger,
+                    "HashGuard blocked an app",
+                    $"{blockedName} was blocked in Windows Firewall because security vendors flag it as malicious.",
+                    [
+                        new AlertButton("Details", AlertButtonKind.Normal, card =>
+                        {
+                            card.Dismiss();
+                            ShowNetworkMonitor(blockedPath);
+                        }),
+                        new AlertButton("Unblock", AlertButtonKind.Normal, card =>
+                        {
+                            if (UnblockNetworkApp(card.FindForm() ?? this, blockedPath))
+                            {
+                                card.ShowConfirmation($"{blockedName} can connect again.", null);
+                                KeepAlertBriefly(card);
+                            }
+                        }),
+                    ]);
                 lastNetworkAlertUtc = DateTime.UtcNow;
             }
             catch (Exception ex)
@@ -506,9 +608,18 @@ public sealed partial class MainForm : Form
         }
 
         int count;
+        List<string> apps;
         try
         {
-            count = FirewallRules.ListHashGuardRules().Count;
+            var rules = FirewallRules.ListHashGuardRules();
+            count = rules.Count;
+            apps = rules
+                .Select(rule => rule.ApplicationPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(path => File.Exists(path) && GetNetworkVerdict(path).Kind == NetworkVerdictKind.Malicious
+                    ? $"• {NetworkActivityTracker.DisplayName(path)} (HashGuard flags it as malicious)"
+                    : $"• {NetworkActivityTracker.DisplayName(path)}")
+                .ToList();
         }
         catch (Exception ex)
         {
@@ -522,9 +633,13 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        var listed = string.Join("\n", apps.Take(10)) + (apps.Count > 10 ? $"\n• and {apps.Count - 10} more" : "");
         var accepted = MessageBox.Show(
             owner,
-            $"Remove all {count} Windows Firewall rule(s) HashGuard created? Every program HashGuard blocked can connect again.\n\nYour other firewall rules are not touched.",
+            $"Remove all {count} Windows Firewall rule(s) HashGuard created?\n\n"
+                + "Windows Firewall goes back to its default for these apps: no rule, so they can connect again.\n\n"
+                + listed
+                + "\n\nOnly rules HashGuard added are removed; your own Windows Firewall rules aren't touched. To block an app again, use the Firewall page.",
             "Remove all HashGuard rules",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
@@ -630,37 +745,23 @@ public sealed partial class MainForm : Form
 
     private void ShowNetworkMonitor(string? selectPath = null)
     {
-        if (networkWindow is { IsDisposed: false })
+        RestoreFromTray();
+        ShowPage(AppPage.Firewall);
+        if (selectPath is not null)
         {
-            if (networkWindow.WindowState == FormWindowState.Minimized)
-            {
-                networkWindow.WindowState = FormWindowState.Normal;
-            }
-
-            networkWindow.Show();
-            networkWindow.Activate();
-            if (selectPath is not null)
-            {
-                selectNetworkApp?.Invoke(selectPath);
-            }
-
-            return;
+            selectNetworkApp?.Invoke(selectPath);
         }
+    }
 
+    /// <summary>The Firewall page (was the Network Monitor window before v1.1.0).</summary>
+    private Control BuildNetworkView()
+    {
         EnsureNetworkTracker();
         ReloadNetworkBlockedPaths();
         var firewallState = FirewallRules.GetProfileState();
         var elevated = IsRunningElevated();
 
-        var dialog = new Form
-        {
-            Text = "HashGuard Network Monitor",
-            StartPosition = FormStartPosition.CenterScreen,
-            Size = new Size(1180, 640),
-            MinimumSize = new Size(900, 480),
-            Icon = Icon,
-            ShowInTaskbar = true,
-        };
+        var dialog = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
         var heading = new Label
         {
             Dock = DockStyle.Fill,
@@ -682,7 +783,7 @@ public sealed partial class MainForm : Form
 
         if (!appSettings.NetworkMonitorEnabled)
         {
-            bannerText.Add("Background monitoring is off: HashGuard only watches while this window is open, and sends no alerts. Turn it on in Settings → Network.");
+            bannerText.Add("Background monitoring is off: HashGuard only watches while this window is open, and sends no alerts. Turn it on in Settings → Firewall.");
         }
 
         var banner = new Label
@@ -699,11 +800,16 @@ public sealed partial class MainForm : Form
             Tag = "callout",
             Margin = new Padding(0, 0, 0, 8),
         };
+        var tips = new ToolTip();
         var searchBox = new TextBox { PlaceholderText = "Search app, path, publisher, or host", Width = 360, Margin = new Padding(0, 0, 12, 0) };
         var hideTrusted = new CheckBox { Text = "Hide trusted publishers", AutoSize = true, Margin = new Padding(0, 3, 12, 0) };
         var showIdle = new CheckBox { Text = "Show apps not connected now", AutoSize = true, Checked = true, Margin = new Padding(0, 3, 0, 0) };
         var filters = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0, 0, 0, 8) };
         filters.Controls.AddRange([searchBox, hideTrusted, showIdle]);
+        var modeMonitor = new Button { Text = "Monitor", AutoSize = true, Margin = new Padding(24, 0, 0, 0), Tag = "segment-on", AccessibleDescription = "Current firewall mode" };
+        var modeAsk = new Button { Text = "Ask first · Soon", AutoSize = true, Enabled = false, Margin = new Padding(0), Tag = "segment-off" };
+        tips.SetToolTip(modeAsk, "Coming in a later version: ask before an app connects for the first time.");
+        filters.Controls.AddRange([modeMonitor, modeAsk]);
 
         var view = new ListView
         {
@@ -755,8 +861,6 @@ public sealed partial class MainForm : Form
         var openLocation = new Button { Text = "Open File Location", AutoSize = true };
         var details = new Button { Text = "Connections…", AutoSize = true };
         var removeAll = new Button { Text = "Remove all HashGuard rules", AutoSize = true };
-        var close = new Button { Text = "Close", AutoSize = true };
-        var tips = new ToolTip();
         if (!elevated)
         {
             tips.SetToolTip(block, "Turn on Run elevated in Settings");
@@ -772,7 +876,7 @@ public sealed partial class MainForm : Form
             WrapContents = true,
             Padding = new Padding(0, 8, 0, 0),
         };
-        buttons.Controls.AddRange([close, removeAll, details, openLocation, scan, unblock, block]);
+        buttons.Controls.AddRange([removeAll, details, openLocation, scan, unblock, block]);
 
         string? SelectedPath() => view.SelectedItems.Count > 0 ? view.SelectedItems[0].Tag as string : null;
 
@@ -921,9 +1025,8 @@ public sealed partial class MainForm : Form
             RemoveAllNetworkRules(dialog);
             RefreshRows();
         };
-        close.Click += (_, _) => dialog.Close();
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 6, ColumnCount = 1, Padding = new Padding(12) };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 6, ColumnCount = 1, Padding = new Padding(0) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -937,28 +1040,18 @@ public sealed partial class MainForm : Form
         layout.Controls.Add(detail, 0, 4);
         layout.Controls.Add(buttons, 0, 5);
         dialog.Controls.Add(layout);
-        dialog.CancelButton = close;
-        ApplyAppTheme(dialog);
 
-        dialog.FormClosed += (_, _) =>
+        dialog.Disposed += (_, _) =>
         {
-            networkWindow = null;
             refreshNetworkWindow = null;
             selectNetworkApp = null;
             tips.Dispose();
-            UpdateNetworkTimer();
         };
 
-        networkWindow = dialog;
         refreshNetworkWindow = RefreshRows;
         selectNetworkApp = SelectApp;
         RefreshRows();
-        dialog.Show();
-        UpdateNetworkTimer();
-        if (selectPath is not null)
-        {
-            SelectApp(selectPath);
-        }
+        return dialog;
     }
 
     private void StyleNetworkItem(ListViewItem item, NetworkRow row)

@@ -31,14 +31,14 @@ internal readonly record struct ThemePalette(
 {
     // Neutral ground, white surfaces, brand green kept for fills; green text is darkened for contrast.
     public static ThemePalette Light { get; } = new(
-        AppBack: Color.FromArgb(242, 243, 245),
+        AppBack: Color.FromArgb(245, 246, 248),
         Surface: Color.White,
         PillBack: Color.FromArgb(246, 247, 249),
         InputBack: Color.White,
-        Text: Color.FromArgb(27, 31, 36),
-        MutedText: Color.FromArgb(86, 96, 106),
+        Text: Color.FromArgb(17, 24, 39),
+        MutedText: Color.FromArgb(91, 100, 114),
         ButtonBack: Color.White,
-        Border: Color.FromArgb(214, 219, 225),
+        Border: Color.FromArgb(213, 217, 223),
         CalloutBack: Color.FromArgb(248, 252, 245),
         HeaderBack: Color.White,
         HeaderText: Color.FromArgb(27, 31, 36),
@@ -46,15 +46,15 @@ internal readonly record struct ThemePalette(
         HeaderButtonBorder: Color.FromArgb(214, 219, 225),
         SurfaceHover: Color.FromArgb(247, 248, 250),
         SurfacePressed: Color.FromArgb(238, 240, 243),
-        Hairline: Color.FromArgb(232, 235, 238),
+        Hairline: Color.FromArgb(234, 236, 239),
         CardShadow: Color.FromArgb(14, 16, 24, 40),
         SubtleText: Color.FromArgb(150, 159, 168),
-        AccentText: Color.FromArgb(46, 122, 16),
-        AccentTint: Color.FromArgb(237, 247, 227),
-        AttentionText: Color.FromArgb(143, 83, 0),
-        AttentionTint: Color.FromArgb(255, 243, 220),
-        DangerText: Color.FromArgb(198, 40, 40),
-        DangerTint: Color.FromArgb(253, 236, 236),
+        AccentText: Color.FromArgb(17, 98, 54),
+        AccentTint: Color.FromArgb(230, 244, 234),
+        AttentionText: Color.FromArgb(122, 79, 0),
+        AttentionTint: Color.FromArgb(255, 241, 214),
+        DangerText: Color.FromArgb(180, 35, 24),
+        DangerTint: Color.FromArgb(254, 228, 226),
         NeutralTint: Color.FromArgb(238, 240, 243));
 
     public static ThemePalette Dark { get; } = new(

@@ -21,14 +21,14 @@ public sealed partial class MainForm : Form
 {
     private void ShowScanDetailsDialog()
     {
-        using var dialog = new Form
-        {
-            Text = "Activity Log",
-            StartPosition = FormStartPosition.CenterParent,
-            Size = new Size(1360, 760),
-            MinimumSize = new Size(1160, 620),
-            BackColor = Color.FromArgb(246, 247, 249),
-        };
+        RestoreFromTray();
+        ShowPage(AppPage.Activity);
+    }
+
+    /// <summary>The Activity page (was the Activity Log window before v1.1.0).</summary>
+    private Control BuildActivityView()
+    {
+        var dialog = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
 
         var detailView = new ListView
         {
@@ -82,14 +82,12 @@ public sealed partial class MainForm : Form
         var openFileLocation = CreateActivityActionButton("Open Location");
         var killProcess = CreateActivityActionButton("Kill Process");
         var quarantineFile = CreateActivityActionButton("Quarantine");
-        var restoreQuarantine = CreateActivityActionButton("Quarantine Manager");
+        var restoreQuarantine = CreateActivityActionButton("Open Quarantine");
         var copyHash = CreateActivityActionButton("Copy Hash");
         var copySummary = CreateActivityActionButton("Copy Summary");
         var ignoreSelected = CreateActivityActionButton("Ignore Selected");
         var exportCsv = CreateActivityActionButton("Export CSV");
         var openLogs = CreateActivityActionButton("Open Logs");
-        var close = CreateActivityActionButton("Close");
-        close.DialogResult = DialogResult.OK;
 
         openReport.Click += (_, _) => OpenSelectedReport(detailView);
         openFileLocation.Click += (_, _) => OpenSelectedFileLocation(detailView);
@@ -240,7 +238,7 @@ public sealed partial class MainForm : Form
         detailView.DoubleClick += (_, _) => OpenSelectedReport(detailView);
         UpdateIgnoreButtonText(detailView, ignoreSelected);
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(14) };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, Padding = new Padding(0) };
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 78));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 104));
@@ -265,7 +263,6 @@ public sealed partial class MainForm : Form
         remediationActions.Controls.Add(quarantineFile);
         remediationActions.Controls.Add(restoreQuarantine);
         var logActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Margin = new Padding(12, 0, 0, 0) };
-        logActions.Controls.Add(close);
         logActions.Controls.Add(openLogs);
         logActions.Controls.Add(exportCsv);
         actions.Controls.Add(rowActions, 0, 0);
@@ -275,9 +272,7 @@ public sealed partial class MainForm : Form
         layout.Controls.Add(actions, 0, 3);
 
         dialog.Controls.Add(layout);
-        dialog.AcceptButton = close;
-        ApplyAppTheme(dialog);
-        dialog.Shown += async (_, _) =>
+        dialog.HandleCreated += async (_, _) =>
         {
             var generation = ++loadGeneration;
             summaryLabel.Text = "Loading activity log…";
@@ -301,7 +296,7 @@ public sealed partial class MainForm : Form
                 }
             }
         };
-        dialog.FormClosed += (_, _) => searchDebounce.Dispose();
-        dialog.ShowDialog(this);
+        dialog.Disposed += (_, _) => searchDebounce.Dispose();
+        return dialog;
     }
 }

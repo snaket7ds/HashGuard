@@ -21,18 +21,15 @@ public sealed partial class MainForm : Form
 {
     private void ShowSettingsDialog()
     {
-        using var dialog = new Form
-        {
-            Text = $"HashGuard Settings  |  Version {CurrentVersion}",
-            StartPosition = FormStartPosition.CenterParent,
-            FormBorderStyle = FormBorderStyle.Sizable,
-            MaximizeBox = true,
-            MinimizeBox = false,
-            // Slightly taller default so Behavior (Version and Updates) fits without clipping.
-            ClientSize = new Size(1180, 920),
-            MinimumSize = new Size(1080, 820),
-            BackColor = Color.FromArgb(246, 247, 249),
-        };
+        RestoreFromTray();
+        ShowPage(AppPage.Settings);
+    }
+
+    /// <summary>The Settings page (was the Settings window before v1.1.0). Save applies; Discard rebuilds it.</summary>
+    private Control BuildSettingsView()
+    {
+        var dialog = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
+        var pendingTrusted = appSettings.TrustedPublishers.ToList();
 
         var vtEnabled = new CheckBox { Text = "Enable VirusTotal", Checked = virusTotalEnabledBox.Checked, AutoSize = true };
         var mdEnabled = new CheckBox { Text = "Enable MetaDefender Cloud", Checked = metaDefenderEnabledBox.Checked, AutoSize = true };
@@ -49,7 +46,7 @@ public sealed partial class MainForm : Form
         var autoProcessScan = new CheckBox { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
         var runElevated = new CheckBox { Text = "Run elevated", Checked = runElevatedBox.Checked, AutoSize = true };
         var scanAllFiles = new CheckBox { Text = "Scan files I open or select", Checked = scanAllFilesBox.Checked, AutoSize = true };
-        var scheduledDaily = new CheckBox { Text = "Daily scheduled full scan", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
+        var scheduledDaily = new CheckBox { Text = "Daily scan of running apps (catches up if the PC was off)", Checked = appSettings.ScheduledDailyScan, AutoSize = true };
         var scheduledHour = new NumericUpDown { Minimum = 0, Maximum = 23, Value = Math.Clamp(appSettings.ScheduledScanHour, 0, 23), Width = 70 };
         var preferDelta = new CheckBox { Text = "Highlight new files since last scan", Checked = appSettings.PreferDeltaScan, AutoSize = true };
         var deltaScan = new CheckBox { Text = "Reuse cached hash for unchanged files (delta scan)", Checked = appSettings.DeltaScanEnabled, AutoSize = true };
@@ -70,24 +67,16 @@ public sealed partial class MainForm : Form
         var autoBlockMalicious = new CheckBox { Text = "Automatically block apps HashGuard flags as malicious (needs Run elevated)", Checked = appSettings.AutoBlockMalicious, AutoSize = true };
         var networkInfo = new Label
         {
-            Text = "Open the Network Monitor with the globe button or from the tray. Blocking adds Windows Firewall rules in the \"HashGuard\" group; HashGuard never changes your other firewall rules.",
+            Text = "Open the Firewall page from the sidebar to see which apps connect where. Blocking adds Windows Firewall rules in the \"HashGuard\" group; HashGuard never changes your other firewall rules.",
             Dock = DockStyle.Top,
             Height = 52,
             ForeColor = Color.DimGray,
             TextAlign = ContentAlignment.MiddleLeft,
         };
-        var trustedPublishers = new TextBox
-        {
-            Text = string.Join(Environment.NewLine, appSettings.TrustedPublishers),
-            Dock = DockStyle.Fill,
-            Multiline = true,
-            ScrollBars = ScrollBars.Vertical,
-            Height = 82,
-        };
         var delay = new NumericUpDown { Minimum = 0, Maximum = 120, Value = delayBox.Value, Width = 70 };
         var timeout = new NumericUpDown { Minimum = 10, Maximum = 300, Value = timeoutBox.Value, Width = 70 };
-        var ok = new Button { Text = "Save", DialogResult = DialogResult.OK, Width = 96, Height = 34, FlatStyle = FlatStyle.Flat };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Width = 96, Height = 34, FlatStyle = FlatStyle.Flat };
+        var ok = new Button { Text = "Save", Width = 104, Height = 38, FlatStyle = FlatStyle.Flat, Tag = "primary-button" };
+        var cancel = new Button { Text = "Discard", Width = 104, Height = 38, FlatStyle = FlatStyle.Flat };
         var reputationValidation = new Label
         {
             Dock = DockStyle.Top,
@@ -122,8 +111,9 @@ public sealed partial class MainForm : Form
         var tabs = new TabControl
         {
             Dock = DockStyle.Fill,
-            Margin = new Padding(12, 10, 12, 6),
-            Font = new Font("Segoe UI", 9, FontStyle.Regular),
+            Margin = new Padding(0, 0, 0, 6),
+            Font = new Font("Segoe UI", 10, FontStyle.Regular),
+            Padding = new Point(18, 6),
         };
         root.Controls.Add(tabs, 0, 0);
 
@@ -132,33 +122,23 @@ public sealed partial class MainForm : Form
             ("API Keys", [CreateSettingRow("VirusTotal API key", apiKey), CreateSettingRow("MetaDefender API key", metaDefenderApiKey)]),
             ("Request Timing", [CreateSettingRow("VirusTotal delay per request", delay), CreateSettingRow("Request timeout", timeout)]),
             ("Provider Status", [reputationValidation]));
-        AddSettingsTab(tabs, "Reputation", reputationPage);
 
         var behaviorPage = CreateSettingsPage(
-            ("Scanning", [hashCache, deltaScan, autoProcessScan, scanAllFiles, runElevated, preferDelta, scheduledDaily, CreateSettingRow("Scheduled scan hour (0-23)", scheduledHour)]),
-            ("Windows Integration", [rightClickScan, startWithWindows, startMinimized, CreateSettingRow("Colors", colorMode), autoUpdates, suppressTray]),
+            ("Windows Integration", [runElevated, startWithWindows, startMinimized, rightClickScan, CreateSettingRow("Colors", colorMode), autoUpdates, suppressTray]),
             ("Privacy", [telemetryEnabled]),
-            ("Version and Updates", [updateInfo]));
+            ("Version and Updates", [updateInfo, updateButton]));
+        var antivirusPage = CreateSettingsPage(
+            ("Scans", [autoProcessScan, scheduledDaily, CreateSettingRow("Daily scan hour (0-23)", scheduledHour), scanAllFiles]),
+            ("Speed", [hashCache, deltaScan, preferDelta]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
+        AddSettingsTab(tabs, "Reputation", reputationPage);
+        AddSettingsTab(tabs, "Antivirus", antivirusPage);
 
         var networkPage = CreateSettingsPage(
-            ("Network Monitor", [networkMonitor, CreateSettingRow("Alerts", networkNotify), autoBlockMalicious, networkInfo]));
-        AddSettingsTab(tabs, "Network", networkPage);
+            ("Firewall", [networkMonitor, CreateSettingRow("Alerts", networkNotify), autoBlockMalicious, networkInfo]));
+        AddSettingsTab(tabs, "Firewall", networkPage);
 
-        trustedPublishers.Height = 220;
-        var trustPage = CreateSettingsPage(
-            ("Trusted Publishers",
-            [
-                new Label
-            {
-                Text = "One publisher per line. Matching signed files receive a lower local risk score.",
-                Dock = DockStyle.Top,
-                Height = 34,
-                ForeColor = Color.DimGray,
-                TextAlign = ContentAlignment.MiddleLeft,
-            },
-                trustedPublishers,
-            ]));
+        var trustPage = BuildTrustEditor(pendingTrusted);
         AddSettingsTab(tabs, "Trust", trustPage);
 
         var buttons = new FlowLayoutPanel
@@ -176,9 +156,6 @@ public sealed partial class MainForm : Form
         buttons.Controls.Add(ok);
         buttons.Controls.Add(cancel);
         root.Controls.Add(buttons, 0, 1);
-        dialog.AcceptButton = ok;
-        dialog.CancelButton = cancel;
-        ApplyAppTheme(dialog);
 
         void RefreshValidation()
         {
@@ -231,10 +208,16 @@ public sealed partial class MainForm : Form
         metaDefenderApiKey.TextChanged += (_, _) => RefreshValidation();
         RefreshValidation();
 
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        ok.Click += (_, _) => Apply();
+        cancel.Click += (_, _) =>
         {
-            return;
-        }
+            ShowPage(AppPage.Settings);
+            statusLabel.Text = "Settings changes discarded.";
+        };
+        return dialog;
+
+        void Apply()
+        {
 
         apiKeyBox.Text = apiKey.Text.Trim();
         metaDefenderApiKeyBox.Text = metaDefenderApiKey.Text.Trim();
@@ -304,9 +287,9 @@ public sealed partial class MainForm : Form
         appSettings.PreferDeltaScan = preferDelta.Checked;
         appSettings.DeltaScanEnabled = deltaScan.Checked;
         appSettings.SuppressRepeatTrayAlerts = suppressTray.Checked;
-        appSettings.TrustedPublishers = trustedPublishers.Lines
-            .Select(line => line.Trim())
-            .Where(line => !string.IsNullOrWhiteSpace(line))
+        appSettings.TrustedPublishers = pendingTrusted
+            .Select(HashGuardLogic.NormalizePublisher)
+            .Where(line => line.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(line => line, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -325,6 +308,9 @@ public sealed partial class MainForm : Form
             // Scheduled task registration is best-effort.
         }
         ApplyAppTheme(this);
+        UpdateHomePage();
+        statusLabel.Text = "Settings saved.";
+        }
     }
 
     private static string BuildSettingsValidationText(
@@ -444,7 +430,7 @@ public sealed partial class MainForm : Form
             "• Local-only (default): scores unsigned files, risky paths, persistence, recent changes, and the local hash cache — no cloud API keys required.",
             "• Cloud reputation: add free VirusTotal and/or MetaDefender API keys in Settings for multi-engine hash checks.",
             "Uploading unknown files to VirusTotal is optional and privacy-sensitive. Keep uploads off for private, personal, proprietary, or sensitive files.",
-            "Anonymous usage reporting is off by default. You can enable scheduled daily scans and export reports later in Settings.",
+            "Anonymous usage reporting is on: a random install ID, the app and Windows version, and scan counts. Never file names, paths, hashes or user names. Turn it off in Settings. You can also enable scheduled daily scans and export reports there.",
             "Open Settings now?",
         });
         var openSettings = MessageBox.Show(this, message, "HashGuard first-run setup", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
@@ -456,7 +442,7 @@ public sealed partial class MainForm : Form
 
     private static void AddSettingsTab(TabControl tabs, string title, Control content)
     {
-        var page = new TabPage(title) { BackColor = Color.White, Padding = new Padding(0) };
+        var page = new TabPage(title) { BackColor = Color.White, Padding = new Padding(8) };
         content.Dock = DockStyle.Fill;
         page.Controls.Add(content);
         tabs.TabPages.Add(page);

@@ -1,6 +1,20 @@
 # HashGuard
 
-HashGuard is a Windows desktop tool for checking the reputation of running process files and selected files from Explorer. It calculates file hashes, checks them against configured reputation services, caches clean results locally, and highlights files that need review.
+HashGuard is a Windows antivirus and firewall companion. It checks the reputation of running apps and files you choose against VirusTotal, MetaDefender and Team Cymru, shows which apps connect where, and blocks apps in Windows Firewall with one click.
+
+## Install
+
+Paste this into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/snaket7ds/HashGuard/main/install.ps1 | iex
+```
+
+The [installer](install.ps1) downloads the latest release from this repository, checks its SHA-256 and HashGuard's release signature, and refuses to install if either doesn't match. Run it from an **elevated** PowerShell to install for all users in `C:\Program Files\HashGuard` (needed for firewall blocking); otherwise it installs for you only in `%LOCALAPPDATA%\Programs\HashGuard`. Running it again updates HashGuard. You can also download `HashGuard.exe` from [Releases](https://github.com/snaket7ds/HashGuard/releases) yourself.
+
+## The window
+
+A sidebar with **Home** (one status: protected, needs a decision, or threat found; plus Antivirus and Firewall at a glance), **Scan** (scan running apps or chosen files, and the "Needs your decision" list with Details, Ignore, Quarantine and Send to VirusTotal), **Quarantine**, **Firewall**, **Activity** and **Settings** (Behavior · Reputation · Antivirus · Firewall · Trust). Alerts for new apps show inside the window when it is open, and as a pop-up above the tray when HashGuard is minimized.
 
 ## What It Does
 
@@ -38,17 +52,17 @@ Open it with the globe button in the header or **Network Monitor** in the tray m
 
 **Block** adds a Windows Firewall rule that blocks the program's outgoing connections, optionally incoming too. **Unblock** removes it. Every rule HashGuard creates is in the Windows Firewall group **HashGuard** and named `HashGuard block: <file> (<id>)`; HashGuard lists, changes and removes only rules in that group, never your other rules. **Remove all HashGuard rules** undoes every block at once. Blocking needs HashGuard to run elevated (Settings → Behavior → Run elevated). Blocking parts of Windows (for example `svchost.exe`) or HashGuard itself shows an extra warning, because it can break Windows Update, DNS or sign-in.
 
-Settings → Network:
+Settings → Firewall:
 
-- **Watch network connections in the background** (off by default). Without it, HashGuard only watches while the Network Monitor window is open, and sends no alerts.
+- **Watch network connections in the background** (on by default since v1.1.0; auto-block needs it). Without it, HashGuard only watches while the Network Monitor window is open, and sends no alerts.
 - **Alerts:** when an untrusted app connects for the first time (default), when any app connects for the first time, or never. "Untrusted" means flagged by a provider, or not from a trusted publisher and either unsigned or not known clean. The first time background monitoring runs, apps that are already online are recorded without alerts. At most one alert is shown every 10 seconds; several new apps are combined into one.
-- **Automatically block apps HashGuard flags as malicious** (off by default, needs Run elevated).
+- **Automatically block apps HashGuard flags as malicious** (on by default since v1.1.0, needs Run elevated).
 
 Limitations: this is a monitor, not a prompt-first firewall. Windows only lets a signed kernel driver hold a connection while asking the user, so traffic is allowed until you block an app, and connections an app already has open may continue until it reconnects. HashGuard reads the TCP table about once a second while the window is open (every 5 seconds in the background), so very short connections can be missed, and UDP traffic is not shown. All Windows services that share `svchost.exe` appear as one app. Seen apps are remembered in `network-apps.json` in the config folder; firewall actions are logged to `logs/network-actions.log`.
 
 ## Privacy Notes
 
-Hash lookups send file hashes to the enabled reputation services. VirusTotal upload support is optional and disabled unless you enable it. When enabled, unknown files may be uploaded to VirusTotal for analysis, which can share the full file with VirusTotal. Do not enable uploads for private, proprietary, personal, or sensitive files unless you are comfortable sharing them.
+Hash lookups send file hashes to the enabled reputation services. VirusTotal uploads are allowed by default since v1.1.0, but nothing is uploaded automatically: only files whose hash VirusTotal has never seen are offered, and each upload asks you to approve it first. An upload shares the full file with VirusTotal. You can turn uploads off in Settings → Reputation. Do not enable uploads for private, proprietary, personal, or sensitive files unless you are comfortable sharing them.
 
 ## Configuration
 
@@ -69,7 +83,7 @@ Settings are stored in the local `config` folder. Scan logs are stored in `logs`
 
 ## Anonymous Usage Reporting
 
-HashGuard can send optional anonymous usage events when enabled in Settings. The payload is limited to a random install ID, app version, OS version, event type, and scan summary counts. It does not include file paths, file hashes, process names, usernames, machine names, API keys, or provider report links.
+HashGuard sends anonymous usage events unless you turn them off in Settings (**Send anonymous usage data**). It is on by default for new installs since v1.1.0; an install that already saved its settings keeps the choice it had. The payload is limited to a random install ID, app version, OS version, event type, and scan summary counts. It does not include file paths, file hashes, process names, usernames, machine names, API keys, or provider report links.
 
 The Cloudflare Worker and D1 dashboard live in `cloudflare/telemetry`. The worker rolls events up on write (one per-install row plus per-day rows) instead of storing a row per heartbeat, so dashboard reads stay inside D1 free-tier limits. Deploy it first, then set `TelemetryEndpointUrl` in `MainForm.cs` to the deployed `/events` URL before publishing a release. See [cloudflare/telemetry/README.md](cloudflare/telemetry/README.md) for the schema and deploy steps.
 
