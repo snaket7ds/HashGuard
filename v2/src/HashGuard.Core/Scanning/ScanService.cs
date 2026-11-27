@@ -11,8 +11,11 @@ public enum ScanKind
     /// <summary>Running apps whose file is new or changed since HashGuard last looked (background monitoring).</summary>
     ChangedApps,
 
-    /// <summary>Files the user picked, opened or sent from Explorer.</summary>
+    /// <summary>Files the user picked or sent from Explorer.</summary>
     Files,
+
+    /// <summary>Files the user opened or selected (background, hash lookups only: never uploads).</summary>
+    FileActivity,
 }
 
 /// <param name="Done">Files finished so far.</param>
@@ -97,6 +100,10 @@ public sealed class ScanService(HashCache hashCache, Func<ScanConfiguration> con
     public Task<ScanOutcome?> ScanFilesAsync(IReadOnlyCollection<string> paths, IProgress<ScanProgress>? progress = null, CancellationToken cancellationToken = default) =>
         RunAsync(ScanKind.Files, paths, progress, cancellationToken);
 
+    /// <summary>Files the user opened or selected. Like <see cref="ScanFilesAsync"/>, but never uploads a file.</summary>
+    public Task<ScanOutcome?> ScanFileActivityAsync(IReadOnlyCollection<string> paths, CancellationToken cancellationToken = default) =>
+        RunAsync(ScanKind.FileActivity, paths, null, cancellationToken);
+
     private async Task<ScanOutcome?> RunAsync(ScanKind kind, IReadOnlyCollection<string>? filePaths, IProgress<ScanProgress>? progress, CancellationToken cancellationToken)
     {
         if (!gate.TryEnter())
@@ -111,13 +118,13 @@ public sealed class ScanService(HashCache hashCache, Func<ScanConfiguration> con
 
             IReadOnlyDictionary<string, List<ProcessFile>> targets;
             IReadOnlyList<SkippedProcess> skipped = [];
-            if (kind == ScanKind.Files)
+            if (kind is ScanKind.Files or ScanKind.FileActivity)
             {
                 targets = (filePaths ?? [])
                     .Where(p => !string.IsNullOrWhiteSpace(p))
                     .Select(Path.GetFullPath)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(p => p, p => new List<ProcessFile> { new(0, Path.GetFileName(p), p) }, StringComparer.OrdinalIgnoreCase);
+                    .ToDictionary(p => p, p => new List<ProcessFile> { new(0, kind == ScanKind.FileActivity ? "File activity" : Path.GetFileName(p), p) }, StringComparer.OrdinalIgnoreCase);
             }
             else
             {
@@ -143,7 +150,7 @@ public sealed class ScanService(HashCache hashCache, Func<ScanConfiguration> con
                 await OrderedConcurrency.ForEachAsync(
                     paths,
                     AppConstants.MaxConcurrentFileLookups,
-                    path => analyzer.AnalyzeAsync(path, targets[path], allowVirusTotalUploads: true, cancellationToken),
+                    path => analyzer.AnalyzeAsync(path, targets[path], allowVirusTotalUploads: kind != ScanKind.FileActivity, cancellationToken),
                     async (index, result) =>
                     {
                         results.Add(result);

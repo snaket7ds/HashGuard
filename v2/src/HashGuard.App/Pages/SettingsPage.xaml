@@ -139,6 +139,37 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Spacing="2">
+                        <TextBlock Text="Scan running apps when HashGuard starts" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="After that scan, programs that start or change are checked within seconds." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.AutoProcessScan, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  AutomationProperties.Name="Scan running apps when HashGuard starts" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Scan files I open or select" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Checks files you open, and files selected in File Explorer, by hash only: nothing is uploaded. Pictures, video and audio are skipped."
+                                   Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="ScanAllFilesSwitch" Grid.Column="1" IsOn="{x:Bind ViewModel.ScanAllFiles, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  Toggled="ScanAllFiles_Toggled" AutomationProperties.Name="Scan files I open or select" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
                         <TextBlock Text="Remember results (hash cache)" Style="{StaticResource RowTitleStyle}" />
                         <TextBlock Text="Reuses earlier answers for files already checked, so scans are faster and use fewer lookups." Style="{StaticResource RowHintStyle}" />
                     </StackPanel>
@@ -313,7 +344,7 @@
             <Border Style="{StaticResource RowStyle}">
                 <StackPanel Spacing="6">
                     <TextBlock Style="{StaticResource RowHintStyle}"
-                               Text="Start with Windows, run as administrator, the daily scan, the Explorer right-click menu, scanning files you open, automatic updates and usage data. Until then, HashGuard 1.x keeps managing them, and their settings are left as they are." />
+                               Text="Start with Windows, run as administrator, the daily scan, the Explorer right-click menu, automatic updates and usage data. Until then, HashGuard 1.x keeps managing them, and their settings are left as they are." />
                 </StackPanel>
             </Border>
         </StackPanel>

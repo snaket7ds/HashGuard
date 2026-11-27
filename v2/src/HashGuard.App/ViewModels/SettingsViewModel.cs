@@ -24,6 +24,12 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial bool HashCacheEnabled { get; set; }
     [ObservableProperty] public partial bool DeltaScanEnabled { get; set; }
     [ObservableProperty] public partial int ThemeIndex { get; set; }
+    [ObservableProperty] public partial bool AutoProcessScan { get; set; }
+    [ObservableProperty] public partial bool ScanAllFiles { get; set; }
+
+    /// <summary>The user accepted the file-watching explanation (v1's ScanAllFilesAcknowledged).</summary>
+    public bool ScanAllFilesAcknowledged { get; private set; }
+
     [ObservableProperty] public partial bool NetworkMonitorEnabled { get; set; }
     [ObservableProperty] public partial int NotifyModeIndex { get; set; }
     [ObservableProperty] public partial bool AutoBlockMalicious { get; set; }
@@ -64,6 +70,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             HashCacheEnabled = s.HashCacheEnabled;
             DeltaScanEnabled = s.DeltaScanEnabled;
             ThemeIndex = ThemeIndexOf(s);
+            AutoProcessScan = s.AutoProcessScan;
+            ScanAllFilesAcknowledged = s.ScanAllFilesAcknowledged;
+            ScanAllFiles = s.ScanAllFiles;
             NetworkMonitorEnabled = s.NetworkMonitorEnabled;
             NotifyModeIndex = NetworkNotifyModes.Normalize(s.NetworkNotifyMode) switch
             {
@@ -94,6 +103,25 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnUploadUnknownChanged(bool value) => Save();
     partial void OnHashCacheEnabledChanged(bool value) => Save();
     partial void OnDeltaScanEnabledChanged(bool value) => Save();
+    partial void OnAutoProcessScanChanged(bool value) => Save();
+
+    // Turning file watching on waits for the page's explanation to be accepted (AcceptFileWatching).
+    partial void OnScanAllFilesChanged(bool value)
+    {
+        if (!value || ScanAllFilesAcknowledged)
+        {
+            Save();
+        }
+    }
+
+    /// <summary>The user accepted the explanation: remember it and switch file watching on.</summary>
+    public void AcceptFileWatching()
+    {
+        ScanAllFilesAcknowledged = true;
+        ScanAllFiles = true;
+        Save();
+    }
+
     partial void OnNetworkMonitorEnabledChanged(bool value) => Save();
     partial void OnNotifyModeIndexChanged(int value) => Save();
     partial void OnAutoBlockMaliciousChanged(bool value) => Save();
@@ -130,6 +158,9 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.UseSystemDefaultColors = ThemeIndex == 0;
         settings.ColorMode = ThemeName(ThemeIndex);
         settings.TrustedPublishers = [.. TrustedPublishers];
+        settings.AutoProcessScan = AutoProcessScan;
+        settings.ScanAllFilesAcknowledged = ScanAllFilesAcknowledged;
+        settings.ScanAllFiles = ScanAllFiles && ScanAllFilesAcknowledged;
         settings.NetworkMonitorEnabled = NetworkMonitorEnabled;
         settings.NetworkNotifyMode = NotifyModeIndex switch
         {

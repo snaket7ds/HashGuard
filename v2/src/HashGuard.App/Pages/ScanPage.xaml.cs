@@ -14,7 +14,12 @@ public sealed partial class ScanPage : Page
     public ScanPage()
     {
         InitializeComponent();
+        Loaded += (_, _) => Services.AppServices.Instance.OutcomeChanged += OnOutcomeChanged;
+        Unloaded += (_, _) => Services.AppServices.Instance.OutcomeChanged -= OnOutcomeChanged;
     }
+
+    /// <summary>A background check or another scan finished: show its findings unless this page is scanning.</summary>
+    private void OnOutcomeChanged() => DispatcherQueue.TryEnqueue(ViewModel.ShowLatest);
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {

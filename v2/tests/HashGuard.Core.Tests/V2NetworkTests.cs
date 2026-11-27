@@ -91,6 +91,31 @@ internal static class V2NetworkTests
             monitor.Poll();
             Equal(0, firewall.BlockCalls);
         })),
+        ("File activity: media is skipped, repeats are ignored, a changed file is checked again", () => WithTemp(dir =>
+        {
+            var queue = new FileActivityQueue();
+            var doc = Write(dir, "report.docm");
+            False(queue.TryAdd(Write(dir, "holiday.jpg")));
+            False(queue.TryAdd(Path.Combine(dir, "missing.exe")));
+            True(queue.TryAdd(doc));
+            False(queue.TryAdd(doc));
+            Equal(doc, queue.TakeAll().Single());
+
+            False(queue.TryAdd(doc)); // Unchanged since it was queued.
+            File.AppendAllText(doc, " changed");
+            File.SetLastWriteTimeUtc(doc, DateTime.UtcNow.AddMinutes(1));
+            True(queue.TryAdd(doc));
+        })),
+        ("File activity: the queue holds at most 200 files", () => WithTemp(dir =>
+        {
+            var queue = new FileActivityQueue();
+            for (var i = 0; i < FileActivityQueue.MaxQueued + 5; i++)
+            {
+                queue.TryAdd(Write(dir, $"f{i}.exe"));
+            }
+
+            Equal(FileActivityQueue.MaxQueued, queue.Count);
+        })),
     ];
 
     private static (NetworkMonitor Monitor, FakeFirewall Firewall) Monitor(

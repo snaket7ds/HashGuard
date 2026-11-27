@@ -88,6 +88,31 @@ public partial class App : Application
             $"{app.Name} was blocked in Windows Firewall because security vendors flag it as malicious. Open Firewall to unblock it.",
             urgent: true));
         network.Start();
+
+        // Scans HashGuard runs by itself. A start-up scan is skipped when this launch already scans.
+        var services = Services.AppServices.Instance;
+        services.BackgroundFindings += findings => window.DispatcherQueue.TryEnqueue(() => NotifyFindings(findings));
+        background = new Services.BackgroundScanner(services);
+        background.Start(startupScan: services.Settings.AutoProcessScan && launch.Kind is (LaunchKind.Show or LaunchKind.Minimized));
+    }
+
+    private Services.BackgroundScanner? background;
+
+    private void NotifyFindings(IReadOnlyList<ScanResult> findings)
+    {
+        if (tray is null || findings.Count == 0)
+        {
+            return;
+        }
+
+        var threats = findings.Count(r => r.IsAlert);
+        var first = ActivityText.DisplayName(findings[0].ProcessNames, findings[0].Path);
+        var (title, message) = threats > 0
+            ? (threats == 1 ? $"{first} is flagged as malicious" : $"{threats} files are flagged as malicious",
+               "Open HashGuard to quarantine or ignore it.")
+            : (findings.Count == 1 ? $"{first} needs your decision" : $"{findings.Count} files need your decision",
+               "A background check found something to look at. Open HashGuard's Scan page.");
+        tray.ShowNotification(title, message, threats > 0 ? NotificationIcon.Error : NotificationIcon.Warning);
     }
 
     private DateTime lastNetworkNoticeUtc = DateTime.MinValue;
@@ -189,6 +214,7 @@ public partial class App : Application
     /// <summary>Exit from the tray menu. Runs after the menu has closed, not inside the tray icon's own callback.</summary>
     private void ExitApp() => window?.DispatcherQueue.TryEnqueue(() =>
     {
+        background?.Dispose();
         Services.AppServices.Instance.Network.Dispose();
         tray?.Dispose();
         tray = null;

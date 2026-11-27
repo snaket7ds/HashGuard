@@ -23,7 +23,22 @@ public sealed class AppServices
         Scans = new ScanService(HashCache, CaptureConfiguration);
         Scans.Completed += outcome =>
         {
-            LastOutcome = outcome;
+            if (outcome.Kind is ScanKind.ChangedApps or ScanKind.FileActivity)
+            {
+                // Background checks add to the list from the last scan instead of replacing it.
+                if (outcome.NeedsDecision.Count == 0)
+                {
+                    return;
+                }
+
+                LastOutcome = Merge(LastOutcome, outcome);
+                BackgroundFindings?.Invoke(outcome.NeedsDecision);
+            }
+            else
+            {
+                LastOutcome = outcome;
+            }
+
             OutcomeChanged?.Invoke();
         };
         Quarantine.Changed += () => OutcomeChanged?.Invoke();
@@ -42,6 +57,22 @@ public sealed class AppServices
                 }
             }),
             prefix => UpdateSettings(s => s.AutoBlockExceptions.RemoveAll(key => key.StartsWith(prefix, StringComparison.Ordinal))));
+    }
+
+    /// <summary>Files that a background check (a newly started program, a file you opened) found needing a decision.</summary>
+    public event Action<IReadOnlyList<ScanResult>>? BackgroundFindings;
+
+    /// <summary>The earlier results with the background check's results added; a file checked again replaces its old row.</summary>
+    private static ScanOutcome Merge(ScanOutcome? earlier, ScanOutcome background)
+    {
+        if (earlier is null)
+        {
+            return background;
+        }
+
+        var paths = new HashSet<string>(background.Results.Select(r => r.Path), StringComparer.OrdinalIgnoreCase);
+        var results = earlier.Results.Where(r => !paths.Contains(r.Path)).Concat(background.Results).ToList();
+        return new ScanOutcome(earlier.Kind, results, earlier.NewSinceLastScan, earlier.Skipped);
     }
 
     /// <summary>Which programs connect where, and HashGuard's firewall blocks.</summary>

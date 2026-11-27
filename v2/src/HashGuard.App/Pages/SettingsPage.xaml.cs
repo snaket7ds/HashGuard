@@ -74,6 +74,43 @@ public sealed partial class SettingsPage : Page
         saveTimer.Start();
     }
 
+    private bool askingAboutFiles;
+
+    /// <summary>The first time file watching is switched on, explain what it watches (as v1 did).</summary>
+    private async void ScanAllFiles_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (loading || askingAboutFiles || !ScanAllFilesSwitch.IsOn || ViewModel.ScanAllFilesAcknowledged)
+        {
+            return;
+        }
+
+        askingAboutFiles = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Scan files you open or select?",
+                Content = "HashGuard watches the files Windows lists as recently opened, and every 15 seconds the file selected in each File Explorer window. It checks them by hash only, when no other scan is running, and never uploads them. Pictures, video, audio and camera raw files are skipped.",
+                PrimaryButtonText = "Turn on",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                ViewModel.AcceptFileWatching();
+            }
+            else
+            {
+                ViewModel.ScanAllFiles = false;
+            }
+        }
+        finally
+        {
+            askingAboutFiles = false;
+        }
+    }
+
     private void AddPublisher_Click(object sender, RoutedEventArgs e) => ViewModel.AddPublisher();
 
     private void NewPublisher_KeyDown(object sender, KeyRoutedEventArgs e)

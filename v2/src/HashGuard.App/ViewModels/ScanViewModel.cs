@@ -83,6 +83,15 @@ public sealed partial class ScanViewModel : ObservableObject
         }
     }
 
+    /// <summary>Shows the latest findings (a background check may have added some), unless a scan here is running.</summary>
+    public void ShowLatest()
+    {
+        if (!IsScanning && AppServices.Instance.LastOutcome is { } latest)
+        {
+            ShowOutcome(latest);
+        }
+    }
+
     public void SetChosenFiles(IReadOnlyList<string> paths)
     {
         chosenFiles = paths;
@@ -129,9 +138,19 @@ public sealed partial class ScanViewModel : ObservableObject
         var kind = ScanFilesMode ? ScanKind.Files : ScanKind.RunningApps;
         try
         {
-            var outcome = kind == ScanKind.Files
-                ? await services.Scans.ScanFilesAsync(chosenFiles, progress, cts.Token)
-                : await services.Scans.ScanRunningAppsAsync(progress, cts.Token);
+            // A background check (a few seconds at most) may hold the scanner; wait for it rather than refuse.
+            ScanOutcome? outcome = null;
+            for (var attempt = 0; attempt < 150 && outcome is null; attempt++)
+            {
+                outcome = kind == ScanKind.Files
+                    ? await services.Scans.ScanFilesAsync(chosenFiles, progress, cts.Token)
+                    : await services.Scans.ScanRunningAppsAsync(progress, cts.Token);
+                if (outcome is null)
+                {
+                    ProgressText = "Waiting for a background check to finish…";
+                    await Task.Delay(200, cts.Token);
+                }
+            }
             if (outcome is null)
             {
                 ProgressText = "";
