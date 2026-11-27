@@ -555,7 +555,19 @@ public sealed partial class MainForm : Form
         page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
         page.RowStyles.Add(new RowStyle(SizeType.Absolute, 176));
         page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        page.Controls.Add(CreatePageHeader("Scan", ""), 0, 0);
+        // Title on the left; Stored hashes and Ignored files on the right.
+        var storedLink = new LinkLabel { Text = "Stored hashes", AutoSize = true, Margin = new Padding(0, 12, 18, 0), Tag = "accent-link" };
+        var ignoredLink = new LinkLabel { Text = "Ignored files", AutoSize = true, Margin = new Padding(0, 12, 0, 0), Tag = "accent-link" };
+        storedLink.LinkClicked += (_, _) => ShowHashLists(ignoredTab: false);
+        ignoredLink.LinkClicked += (_, _) => ShowHashLists(ignoredTab: true);
+        var hashLinks = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(16, 0, 0, 0), BackColor = SoftAppBack };
+        hashLinks.Controls.AddRange([storedLink, ignoredLink]);
+        var scanHeader = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 1, Margin = new Padding(0), BackColor = SoftAppBack };
+        scanHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        scanHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        scanHeader.Controls.Add(CreatePageHeader("Scan", ""), 0, 0);
+        scanHeader.Controls.Add(hashLinks, 1, 0);
+        page.Controls.Add(scanHeader, 0, 0);
 
         // Scan types, as designed: a choice of two (the chosen one has a green edge); Scan now runs it.
         var types = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 16), BackColor = SoftAppBack };

@@ -103,6 +103,9 @@ internal sealed class SegmentTabs : Panel
         Show(tabs.FindIndex(tab => tab.Content.Visible));
     }
 
+    /// <summary>Shows the tab at this index (e.g. open a window on its second tab).</summary>
+    public void ShowTab(int index) => Show(index);
+
     private void Show(int index)
     {
         for (var i = 0; i < tabs.Count; i++)

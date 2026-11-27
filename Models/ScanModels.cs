@@ -32,6 +32,8 @@ internal sealed class CacheEntry
     public DateTimeOffset CheckedAtUtc { get; set; }
     public bool VirusTotalDeferred { get; set; }
     public bool NeedsVirusTotalUpload { get; set; }
+    /// <summary>Where the file was last seen (shown in the Stored hashes list; empty in older caches).</summary>
+    public string Path { get; set; } = "";
 }
 
 internal sealed class FileStateEntry

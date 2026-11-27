@@ -12,6 +12,18 @@ internal sealed class HashCache
     private int unsavedMutations;
     private DateTimeOffset lastSaveUtc = DateTimeOffset.MinValue;
     private string scanLogImportSignature = "";
+    // Forget / Clear all must survive restarts, although the cache is re-seeded from the scan logs:
+    // log rows checked before these times are not imported again.
+    private readonly Dictionary<string, DateTime> forgottenAtUtc = new(StringComparer.OrdinalIgnoreCase);
+    private DateTime clearedAtUtc = DateTime.MinValue;
+
+    private sealed class ForgottenFile
+    {
+        public DateTime ClearedAtUtc { get; set; } = DateTime.MinValue;
+        public Dictionary<string, DateTime> Hashes { get; set; } = [];
+    }
+
+    private static string GetForgottenPath() => Path.Combine(Path.GetDirectoryName(AppPaths.GetHashCachePath())!, "hash-cache-forgotten.json");
     // Lookups for several files can overlap, so two flushes can be due at once; saves run one at a time.
     private readonly SemaphoreSlim saveGate = new(1, 1);
 
@@ -19,6 +31,88 @@ internal sealed class HashCache
     public static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(5);
 
     public int Count => entries.Count;
+
+    /// <summary>A stored hash with the file it was last seen at (empty when unknown), for the Stored hashes list.</summary>
+    internal readonly record struct StoredHash(string Sha256, CacheEntry Entry, string Path);
+
+    /// <summary>A copy of every stored hash, newest check first. Safe to enumerate while scans continue.</summary>
+    public List<StoredHash> Snapshot()
+    {
+        var pathByHash = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, state) in fileStates.ToList())
+        {
+            if (!string.IsNullOrEmpty(state.Sha256))
+            {
+                pathByHash[state.Sha256] = path;
+            }
+        }
+
+        return entries.ToList()
+            .Select(pair => new StoredHash(pair.Key, pair.Value,
+                pathByHash.TryGetValue(pair.Key, out var path) ? path : pair.Value.Path ?? ""))
+            .OrderByDescending(item => item.Entry.CheckedAtUtc)
+            .ToList();
+    }
+
+    /// <summary>Forgets one hash (and the file rows that point at it), so the next scan checks that file again.</summary>
+    public bool Remove(string sha256)
+    {
+        forgottenAtUtc[sha256] = DateTime.UtcNow;
+        var removed = entries.Remove(sha256);
+        foreach (var path in fileStates.Where(pair => string.Equals(pair.Value.Sha256, sha256, StringComparison.OrdinalIgnoreCase)).Select(pair => pair.Key).ToList())
+        {
+            fileStates.Remove(path);
+            removed = true;
+        }
+
+        MarkDirty();
+        return removed;
+    }
+
+    /// <summary>Forgets every stored hash; every file is checked again on the next scan.</summary>
+    public void Clear()
+    {
+        entries.Clear();
+        fileStates.Clear();
+        forgottenAtUtc.Clear();
+        clearedAtUtc = DateTime.UtcNow;
+        MarkDirty();
+    }
+
+    private void LoadForgotten()
+    {
+        forgottenAtUtc.Clear();
+        clearedAtUtc = DateTime.MinValue;
+        try
+        {
+            var path = GetForgottenPath();
+            if (!File.Exists(path))
+            {
+                return;
+            }
+
+            var stored = JsonSerializer.Deserialize<ForgottenFile>(File.ReadAllText(path));
+            if (stored is null)
+            {
+                return;
+            }
+
+            clearedAtUtc = DateTime.SpecifyKind(stored.ClearedAtUtc, DateTimeKind.Utc);
+            foreach (var (hash, at) in stored.Hashes)
+            {
+                forgottenAtUtc[hash] = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+            }
+        }
+        catch
+        {
+            // A damaged file only means forgotten hashes may be re-learned from old logs.
+        }
+    }
+
+    /// <summary>True when a log row checked at this time predates a Forget / Clear all for its hash.</summary>
+    internal bool IsForgotten(string sha256, DateTime checkedAtUtc) =>
+        checkedAtUtc <= clearedAtUtc
+        || (forgottenAtUtc.TryGetValue(sha256, out var at) && checkedAtUtc <= at);
     public bool IsLoaded => loaded;
     /// <summary>Load cache from disk once; keep it warm in memory for the process lifetime.</summary>
     public async Task EnsureLoadedAsync()
@@ -41,6 +135,7 @@ internal sealed class HashCache
         }
 
         await LoadFileStatesAsync();
+        LoadForgotten();
         loaded = true;
         dirty = false;
         unsavedMutations = 0;
@@ -114,6 +209,7 @@ internal sealed class HashCache
             CheckedAtUtc = DateTimeOffset.UtcNow,
             VirusTotalDeferred = result.VirusTotalDeferred,
             NeedsVirusTotalUpload = result.NeedsVirusTotalUpload,
+            Path = result.Path,
         };
         SetFileState(result);
         MarkDirty();
@@ -133,6 +229,7 @@ internal sealed class HashCache
             Link = string.Format(AppConstants.VirusTotalGuiReportUrl, sha256),
             Notes = notes,
             CheckedAtUtc = DateTimeOffset.UtcNow,
+            Path = path,
         };
         MarkDirty();
 
@@ -317,6 +414,18 @@ internal sealed class HashCache
             return;
         }
 
+        // The row's own time (local "yyyy-MM-dd HH:mm:ss"), else the log file's time.
+        if (DateTime.TryParseExact(GetCsvValue(row, columns, "timestamp_computer_time"), "yyyy-MM-dd HH:mm:ss",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out var rowTime))
+        {
+            checkedAtUtc = rowTime.ToUniversalTime();
+        }
+
+        if (IsForgotten(sha256, checkedAtUtc))
+        {
+            return;
+        }
+
         var status = NormalizeCachedStatus(GetCsvValue(row, columns, "status"));
         if (string.IsNullOrWhiteSpace(status) || string.Equals(status, "error", StringComparison.OrdinalIgnoreCase))
         {
@@ -333,6 +442,7 @@ internal sealed class HashCache
             Link = GetCsvValue(row, columns, "link"),
             Notes = GetCsvValue(row, columns, "notes"),
             CheckedAtUtc = new DateTimeOffset(DateTime.SpecifyKind(checkedAtUtc, DateTimeKind.Utc)),
+            Path = GetCsvValue(row, columns, "path"),
         };
 
         MergeEntry(sha256, entry, entry.CheckedAtUtc);
@@ -381,6 +491,7 @@ internal sealed class HashCache
 
             await WriteJsonAtomicAsync(AppPaths.GetHashCachePath(), entriesSnapshot);
             await WriteJsonAtomicAsync(AppPaths.GetFileStateCachePath(), fileStatesSnapshot);
+            await WriteJsonAtomicAsync(GetForgottenPath(), new ForgottenFile { ClearedAtUtc = clearedAtUtc, Hashes = new Dictionary<string, DateTime>(forgottenAtUtc) });
 
             // Changes made during the write are not on disk yet; leave them dirty.
             unsavedMutations = Math.Max(0, unsavedMutations - mutationsAtSnapshot);
@@ -547,7 +658,16 @@ internal sealed class HashCache
 
         if (!entries.TryGetValue(sha256, out var existing) || entry.CheckedAtUtc > existing.CheckedAtUtc)
         {
+            if (string.IsNullOrEmpty(entry.Path) && existing is not null)
+            {
+                entry.Path = existing.Path;
+            }
+
             entries[sha256] = entry;
+        }
+        else if (string.IsNullOrEmpty(existing.Path) && !string.IsNullOrEmpty(entry.Path))
+        {
+            existing.Path = entry.Path;
         }
     }
 

@@ -304,6 +304,45 @@ var tests = new (string Name, Action Test)[]
         };
         AssertTrue(HashCache.IsReusablePendingEntry(pending));
     }),
+    ("stored hashes: forget and clear all survive a re-import from the scan logs", () =>
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "hashguard-forget-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var shaA = new string('a', 64);
+            var shaB = new string('b', 64);
+            var old = DateTime.Now.AddHours(-2).ToString("yyyy-MM-dd HH:mm:ss");
+            var header = "timestamp_computer_time,status,risk_score,risk_level,trust,provider_results,malicious,suspicious,harmless,undetected,process_names,pids,sha256,path,link,notes";
+            string Row(string time, string sha, string path) => $"{time},clean,0,Low,,,0,0,60,10,,,{sha},{path},,";
+            var log = Path.Combine(dir, "scan-log-20260101.csv");
+            File.WriteAllLines(log, [header, Row(old, shaA, @"C:\apps\a.exe"), Row(old, shaB, @"C:\apps\b.exe")]);
+
+            var cache = new HashCache();
+            cache.ImportScanLogs([dir]);
+            AssertEqual(2, cache.Count);
+            AssertTrue(cache.Snapshot().Any(item => item.Sha256 == shaA && item.Path.EndsWith("a.exe", StringComparison.Ordinal)));
+
+            AssertTrue(cache.Remove(shaA));
+            cache.ImportScanLogs([dir]);
+            AssertEqual(1, cache.Count); // the forgotten hash is not re-learned from the old log row
+
+            // A newer check of the same file is learned again.
+            File.AppendAllLines(log, [Row(DateTime.Now.AddMinutes(5).ToString("yyyy-MM-dd HH:mm:ss"), shaA, @"C:\apps\a.exe")]);
+            cache.ImportScanLogs([dir]);
+            AssertEqual(2, cache.Count);
+
+            cache.Clear();
+            AssertEqual(0, cache.Count);
+            File.WriteAllLines(log, [header, Row(old, shaA, @"C:\apps\a.exe"), Row(old, shaB, @"C:\apps\b.exe")]);
+            cache.ImportScanLogs([dir]);
+            AssertEqual(0, cache.Count);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }),
     ("hash cache stays warm and skips redundant log import", () =>
     {
         var cache = new HashCache();

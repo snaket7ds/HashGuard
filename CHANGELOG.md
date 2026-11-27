@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.7 - 2026-11-27
+
+- **Stored & ignored hashes are back, as buttons.** A new window has two tabs, each with search:
+  - **Stored:** every file HashGuard has checked and remembers, with its verdict, path and check date.
+    - **Copy hash** and **Forget**: the next scan checks that file again.
+    - **Clear all…**, after a confirmation.
+  - **Ignored:** every file you ignored, by hash (that exact file anywhere) or by path (anything at that location).
+    - **Copy** and **Un-ignore**.
+  - **Open it from:** Settings → Antivirus → **Hashes** (View… next to Stored hashes and Ignored files), or the **Stored hashes** / **Ignored files** links at the top right of the Scan page.
+- Forget and Clear all last across restarts: the cache no longer re-learns a forgotten hash from old scan logs, only from a new check.
+- Stored hashes now remember the file's path, so the list can show names for files that are gone or weren't clean. Older caches fill in as files are checked again.
+
 ## v1.1.6 - 2026-11-27
 
 - **Switching pages is instant.** Before, clicking a sidebar item took a second or two and you could watch the page being built:

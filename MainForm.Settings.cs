@@ -113,9 +113,15 @@ public sealed partial class MainForm : Form
         var behaviorPage = CreateSettingsPage(
             ("Windows", [runElevated, startWithWindows, startMinimized, rightClickScan, suppressTray, CreateSettingRow("Appearance", colorMode)]),
             ("Updates and privacy", [autoUpdates, CreateSettingRow(versionRowLabel, updateButton), telemetryEnabled]));
+        // Stored & ignored hashes (the original app's lists, back as buttons).
+        var viewStored = new Button { Text = "View…", Size = new Size(110, 36) };
+        var viewIgnored = new Button { Text = "View…", Size = new Size(110, 36) };
+        viewStored.Click += (_, _) => ShowHashLists(ignoredTab: false);
+        viewIgnored.Click += (_, _) => ShowHashLists(ignoredTab: true);
         var antivirusPage = CreateSettingsPage(
             ("Scans", [autoProcessScan, scheduledDaily, CreateSettingRow("Daily scan hour (0-23)", scheduledHour), scanAllFiles]),
-            ("Speed", [hashCache, deltaScan, preferDelta]));
+            ("Speed", [hashCache, deltaScan, preferDelta]),
+            ("Hashes", [CreateSettingRow("Stored hashes", viewStored), CreateSettingRow("Ignored files", viewIgnored)]));
         AddSettingsTab(tabs, "Behavior", behaviorPage);
         AddSettingsTab(tabs, "Reputation", reputationPage);
         AddSettingsTab(tabs, "Antivirus", antivirusPage);
@@ -458,6 +464,8 @@ public sealed partial class MainForm : Form
 
     private static readonly Dictionary<string, string> SettingRowHelp = new(StringComparer.Ordinal)
     {
+        ["Stored hashes"] = "Files HashGuard already checked and remembers. Forget one to check it again",
+        ["Ignored files"] = "Files you told HashGuard to ignore. Un-ignore one to check it again",
         ["VirusTotal API key"] = "Kept encrypted on this PC",
         ["MetaDefender API key"] = "Kept encrypted on this PC",
         ["VirusTotal delay per request"] = "Seconds between lookups; raise it if you hit the free limit",
