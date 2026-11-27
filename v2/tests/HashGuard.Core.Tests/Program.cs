@@ -953,7 +953,7 @@ var tests = new (string Name, Action Test)[]
     }),
 };
 
-tests = [.. tests, .. V2CoreTests.All];
+tests = [.. tests, .. V2CoreTests.All, .. V2ScanTests.All];
 
 var failures = new List<string>();
 foreach (var test in tests)
