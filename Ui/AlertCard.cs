@@ -212,7 +212,7 @@ internal sealed class AlertCard : UserControl
             };
         var iconRect = confirmed ? new RectangleF(16, 44, 32, 32) : new RectangleF(16, 44, 40, 40);
         RoundedPaint.FillRounded(g, iconRect, 11, tint);
-        using var glyphFont = UiFonts.Create("Segoe MDL2 Assets", confirmed ? 10 : 12, FontStyle.Regular);
+        var glyphFont = UiFonts.Get("Segoe MDL2 Assets", confirmed ? 10 : 12, FontStyle.Regular);
         TextRenderer.DrawText(g, glyph, glyphFont, Rectangle.Round(iconRect), glyphColor,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }

@@ -274,6 +274,7 @@ public sealed partial class MainForm : Form
         {
             _ = InitializeTelemetryAsync();
             InitializeNetworkMonitor();
+            PrebuildPagesWhenIdle();
 #if DESIGN_PREVIEW
             _ = RunDesignPreviewAsync();
 #endif

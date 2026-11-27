@@ -724,8 +724,8 @@ internal sealed class ChipButton : Button
         Selected = selected;
         AccessibleName = string.IsNullOrEmpty(count) ? Label : $"{Label}, {count}";
         AccessibleDescription = selected ? "Selected filter" : null;
-        using var bold = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular);
-        using var small = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+        var bold = UiFonts.Get("Segoe UI Semibold", 9.5f, FontStyle.Regular);
+        var small = UiFonts.Get("Segoe UI Semibold", 8.5f, FontStyle.Regular);
         Width = TextRenderer.MeasureText(Label, bold).Width + (string.IsNullOrEmpty(count) ? 24 : TextRenderer.MeasureText(count, small).Width + 40);
         Invalidate();
     }
@@ -745,8 +745,8 @@ internal sealed class ChipButton : Button
         }
 
         var ink = Selected ? SelectedInk : Ink;
-        using var bold = UiFonts.Create(Selected ? "Segoe UI Semibold" : "Segoe UI", 9.5f, FontStyle.Regular);
-        using var small = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+        var bold = UiFonts.Get(Selected ? "Segoe UI Semibold" : "Segoe UI", 9.5f, FontStyle.Regular);
+        var small = UiFonts.Get("Segoe UI Semibold", 8.5f, FontStyle.Regular);
         var labelWidth = TextRenderer.MeasureText(Label, bold).Width;
         TextRenderer.DrawText(g, Label, bold, new Rectangle(12, 0, labelWidth, Height), ink, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
         if (!string.IsNullOrEmpty(Count))

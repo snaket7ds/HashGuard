@@ -309,11 +309,11 @@ internal sealed class SidebarNav : Panel
             }
             else
             {
-                using var glyphFont = UiFonts.Create("Segoe MDL2 Assets", 11.5f, FontStyle.Regular);
+                var glyphFont = UiFonts.Get("Segoe MDL2 Assets", 11.5f, FontStyle.Regular);
                 TextRenderer.DrawText(g, glyph, glyphFont, new Rectangle(12, 0, 24, Height), color,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
             }
-            using var textFont = UiFonts.Create(IsActive ? "Segoe UI Semibold" : "Segoe UI", 10.5f, FontStyle.Regular);
+            var textFont = UiFonts.Get(IsActive ? "Segoe UI Semibold" : "Segoe UI", 10.5f, FontStyle.Regular);
             var badgeWidth = 0;
             if (!string.IsNullOrEmpty(Badge))
             {
@@ -321,7 +321,7 @@ internal sealed class SidebarNav : Panel
                 badgeWidth = Math.Max(22, size.Width + 14);
                 var badgeRect = new RectangleF(Width - badgeWidth - 10, (Height - 20) / 2f, badgeWidth, 20);
                 RoundedPaint.FillRounded(g, badgeRect, 10, BadgeAlert ? owner.BadgeBack : owner.NeutralBadgeBack);
-                using var badgeFont = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+                var badgeFont = UiFonts.Get("Segoe UI Semibold", 8.5f, FontStyle.Regular);
                 TextRenderer.DrawText(g, Badge, badgeFont, Rectangle.Round(badgeRect), BadgeAlert ? owner.BadgeText : owner.NeutralBadgeText,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
             }

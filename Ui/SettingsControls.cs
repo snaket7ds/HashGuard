@@ -135,9 +135,9 @@ internal sealed class ModeSwitch : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(ToggleSwitch.SurfaceBehind(this));
         RoundedPaint.FillRounded(g, new RectangleF(0, 0, Width - 1, Height - 1), 11, Color.FromArgb(233, 235, 239));
-        using var bold = UiFonts.Create("Segoe UI Semibold", 9.75f, FontStyle.Regular);
-        using var regular = UiFonts.Create("Segoe UI", 9.75f, FontStyle.Regular);
-        using var tagFont = UiFonts.Create("Segoe UI Semibold", 7.5f, FontStyle.Regular);
+        var bold = UiFonts.Get("Segoe UI Semibold", 9.75f, FontStyle.Regular);
+        var regular = UiFonts.Get("Segoe UI", 9.75f, FontStyle.Regular);
+        var tagFont = UiFonts.Get("Segoe UI Semibold", 7.5f, FontStyle.Regular);
         var monitorWidth = TextRenderer.MeasureText("Monitor", bold).Width + 24;
         var selected = new RectangleF(3, 3, monitorWidth, Height - 7);
         RoundedPaint.FillRounded(g, new RectangleF(selected.X, selected.Y + 1, selected.Width, selected.Height), 8, Color.FromArgb(30, 16, 24, 40));

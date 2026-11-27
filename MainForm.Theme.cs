@@ -203,7 +203,7 @@ public sealed partial class MainForm : Form
                 button.FlatAppearance.BorderSize = 0;
                 button.BackColor = solid;
                 button.ForeColor = Color.White;
-                button.Font = UiFonts.Create("Segoe UI Semibold", button.Font.Size, FontStyle.Regular);
+                button.Font = UiFonts.Get("Segoe UI Semibold", button.Font.Size);
                 button.FlatAppearance.MouseOverBackColor = ControlPaint.Dark(solid, 0.05f);
                 button.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(solid, 0.15f);
                 RoundedButtons.Attach(button);

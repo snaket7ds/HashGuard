@@ -21,6 +21,9 @@ public sealed partial class MainForm : Form
     /// <summary>Export report and Open logs, at the right of the Activity title as designed.</summary>
     private Control? activityHeaderTools;
 
+    /// <summary>Reloads the Activity history in place (in the background) when the page is shown again.</summary>
+    private Func<Task>? refreshActivityPage;
+
     private Control BuildActivityPage()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
@@ -266,6 +269,7 @@ public sealed partial class MainForm : Form
             debounce.Start();
         };
         page.HandleCreated += async (_, _) => await LoadAsync();
+        refreshActivityPage = LoadAsync;
         page.Disposed += (_, _) =>
         {
             debounce.Dispose();

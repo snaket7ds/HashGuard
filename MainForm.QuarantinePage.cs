@@ -15,6 +15,9 @@ public sealed partial class MainForm : Form
     /// <summary>Search (and the folder links) at the right of the Quarantine title, as designed.</summary>
     private Control? quarantineHeaderTools;
 
+    /// <summary>Reloads the Quarantine list in place when the page is shown again.</summary>
+    private Action? refreshQuarantinePage;
+
     private Control BuildQuarantinePage()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
@@ -189,6 +192,7 @@ public sealed partial class MainForm : Form
         };
         list.ItemActivated += (_, _) => restore.PerformClick();
         Reload();
+        refreshQuarantinePage = Reload;
         return page;
     }
 }

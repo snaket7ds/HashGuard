@@ -166,26 +166,104 @@ public sealed partial class MainForm : Form
     /// <summary>Shows a page. Settings, Quarantine and Activity are rebuilt each time so they show current data.</summary>
     private void ShowPage(AppPage page)
     {
-        var rebuild = page is AppPage.Settings or AppPage.Quarantine or AppPage.Activity;
-        if (rebuild && builtPages.Remove(page, out var stale))
+        var leavingSettings = currentPage == AppPage.Settings && page != AppPage.Settings;
+
+        // Pages are kept and only their data is refreshed (rebuilding hundreds of controls on every
+        // click is what made switching slow). Drawing is held back until the new page is in place,
+        // so it appears at once instead of control by control.
+        SetRedraw(pageHost, false);
+        try
         {
-            // updateButton lives on the Settings page but is a long-lived field; keep it alive.
-            if (updateButton.Parent is { } parent && IsInside(parent, stale))
+            GetOrBuildPage(page);
+            foreach (var (key, control) in builtPages)
             {
-                parent.Controls.Remove(updateButton);
+                control.Visible = key == page;
             }
 
-            pageHost.Controls.Remove(stale);
-            stale.Dispose();
+            ShowPageChrome(page);
         }
-
-        GetOrBuildPage(page);
-        foreach (var (key, control) in builtPages)
+        finally
         {
-            control.Visible = key == page;
+            SetRedraw(pageHost, true);
+            pageHost.Invalidate(true);
         }
 
-        ShowPageChrome(page);
+        if (page == AppPage.Quarantine)
+        {
+            refreshQuarantinePage?.Invoke();
+        }
+        else if (page == AppPage.Activity && refreshActivityPage is { } refreshActivity)
+        {
+            _ = refreshActivity();
+        }
+
+        // Settings drops unsaved changes when you leave it: rebuild it in the background afterwards,
+        // so the next visit shows the saved values and still opens instantly.
+        if (leavingSettings)
+        {
+            BeginInvoke(RebuildSettingsPage);
+        }
+    }
+
+    private void RebuildSettingsPage()
+    {
+        if (currentPage == AppPage.Settings || !builtPages.Remove(AppPage.Settings, out var stale))
+        {
+            return;
+        }
+
+        // updateButton lives on the Settings page but is a long-lived field; keep it alive.
+        if (updateButton.Parent is { } parent && IsInside(parent, stale))
+        {
+            parent.Controls.Remove(updateButton);
+        }
+
+        pageHost.Controls.Remove(stale);
+        stale.Dispose();
+        GetOrBuildPage(AppPage.Settings);
+    }
+
+    /// <summary>Builds the other pages one by one while the app is idle after start-up, so the first click on each is quick too.</summary>
+    private void PrebuildPagesWhenIdle()
+    {
+        var pending = new Queue<AppPage>([AppPage.Scan, AppPage.Firewall, AppPage.Quarantine, AppPage.Activity, AppPage.Settings]);
+        var timer = new System.Windows.Forms.Timer { Interval = 400 };
+        timer.Tick += (_, _) =>
+        {
+            if (IsDisposed || pending.Count == 0)
+            {
+                timer.Dispose();
+                return;
+            }
+
+            var next = pending.Dequeue();
+            if (!builtPages.ContainsKey(next))
+            {
+                SetRedraw(pageHost, false);
+                try
+                {
+                    GetOrBuildPage(next);
+                }
+                finally
+                {
+                    SetRedraw(pageHost, true);
+                }
+            }
+        };
+        timer.Start();
+    }
+
+    private const int WmSetRedraw = 0x000B;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    private static void SetRedraw(Control control, bool on)
+    {
+        if (control.IsHandleCreated)
+        {
+            SendMessage(control.Handle, WmSetRedraw, on ? 1 : 0, IntPtr.Zero);
+        }
     }
 
     private Control GetOrBuildPage(AppPage page)

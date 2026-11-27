@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.1.6 - 2026-11-27
+
+- **Switching pages is instant.** Before, clicking a sidebar item took a second or two and you could watch the page being built:
+  - **Pages are kept.** Quarantine and Activity used to be rebuilt from scratch on every visit; now they only reload their data, and Activity does that in the background. Settings still drops unsaved changes when you leave it, but it's rebuilt in the background afterwards.
+  - **Built ahead of time.** The other pages are built while HashGuard is idle after start-up, so even the first click on each is quick.
+  - **Fonts are cached.** Since v1.1.5 bundled Inter, list rows, the sidebar and other controls were creating new fonts on every repaint.
+  - **Drawn all at once.** Drawing is held back until the new page is in place, so it appears whole instead of control by control.
+
 ## v1.1.5 - 2026-11-27
 
 Every page compared with the design again and the remaining differences fixed:

@@ -25,6 +25,27 @@ internal static class UiFonts
 
     public static Font Create(string family, float size) => Create(family, size, FontStyle.Regular);
 
+    private static readonly Dictionary<(string Family, float Size, FontStyle Style), Font> Shared = [];
+
+    /// <summary>
+    /// A shared, cached font for paint code. Creating a Font from the private Inter collection on
+    /// every repaint is what made page switches slow; these are created once. Never dispose them.
+    /// </summary>
+    public static Font Get(string family, float size, FontStyle style = FontStyle.Regular)
+    {
+        var key = (family, size, style);
+        lock (Shared)
+        {
+            if (!Shared.TryGetValue(key, out var font))
+            {
+                font = Create(family, size, style);
+                Shared[key] = font;
+            }
+
+            return font;
+        }
+    }
+
     public static Font Create(string family, float size, FontStyle style)
     {
         var mapped = Map(family);
