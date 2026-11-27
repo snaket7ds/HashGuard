@@ -51,6 +51,18 @@ internal static class V2StartupTests
             True(again is not null);
             False(SingleInstance.TrySend(new LaunchRequest(LaunchKind.Show), $"HashGuard.test.{Guid.NewGuid():N}", TimeSpan.FromMilliseconds(200)));
         }),
+        ("Legacy: 1.x builds count as v1; 2.x and versionless files don't", () =>
+        {
+            True(LegacyHashGuard.IsLegacy(1, "1.0.64+cd7cde4"));
+            True(LegacyHashGuard.IsLegacy(0, "1.1.8"));
+            False(LegacyHashGuard.IsLegacy(2, "2.0.0-alpha.1"));
+            False(LegacyHashGuard.IsLegacy(0, null));
+            False(LegacyHashGuard.IsLegacy(0, ""));
+        }),
+        ("Legacy: this test process is never reported", () =>
+        {
+            True(LegacyHashGuard.FindRunning().All(p => p.Pid != Environment.ProcessId));
+        }),
     ];
 
     private static void Equal<T>(T expected, T actual)

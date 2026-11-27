@@ -54,7 +54,23 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Frame x:Name="ContentFrame" />
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Shown while HashGuard 1.x runs next to this copy. -->
+                <InfoBar x:Name="LegacyNotice" MaxWidth="976" Margin="32,0,32,12" Severity="Warning" IsClosable="True"
+                         Title="HashGuard 1.x is also running"
+                         Message="Running both means duplicate alerts and two copies managing the same firewall rules.">
+                    <InfoBar.ActionButton>
+                        <Button x:Name="LegacyCloseButton" Content="Close HashGuard 1.x" Click="CloseLegacy_Click" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+
+                <Frame x:Name="ContentFrame" Grid.Row="1" />
+            </Grid>
         </NavigationView>
     </Grid>
 </Window>

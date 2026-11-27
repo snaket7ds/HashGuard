@@ -75,6 +75,8 @@ public partial class App : Application
             window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Handle(launch));
         }
 
+        window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _ = window.CheckForLegacyAsync());
+
         // Later launches of HashGuard.exe hand their request to this copy.
         Program.Instance?.Listen(request => window.DispatcherQueue.TryEnqueue(() => Handle(request)));
     }

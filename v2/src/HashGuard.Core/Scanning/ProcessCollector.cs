@@ -341,7 +341,7 @@ public static partial class ProcessCollector
         }
     }
 
-    private static string? TryGetImagePath(int pid, out string? error)
+    internal static string? TryGetImagePath(int pid, out string? error)
     {
         error = null;
         var handle = OpenProcess(QueryLimitedInformation, false, pid);

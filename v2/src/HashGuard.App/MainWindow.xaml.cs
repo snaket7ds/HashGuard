@@ -61,6 +61,66 @@ public sealed partial class MainWindow : Window
         AppWindow.Show();
         Activate();
         Win32.SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        _ = CheckForLegacyAsync();
+    }
+
+    private IReadOnlyList<HashGuard.Core.LegacyProcess> legacyProcesses = [];
+
+    /// <summary>Shows or hides the "HashGuard 1.x is also running" notice.</summary>
+    public async Task CheckForLegacyAsync()
+    {
+        try
+        {
+            legacyProcesses = await Task.Run(HashGuard.Core.LegacyHashGuard.FindRunning);
+        }
+        catch (Exception ex)
+        {
+            App.WriteCrashLog(ex);
+            return;
+        }
+
+        if (legacyProcesses.Count == 0)
+        {
+            LegacyNotice.IsOpen = false;
+            return;
+        }
+
+        var versions = string.Join(", ", legacyProcesses.Select(p => p.Version).Distinct());
+        LegacyNotice.Title = $"HashGuard {versions} is also running";
+        LegacyNotice.Message = "Running both means duplicate alerts and two copies managing the same firewall rules.";
+        LegacyNotice.Severity = InfoBarSeverity.Warning;
+        LegacyCloseButton.Visibility = Visibility.Visible;
+        LegacyNotice.IsOpen = true;
+    }
+
+    private async void CloseLegacy_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Close HashGuard 1.x?",
+            Content = "HashGuard 1.x only hides to the tray when its window is closed, so this ends it. Anything it is doing, such as a scan, stops. Its settings, logs and quarantine stay, and this copy keeps using them.",
+            PrimaryButtonText = "Close it",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        var failed = await Task.Run(() => HashGuard.Core.LegacyHashGuard.Close(legacyProcesses));
+        if (failed.Count == 0)
+        {
+            LegacyNotice.IsOpen = false;
+            legacyProcesses = [];
+            return;
+        }
+
+        LegacyNotice.Severity = InfoBarSeverity.Error;
+        LegacyNotice.Title = "HashGuard 1.x couldn't be closed";
+        LegacyNotice.Message = "It's probably running as administrator. Close it from its tray icon (right-click, Exit), or run this copy as administrator.";
+        LegacyCloseButton.Visibility = Visibility.Collapsed;
     }
 
     private readonly HashGuard.Core.ScanRequestQueue fileRequests = new();
