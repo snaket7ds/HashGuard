@@ -322,6 +322,99 @@
                 </StackPanel>
             </Border>
 
+            <!-- Windows -->
+            <TextBlock Text="Windows" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+            <TextBlock Text="These change Windows itself, straight away. A setting another copy of HashGuard manages (for example HashGuard 1.x) is shown here but changed there."
+                       Style="{StaticResource RowHintStyle}" Margin="2,0,0,8" />
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Start HashGuard when I sign in" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Starts in the tray." Style="{StaticResource RowHintStyle}" />
+                        <TextBlock Text="{x:Bind local:SettingsPage.OwnerText(ViewModel.StartupOwner), Mode=OneWay}" Style="{StaticResource RowHintStyle}"
+                                   Foreground="{ThemeResource AttentionTextBrush}" Visibility="{x:Bind local:SettingsPage.VisibleWhenText(ViewModel.StartupOwner), Mode=OneWay}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="StartWithWindowsSwitch" Grid.Column="1" IsOn="{x:Bind ViewModel.StartWithWindows, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanChangeStartup, Mode=OneWay}"
+                                  Toggled="StartWithWindows_Toggled" OnContent="On" OffContent="Off" MinWidth="0" AutomationProperties.Name="Start HashGuard when I sign in" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Start in the tray when I open it" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Opening HashGuard puts it in the tray without showing the window." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.StartMinimized, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  AutomationProperties.Name="Start in the tray" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Run as administrator" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Needed to block programs in Windows Firewall and to scan protected programs. HashGuard asks for permission when it starts; with start at sign-in, it then starts as administrator without asking."
+                                   Style="{StaticResource RowHintStyle}" />
+                        <TextBlock Text="Takes effect the next time HashGuard starts." Style="{StaticResource RowHintStyle}"
+                                   Visibility="{x:Bind local:SettingsPage.RestartNote(ViewModel.RunElevated, ViewModel.IsElevated), Mode=OneWay}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="RunElevatedSwitch" Grid.Column="1" IsOn="{x:Bind ViewModel.RunElevated, Mode=TwoWay}" Toggled="RunElevated_Toggled"
+                                  OnContent="On" OffContent="Off" MinWidth="0" AutomationProperties.Name="Run as administrator" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <StackPanel Spacing="12">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Daily scan" Style="{StaticResource RowTitleStyle}" />
+                            <TextBlock Text="Scans running apps once a day, quietly. If the PC is off at that hour, it scans as soon as it can." Style="{StaticResource RowHintStyle}" />
+                            <TextBlock Text="{x:Bind local:SettingsPage.OwnerText(ViewModel.DailyScanOwner), Mode=OneWay}" Style="{StaticResource RowHintStyle}"
+                                       Foreground="{ThemeResource AttentionTextBrush}" Visibility="{x:Bind local:SettingsPage.VisibleWhenText(ViewModel.DailyScanOwner), Mode=OneWay}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="DailyScanSwitch" Grid.Column="1" IsOn="{x:Bind ViewModel.DailyScan, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanChangeDailyScan, Mode=OneWay}"
+                                      Toggled="DailyScan_Toggled" OnContent="On" OffContent="Off" MinWidth="0" AutomationProperties.Name="Daily scan" />
+                    </Grid>
+                    <NumberBox Header="Hour (0–23)" Value="{x:Bind ViewModel.DailyScanHour, Mode=TwoWay}" Minimum="0" Maximum="23" SpinButtonPlacementMode="Compact" Width="160"
+                               HorizontalAlignment="Left" IsEnabled="{x:Bind ViewModel.CanChangeDailyScan, Mode=OneWay}" ValueChanged="DailyHour_Changed" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="&quot;Scan with HashGuard&quot; in File Explorer" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Adds the command to a file's right-click menu (under Show more options on Windows 11), for your account only." Style="{StaticResource RowHintStyle}" />
+                        <TextBlock Text="{x:Bind local:SettingsPage.OwnerText(ViewModel.RightClickOwner), Mode=OneWay}" Style="{StaticResource RowHintStyle}"
+                                   Foreground="{ThemeResource AttentionTextBrush}" Visibility="{x:Bind local:SettingsPage.VisibleWhenText(ViewModel.RightClickOwner), Mode=OneWay}" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="RightClickSwitch" Grid.Column="1" IsOn="{x:Bind ViewModel.RightClickMenu, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanChangeRightClick, Mode=OneWay}"
+                                  Toggled="RightClick_Toggled" OnContent="On" OffContent="Off" MinWidth="0" AutomationProperties.Name="Scan with HashGuard in File Explorer" />
+                </Grid>
+            </Border>
+
             <!-- Appearance -->
             <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
             <Border Style="{StaticResource RowStyle}">
@@ -344,7 +437,7 @@
             <Border Style="{StaticResource RowStyle}">
                 <StackPanel Spacing="6">
                     <TextBlock Style="{StaticResource RowHintStyle}"
-                               Text="Start with Windows, run as administrator, the daily scan, the Explorer right-click menu, automatic updates and usage data. Until then, HashGuard 1.x keeps managing them, and their settings are left as they are." />
+                               Text="Automatic updates and usage data. Until then their settings are left as they are." />
                 </StackPanel>
             </Border>
         </StackPanel>

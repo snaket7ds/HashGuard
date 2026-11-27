@@ -35,6 +35,74 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial bool AutoBlockMalicious { get; set; }
 
     public bool IsElevated => AppServices.Instance.Network.IsElevated;
+
+    // Windows integration: read from Windows itself, applied by the page when switched.
+    [ObservableProperty] public partial bool StartWithWindows { get; set; }
+    [ObservableProperty] public partial bool StartMinimized { get; set; }
+    [ObservableProperty] public partial bool RunElevated { get; set; }
+    [ObservableProperty] public partial bool DailyScan { get; set; }
+    [ObservableProperty] public partial double DailyScanHour { get; set; } = 12;
+    [ObservableProperty] public partial bool RightClickMenu { get; set; }
+    [ObservableProperty] public partial string? StartupOwner { get; set; }
+    [ObservableProperty] public partial string? DailyScanOwner { get; set; }
+    [ObservableProperty] public partial string? RightClickOwner { get; set; }
+    [ObservableProperty] public partial bool IntegrationReady { get; set; }
+
+    public bool CanChangeStartup => IntegrationReady && StartupOwner is null;
+
+    public bool CanChangeDailyScan => IntegrationReady && DailyScanOwner is null;
+
+    public bool CanChangeRightClick => IntegrationReady && RightClickOwner is null;
+
+    partial void OnIntegrationReadyChanged(bool value) => RaiseCanChange();
+
+    partial void OnStartupOwnerChanged(string? value) => RaiseCanChange();
+
+    partial void OnDailyScanOwnerChanged(string? value) => RaiseCanChange();
+
+    partial void OnRightClickOwnerChanged(string? value) => RaiseCanChange();
+
+    private void RaiseCanChange()
+    {
+        OnPropertyChanged(nameof(CanChangeStartup));
+        OnPropertyChanged(nameof(CanChangeDailyScan));
+        OnPropertyChanged(nameof(CanChangeRightClick));
+    }
+
+    partial void OnStartMinimizedChanged(bool value) => Save();
+
+    /// <summary>Reads what is registered with Windows (Task Scheduler is slow, so off the UI thread).</summary>
+    public async Task LoadIntegrationAsync()
+    {
+        IntegrationReady = false;
+        var status = await Task.Run(AppServices.Instance.Integration.Read);
+        StartWithWindows = status.StartWithWindows;
+        DailyScan = status.DailyScan;
+        RightClickMenu = status.RightClickMenu;
+        StartupOwner = status.StartupOwner;
+        DailyScanOwner = status.DailyScanOwner;
+        RightClickOwner = status.RightClickOwner;
+        IntegrationReady = true;
+    }
+
+    /// <summary>Applies one Windows setting; returns a message for an error, or null.</summary>
+    public async Task<string?> ApplyIntegrationAsync(Func<WindowsIntegration, string?> apply)
+    {
+        try
+        {
+            await Task.Run(() => apply(AppServices.Instance.Integration));
+            Save();
+            return null;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException or IOException or System.Security.SecurityException)
+        {
+            return ex.Message;
+        }
+        finally
+        {
+            await LoadIntegrationAsync();
+        }
+    }
     [ObservableProperty] public partial string VirusTotalKey { get; set; } = "";
     [ObservableProperty] public partial string MetaDefenderKey { get; set; } = "";
     [ObservableProperty] public partial string SavedText { get; set; } = "";
@@ -70,6 +138,9 @@ public sealed partial class SettingsViewModel : ObservableObject
             HashCacheEnabled = s.HashCacheEnabled;
             DeltaScanEnabled = s.DeltaScanEnabled;
             ThemeIndex = ThemeIndexOf(s);
+            StartMinimized = s.StartMinimized;
+            RunElevated = s.RunElevated;
+            DailyScanHour = s.ScheduledScanHour;
             AutoProcessScan = s.AutoProcessScan;
             ScanAllFilesAcknowledged = s.ScanAllFilesAcknowledged;
             ScanAllFiles = s.ScanAllFiles;
@@ -158,6 +229,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.UseSystemDefaultColors = ThemeIndex == 0;
         settings.ColorMode = ThemeName(ThemeIndex);
         settings.TrustedPublishers = [.. TrustedPublishers];
+        settings.StartMinimized = StartMinimized;
+        settings.RunElevated = RunElevated;
+        settings.ScheduledDailyScan = IntegrationReady ? DailyScan : settings.ScheduledDailyScan;
+        settings.ScheduledScanHour = (int)Math.Clamp(double.IsNaN(DailyScanHour) ? 12 : DailyScanHour, 0, 23);
         settings.AutoProcessScan = AutoProcessScan;
         settings.ScanAllFilesAcknowledged = ScanAllFilesAcknowledged;
         settings.ScanAllFiles = ScanAllFiles && ScanAllFilesAcknowledged;

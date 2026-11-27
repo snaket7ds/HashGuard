@@ -28,6 +28,11 @@ public static class Program
             return SingleInstance.TrySend(Launch) ? 0 : 1;
         }
 
+        if (TryRelaunchElevated(args))
+        {
+            return 0;
+        }
+
         try
         {
             WinRT.ComWrappersSupport.InitializeComWrappers();
@@ -40,7 +45,47 @@ public static class Program
         }
         finally
         {
-            Instance.Dispose();
+            Instance?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// "Run as administrator" is on but this copy isn't: start an elevated copy (Windows asks) and
+    /// let it take over. Declining the prompt keeps this copy running, not elevated.
+    /// </summary>
+    private static bool TryRelaunchElevated(string[] args)
+    {
+        bool runElevated;
+        try
+        {
+            runElevated = new SettingsStore().Load().RunElevated;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        if (!runElevated || new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)
+            || Environment.ProcessPath is not { } exe)
+        {
+            return false;
+        }
+
+        // Free the single-instance claim so the elevated copy can take it.
+        Instance?.Dispose();
+        Instance = null;
+        try
+        {
+            var arguments = string.Join(' ', args.Select(arg => arg.Length > 0 && !arg.Contains(' ') && !arg.Contains('"') ? arg : $"\"{arg.Replace("\"", "\\\"")}\""));
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, arguments) { UseShellExecute = true, Verb = "runas" });
+            return true;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // Declined: carry on without administrator rights.
+            Instance = SingleInstance.TryClaim();
+            return Instance is null && SingleInstance.TrySend(Launch);
         }
     }
 }

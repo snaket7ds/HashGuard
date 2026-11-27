@@ -40,6 +40,92 @@ public sealed partial class SettingsPage : Page
         VirusTotalKeyBox.Password = ViewModel.VirusTotalKey;
         MetaDefenderKeyBox.Password = ViewModel.MetaDefenderKey;
         loading = false;
+        _ = ViewModel.LoadIntegrationAsync();
+    }
+
+    private bool applying;
+
+    /// <summary>Applies a Windows setting the user switched; a failure is explained and the switches re-read.</summary>
+    private async Task ApplyAsync(Func<HashGuard.Core.WindowsIntegration, string?> apply)
+    {
+        if (!ViewModel.IntegrationReady || applying)
+        {
+            return; // A value loaded from Windows, or a change already being applied.
+        }
+
+        applying = true;
+        try
+        {
+            if (await ViewModel.ApplyIntegrationAsync(apply) is { } error)
+            {
+                await new ContentDialog { XamlRoot = XamlRoot, Title = "Windows didn't take the change", Content = error, CloseButtonText = "OK" }.ShowAsync();
+            }
+        }
+        finally
+        {
+            applying = false;
+        }
+    }
+
+    private async void StartWithWindows_Toggled(object sender, RoutedEventArgs e)
+    {
+        var on = StartWithWindowsSwitch.IsOn;
+        var elevated = ViewModel.RunElevated;
+        await ApplyAsync(integration => integration.SetStartWithWindows(on, elevated));
+    }
+
+    private async void RunElevated_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (loading || applying)
+        {
+            return;
+        }
+
+        ViewModel.Save();
+        // Start at sign-in follows: the elevated task when on (and allowed), the Run key when off.
+        if (ViewModel.StartWithWindows && ViewModel.CanChangeStartup)
+        {
+            var elevated = RunElevatedSwitch.IsOn;
+            await ApplyAsync(integration => integration.SetStartWithWindows(true, elevated));
+        }
+    }
+
+    private async void DailyScan_Toggled(object sender, RoutedEventArgs e)
+    {
+        var on = DailyScanSwitch.IsOn;
+        var hour = (int)(double.IsNaN(ViewModel.DailyScanHour) ? 12 : ViewModel.DailyScanHour);
+        var elevated = ViewModel.RunElevated;
+        await ApplyAsync(integration =>
+        {
+            integration.SetDailyScan(on, hour, elevated);
+            return null;
+        });
+    }
+
+    private async void DailyHour_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (double.IsNaN(args.OldValue) || double.IsNaN(args.NewValue) || !ViewModel.DailyScan)
+        {
+            return;
+        }
+
+        var hour = (int)args.NewValue;
+        var elevated = ViewModel.RunElevated;
+        await ApplyAsync(integration =>
+        {
+            integration.SetDailyScan(true, hour, elevated);
+            return null;
+        });
+    }
+
+    private async void RightClick_Toggled(object sender, RoutedEventArgs e)
+    {
+        var on = RightClickSwitch.IsOn;
+        await ApplyAsync(integration =>
+        {
+            integration.SetRightClickMenu(on);
+            return null;
+        });
     }
 
     private void VirusTotalKey_Changed(object sender, RoutedEventArgs e)
@@ -151,4 +237,10 @@ public sealed partial class SettingsPage : Page
     public static Visibility VisibleWhenNot(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
     public static Visibility VisibleWhenAny(int count) => count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public static Visibility VisibleWhenText(string? value) => string.IsNullOrEmpty(value) ? Visibility.Collapsed : Visibility.Visible;
+
+    public static string OwnerText(string? owner) => owner is null ? "" : $"Managed by another copy of HashGuard: {owner}";
+
+    public static Visibility RestartNote(bool runElevated, bool isElevated) => runElevated != isElevated ? Visibility.Visible : Visibility.Collapsed;
 }

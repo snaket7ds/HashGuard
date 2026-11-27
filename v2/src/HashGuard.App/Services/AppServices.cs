@@ -78,6 +78,31 @@ public sealed class AppServices
     /// <summary>Which programs connect where, and HashGuard's firewall blocks.</summary>
     public NetworkMonitor Network { get; }
 
+    /// <summary>Start with Windows, the daily scan task and the Explorer menu, for this copy's exe.</summary>
+    public WindowsIntegration Integration { get; } = new(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "HashGuard.exe"), IsRunningElevated());
+
+    /// <summary>
+    /// Whether this is an installed copy (under Program Files). Only an installed copy repairs Windows
+    /// registrations by itself at start-up; a portable or test copy changes them only when you ask.
+    /// </summary>
+    public static bool IsInstalledCopy
+    {
+        get
+        {
+            var dir = Path.GetFullPath(AppContext.BaseDirectory);
+            return new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 }
+                .Select(Environment.GetFolderPath)
+                .Where(path => path.Length > 0)
+                .Any(path => dir.StartsWith(Path.GetFullPath(path).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private static bool IsRunningElevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
     /// <summary>Changes settings on a copy and saves it, so readers never see a half-changed object.</summary>
     public void UpdateSettings(Action<AppSettings> change)
     {

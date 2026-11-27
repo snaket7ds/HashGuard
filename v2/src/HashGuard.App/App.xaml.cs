@@ -62,7 +62,8 @@ public partial class App : Application
 
         // Started with Windows or by the daily scan task: stay in the tray.
         var launch = Program.Launch;
-        if (launch.Kind is not (LaunchKind.Minimized or LaunchKind.ScheduledScan))
+        var startMinimized = Services.AppServices.Instance.Settings.StartMinimized && launch.Kind == LaunchKind.Show;
+        if (launch.Kind is not (LaunchKind.Minimized or LaunchKind.ScheduledScan) && !startMinimized)
         {
             window.Activate();
         }
@@ -93,6 +94,13 @@ public partial class App : Application
         var services = Services.AppServices.Instance;
         services.BackgroundFindings += findings => window.DispatcherQueue.TryEnqueue(() => NotifyFindings(findings));
         background = new Services.BackgroundScanner(services);
+        // An installed copy keeps its Windows registrations pointing at itself (after a move or an
+        // upgrade from v1). Portable and test copies leave them alone unless you change them in Settings.
+        if (Services.AppServices.IsInstalledCopy)
+        {
+            _ = Task.Run(() => services.Integration.RepairAtStartup(services.Settings));
+        }
+
         background.Start(startupScan: services.Settings.AutoProcessScan && launch.Kind is (LaunchKind.Show or LaunchKind.Minimized));
     }
 
