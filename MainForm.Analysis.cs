@@ -311,7 +311,7 @@ public sealed partial class MainForm : Form
             trust.Add(string.Join("; ", result.PersistenceSources));
         }
 
-        var trustedPublisher = IsTrustedPublisher(result.SignaturePublisher);
+        var trustedPublisher = HashGuardLogic.SignatureChainValid(result.SignatureSummary) && IsTrustedPublisher(result.SignaturePublisher);
         if (result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase))
         {
             score += 15;
@@ -359,9 +359,7 @@ public sealed partial class MainForm : Form
             return false;
         }
 
-        return appSettings.TrustedPublishers.Any(trusted =>
-            publisher.Contains(trusted, StringComparison.OrdinalIgnoreCase)
-            || trusted.Contains(publisher, StringComparison.OrdinalIgnoreCase));
+        return appSettings.TrustedPublishers.Any(trusted => HashGuardLogic.PublisherEquals(publisher, trusted));
     }
 
     private static bool IsRiskyUserWritablePath(string path)

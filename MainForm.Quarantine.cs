@@ -141,14 +141,14 @@ public sealed partial class MainForm : Form
 
     private void ShowQuarantineDialog()
     {
-        using var dialog = new Form
-        {
-            Text = "Quarantine Manager",
-            StartPosition = FormStartPosition.CenterParent,
-            Size = new Size(1040, 580),
-            MinimumSize = new Size(800, 460),
-            BackColor = Color.FromArgb(246, 247, 249),
-        };
+        RestoreFromTray();
+        ShowPage(AppPage.Quarantine);
+    }
+
+    /// <summary>The Quarantine page (was the Quarantine Manager window before v1.1.0).</summary>
+    private Control BuildQuarantineView()
+    {
+        var dialog = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
 
         var heading = new Label
         {
@@ -204,7 +204,6 @@ public sealed partial class MainForm : Form
         var copyHash = new Button { Text = "Copy Hash", AutoSize = true };
         var repairMissing = new Button { Text = "Repair Missing", AutoSize = true };
         var openFolder = new Button { Text = "Open Folder", AutoSize = true };
-        var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
 
         void ReloadRows()
         {
@@ -335,7 +334,6 @@ public sealed partial class MainForm : Form
             WrapContents = true,
             Padding = new Padding(0, 8, 0, 0),
         };
-        buttons.Controls.Add(close);
         buttons.Controls.Add(openFolder);
         buttons.Controls.Add(repairMissing);
         buttons.Controls.Add(copyHash);
@@ -348,7 +346,7 @@ public sealed partial class MainForm : Form
         listHost.Controls.Add(view);
         emptyLabel.BringToFront();
 
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, Padding = new Padding(12) };
+        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, Padding = new Padding(0) };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -360,11 +358,8 @@ public sealed partial class MainForm : Form
         layout.Controls.Add(detail, 0, 3);
         layout.Controls.Add(buttons, 0, 4);
         dialog.Controls.Add(layout);
-        dialog.AcceptButton = close;
-        ApplyAppTheme(dialog);
         ReloadRows();
-        dialog.ShowDialog(this);
-        UpdateQuarantineTile();
+        return dialog;
     }
 
     private static string BuildQuarantineHeading(int restorableCount, int staleCount)

@@ -152,7 +152,8 @@ internal sealed class AppSettings
     public bool MetaDefenderEnabled { get; set; } = true;
     public bool MhrEnabled { get; set; } = true;
     public bool HashCacheEnabled { get; set; } = true;
-    public bool UploadUnknown { get; set; }
+    /// <summary>On by default since v1.1.0. Nothing is uploaded without approving each file.</summary>
+    public bool UploadUnknown { get; set; } = true;
     /// <summary>User accepted the VirusTotal full-file upload warning.</summary>
     public bool UploadUnknownAcknowledged { get; set; }
     /// <summary>User accepted the open/selected file scanning warning.</summary>
@@ -162,7 +163,8 @@ internal sealed class AppSettings
     public bool RunElevated { get; set; }
     public bool ScanAllFiles { get; set; }
     public bool AutoUpdateChecks { get; set; }
-    public bool TelemetryEnabled { get; set; }
+    /// <summary>On by default since v1.1.0. A saved settings file keeps the user's own choice.</summary>
+    public bool TelemetryEnabled { get; set; } = true;
     public string AnonymousInstallId { get; set; } = "";
     public bool AppInstallReported { get; set; }
     public bool UseSystemDefaultColors { get; set; }
@@ -182,9 +184,9 @@ internal sealed class AppSettings
     [JsonIgnore]
     public string MetaDefenderApiKey { get; set; } = "";
     /// <summary>When true, register a daily scheduled full scan via Task Scheduler.</summary>
-    public bool ScheduledDailyScan { get; set; }
+    public bool ScheduledDailyScan { get; set; } = true;
     /// <summary>Local hour (0-23) for the daily scheduled scan.</summary>
-    public int ScheduledScanHour { get; set; } = 2;
+    public int ScheduledScanHour { get; set; } = 12;
     /// <summary>When true, full scans only re-check files not present in the previous snapshot (still rechecks detections/unknown).</summary>
     public bool PreferDeltaScan { get; set; }
     /// <summary>When true, files already cached clean and unchanged on disk (size + last-write time) skip re-hashing and provider lookups.</summary>
@@ -192,21 +194,26 @@ internal sealed class AppSettings
     /// <summary>Suppress repeated tray balloons for the same action-needed hash until the hash set changes.</summary>
     public bool SuppressRepeatTrayAlerts { get; set; } = true;
     public string LastTrayAlertSignature { get; set; } = "";
-    /// <summary>Network Monitor polls the TCP table in the background (off by default).</summary>
-    public bool NetworkMonitorEnabled { get; set; }
+    /// <summary>Network Monitor polls the TCP table in the background. On by default since v1.1.0 (auto-block needs it).</summary>
+    public bool NetworkMonitorEnabled { get; set; } = true;
     /// <summary>When to alert about a program connecting for the first time; see <see cref="NetworkNotifyModes"/>.</summary>
     public string NetworkNotifyMode { get; set; } = NetworkNotifyModes.Untrusted;
     /// <summary>Block a program in Windows Firewall as soon as it connects if its cached verdict is malicious.</summary>
-    public bool AutoBlockMalicious { get; set; }
+    public bool AutoBlockMalicious { get; set; } = true;
     public List<string> TrustedPublishers { get; set; } =
     [
+        // Exact certificate names (matching is exact since v1.1.0).
         "Microsoft Corporation",
         "Microsoft Windows",
+        "Microsoft Windows Publisher",
         "NVIDIA Corporation",
-        "Advanced Micro Devices",
+        "Advanced Micro Devices, Inc.",
+        "Advanced Micro Devices INC.",
         "Intel Corporation",
+        "Dell Inc",
         "Dell Inc.",
         "HP Inc.",
-        "Lenovo",
+        "Lenovo (United States) Inc.",
+        "Lenovo (Beijing) Limited",
     ];
 }

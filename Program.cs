@@ -35,7 +35,11 @@ internal static class Program
 
     private static bool TrySendScanToRunningInstance(string[] args)
     {
-        var scanFile = ParseScanFile(args);
+        // The daily-scan task: if HashGuard is already running, ask it to scan instead of
+        // starting a second copy. If none is running, this process starts and scans itself.
+        var scanFile = args.Any(arg => string.Equals(arg, ScheduledScan.Argument, StringComparison.OrdinalIgnoreCase))
+            ? ScheduledScan.PipeToken
+            : ParseScanFile(args);
         if (string.IsNullOrWhiteSpace(scanFile))
         {
             return false;

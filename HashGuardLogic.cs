@@ -407,15 +407,63 @@ internal static class HashGuardLogic
         return !string.Equals(previousSignature, currentSignature, StringComparison.Ordinal);
     }
 
-    public static bool PublisherMatchesForIgnore(string? signaturePublisher, string? trustedOrSelectedPublisher)
+    /// <summary>
+    /// Exact publisher match, ignoring case and extra whitespace only. Until v1.1.0 this was a
+    /// two-way "contains", so "Microsoft" matched "Microsoft Corporation" and a short entry such as
+    /// "Micro" matched any signer containing it.
+    /// </summary>
+    public static bool PublisherMatchesForIgnore(string? signaturePublisher, string? trustedOrSelectedPublisher) =>
+        PublisherEquals(signaturePublisher, trustedOrSelectedPublisher);
+
+    public static string NormalizePublisher(string? publisher) =>
+        string.Join(' ', (publisher ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    public static bool PublisherEquals(string? left, string? right)
     {
-        if (string.IsNullOrWhiteSpace(signaturePublisher) || string.IsNullOrWhiteSpace(trustedOrSelectedPublisher))
+        var a = NormalizePublisher(left);
+        var b = NormalizePublisher(right);
+        return a.Length > 0 && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True when the signature summary says Windows validated the certificate chain.</summary>
+    public static bool SignatureChainValid(string? signatureSummary) =>
+        !string.IsNullOrWhiteSpace(signatureSummary)
+        && signatureSummary.Contains("chain valid", StringComparison.OrdinalIgnoreCase)
+        && !signatureSummary.Contains("outside validity period", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A file counts as from a trusted publisher only with a valid signature chain AND an exact
+    /// name match: anyone can put "Microsoft Corporation" in a self-made certificate.
+    /// </summary>
+    public static bool IsTrustedPublisher(string? publisher, string? signatureSummary, IEnumerable<string> trustedPublishers) =>
+        SignatureChainValid(signatureSummary)
+        && trustedPublishers.Any(trusted => PublisherEquals(publisher, trusted));
+
+    /// <summary>
+    /// Signer names the pre-1.1.0 defaults only matched thanks to "contains" matching. A saved list
+    /// that still has the old short default gets the real certificate names added, once.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string[]> LegacyPublisherExpansions = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Advanced Micro Devices"] = ["Advanced Micro Devices, Inc.", "Advanced Micro Devices INC."],
+        ["Dell Inc."] = ["Dell Inc", "Dell Technologies Inc."],
+        ["Lenovo"] = ["Lenovo (United States) Inc.", "Lenovo (Beijing) Limited"],
+        ["Microsoft Windows"] = ["Microsoft Windows Publisher"],
+        ["HP Inc."] = ["HP Inc"],
+    };
+
+    public static List<string> ExpandLegacyTrustedPublishers(IEnumerable<string> trustedPublishers)
+    {
+        var list = trustedPublishers.Select(NormalizePublisher).Where(name => name.Length > 0).ToList();
+        foreach (var name in list.ToList())
         {
-            return false;
+            if (LegacyPublisherExpansions.TryGetValue(name, out var extras))
+            {
+                list.AddRange(extras.Where(extra => !list.Any(existing => PublisherEquals(existing, extra))));
+            }
         }
 
-        return signaturePublisher.Contains(trustedOrSelectedPublisher, StringComparison.OrdinalIgnoreCase)
-            || trustedOrSelectedPublisher.Contains(signaturePublisher, StringComparison.OrdinalIgnoreCase);
+        return list.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>

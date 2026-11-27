@@ -149,6 +149,7 @@ public sealed partial class MainForm : Form
                 var settingsJson = File.ReadAllText(currentPath, Encoding.UTF8);
                 var settings = JsonSerializer.Deserialize<AppSettings>(settingsJson) ?? new AppSettings();
                 settings.TrustedPublishers ??= new AppSettings().TrustedPublishers;
+                settings.TrustedPublishers = HashGuardLogic.ExpandLegacyTrustedPublishers(settings.TrustedPublishers);
                 PopulateLegacyPlaintextKeys(settings, settingsJson);
                 return settings;
             }

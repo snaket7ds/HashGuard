@@ -358,6 +358,8 @@ public sealed partial class MainForm : Form
             progressBar.Value = completed;
         }
 
+        SyncScanRing();
+
         scanUiDirty++;
         if (scanUiDirty >= ScanUiFlushEvery || DateTime.UtcNow - scanUiLastFlushUtc >= ScanUiFlushInterval)
         {
@@ -401,6 +403,7 @@ public sealed partial class MainForm : Form
         summaryLabel.Text = $"Items scanned: {results.Count}";
         actionLabel.Text = $"Needs review: {actionsNeeded}";
         UpdateReviewCount(actionsNeeded);
+        UpdateHomePage();
         toolTip.SetToolTip(summaryLabel, $"{results.Count} scanned | {highRisk} high risk | {persistent} persistent | {unsigned} unsigned | {unknown} unknown");
         toolTip.SetToolTip(actionLabel, $"{actionsNeeded} file(s) need action | {alerts} detections | {highRisk} high risk | {errors} errors");
         if (scanCancellation is not null || scanGate.IsBusy)

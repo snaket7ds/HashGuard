@@ -208,10 +208,13 @@ public sealed partial class MainForm : Form
         var extra = targets.Count > 8 ? $"{Environment.NewLine}(+{targets.Count - 8} more)" : "";
         var accepted = MessageBox.Show(
             this,
-            $"Upload {targets.Count} file(s) to VirusTotal for analysis?{Environment.NewLine}{Environment.NewLine}{names}{extra}{Environment.NewLine}{Environment.NewLine}The full file is sent to VirusTotal.",
+            $"Upload {targets.Count} file(s) to VirusTotal for analysis?{Environment.NewLine}{Environment.NewLine}{names}{extra}{Environment.NewLine}{Environment.NewLine}"
+                + "The whole file is sent, not just its hash. VirusTotal shares uploaded files with security researchers, so anyone with access can download them."
+                + $"{Environment.NewLine}{Environment.NewLine}Don't upload anything private: documents, work files, or programs that contain your passwords or keys.",
             "Approve VirusTotal upload",
             MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning);
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
         if (accepted != DialogResult.Yes)
         {
             return;

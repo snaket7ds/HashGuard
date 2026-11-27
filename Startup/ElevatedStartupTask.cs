@@ -180,7 +180,7 @@ internal static class ElevatedStartupTask
     private static string FirstNonEmpty(params string[] values) =>
         values.Select(value => value.Trim()).FirstOrDefault(value => value.Length > 0) ?? "";
 
-    private static (int ExitCode, string Output, string Error) RunSchtasks(string arguments, int timeoutMs)
+    internal static (int ExitCode, string Output, string Error) RunSchtasks(string arguments, int timeoutMs)
     {
         try
         {

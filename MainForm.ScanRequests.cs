@@ -154,6 +154,12 @@ public sealed partial class MainForm : Form
                 await pipe.WaitForConnectionAsync(cancellationToken);
                 using var reader = new StreamReader(pipe, Encoding.UTF8);
                 var path = await reader.ReadLineAsync(cancellationToken);
+                if (string.Equals(path, ScheduledScan.PipeToken, StringComparison.Ordinal))
+                {
+                    BeginInvoke(async () => await RunScheduledScanAsync());
+                    continue;
+                }
+
                 var safePath = ScanPathSecurity.TryNormalizeScanPath(path, out _);
                 if (!string.IsNullOrWhiteSpace(safePath))
                 {
@@ -184,6 +190,18 @@ public sealed partial class MainForm : Form
                 await Task.Delay(1000, cancellationToken);
             }
         }
+    }
+
+    /// <summary>The daily scan, from the task (via the pipe or at launch). Quiet: no window, no dialogs.</summary>
+    private async Task RunScheduledScanAsync()
+    {
+        if (scanCancellation is not null)
+        {
+            return; // A scan is already running; the daily one would only repeat it.
+        }
+
+        statusLabel.Text = "Daily scan started.";
+        await StartScanAsync(showCompletionMessages: false);
     }
 
     private static NamedPipeServerStream CreateScanRequestPipe()

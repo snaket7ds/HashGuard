@@ -60,11 +60,12 @@ public sealed partial class MainForm : Form
     private static readonly Color AttentionYellow = Color.FromArgb(255, 193, 7);
     private static readonly Color DangerRed = Color.FromArgb(211, 47, 47);
     private static readonly Color SoftBorder = Color.FromArgb(214, 219, 225);
-    private static readonly Color SoftAppBack = Color.FromArgb(242, 243, 245);
+    private static readonly Color SoftAppBack = Color.FromArgb(245, 246, 248);
+    private static readonly Color ShieldGreen = Color.FromArgb(24, 134, 74);   // #18864A, white text passes contrast
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
-    private readonly Button scanButton = new() { Text = "Scan Now", Width = 128, Height = 36, BackColor = BrandGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular) };
+    private readonly Button scanButton = new() { Text = "Scan now", Width = 168, Height = 46, BackColor = ShieldGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), Tag = "scan-button" };
     private readonly Button updateButton = new() { Text = "Check for Updates", Width = 140, Height = 36, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
     private readonly Button settingsButton = new() { Text = "\uE713", Width = 36, Height = 36, Font = new Font("Segoe MDL2 Assets", 11, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
@@ -82,7 +83,7 @@ public sealed partial class MainForm : Form
     private readonly CheckBox hashCacheEnabledBox = new() { Text = "Enable Hash Cache", AutoSize = true, Checked = true };
     private readonly CheckBox deltaScanBox = new() { Text = "Delta scan: reuse cached hash for unchanged files", AutoSize = true };
     private readonly CheckBox autoUpdateChecksBox = new() { Text = "Check updates automatically", AutoSize = true };
-    private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = false };
+    private readonly CheckBox telemetryEnabledBox = new() { Text = "Send anonymous usage data", AutoSize = true, Checked = true };
     private readonly NumericUpDown delayBox = new() { Minimum = 0, Maximum = 120, Value = 16, Width = 64 };
     private readonly NumericUpDown timeoutBox = new() { Minimum = 10, Maximum = 300, Value = 60, Width = 64 };
     private readonly ListView resultsView = new() { View = View.Details, FullRowSelect = true, GridLines = false, HideSelection = false, BorderStyle = BorderStyle.FixedSingle };
@@ -130,6 +131,7 @@ public sealed partial class MainForm : Form
     private readonly System.Windows.Forms.Timer telemetryHeartbeatTimer = new() { Interval = 300000 };
     private readonly string? startupScanFile;
     private readonly bool startupMinimized;
+    private readonly bool startupScheduledScan;
     private readonly int closedOlderInstances;
     private AppSettings appSettings = new();
     private CancellationTokenSource? scanCancellation;
@@ -224,6 +226,7 @@ public sealed partial class MainForm : Form
         scanningTrayIcon = CreateTrayStatusIcon(TrayState.Scanning);
         actionTrayIcon = CreateTrayStatusIcon(TrayState.ActionNeeded);
         startupScanFile = ParseStartupScanFile(args);
+        startupScheduledScan = args.Any(arg => string.Equals(arg, ScheduledScan.Argument, StringComparison.OrdinalIgnoreCase));
         startupMinimized = args.Any(arg => string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase));
         closedOlderInstances = CloseOtherInstances();
         appSettings = LoadAppSettings();
@@ -233,8 +236,8 @@ public sealed partial class MainForm : Form
         ApplyAppSettings();
         Text = "HashGuard";
         Icon = cleanTrayIcon;
-        MinimumSize = new Size(900, 660);
-        Size = new Size(1080, 760);
+        MinimumSize = new Size(1100, 720);
+        Size = new Size(1240, 800);
         StartPosition = FormStartPosition.CenterScreen;
 
         BuildLayout();
@@ -290,11 +293,16 @@ public sealed partial class MainForm : Form
                 statusLabel.Text = $"The app folder is read-only, so settings and logs are saved in {AppPaths.GetConfigRoot()}.";
             }
 
+            var dailyScanElevated = appSettings.RunElevated && IsRunningElevated();
+            var dailyScanEnabled = appSettings.ScheduledDailyScan;
+            var dailyScanHour = appSettings.ScheduledScanHour;
+            _ = Task.Run(() => ScheduledScan.EnsureRegistered(dailyScanEnabled, dailyScanHour, Application.ExecutablePath, dailyScanElevated));
+
             if (startupScanFile is not null)
             {
                 await RunStartupFileScanAsync();
             }
-            else if (autoProcessScanBox.Checked)
+            else if (startupScheduledScan || autoProcessScanBox.Checked)
             {
                 if (startupMinimized || startMinimizedBox.Checked)
                 {
@@ -323,20 +331,20 @@ public sealed partial class MainForm : Form
 
     private void SetScanButtonReadyStyle()
     {
-        scanButton.Text = "Scan Now";
-        scanButton.BackColor = BrandGreen;
-        scanButton.ForeColor = Color.FromArgb(20, 40, 10);
+        scanButton.Text = "Scan now";
+        scanButton.BackColor = ShieldGreen;
+        scanButton.ForeColor = Color.White;
         scanButton.FlatAppearance.BorderSize = 0;
-        scanButton.FlatAppearance.BorderColor = BrandGreenDark;
-        scanButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(116, 192, 34);
-        scanButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(104, 176, 30);
+        scanButton.FlatAppearance.BorderColor = ShieldGreen;
+        scanButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(20, 116, 64);
+        scanButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(17, 98, 54);
         scanButton.FlatStyle = FlatStyle.Flat;
     }
 
     private void SetScanButtonStopStyle()
     {
         // Stopping is not destructive, so it is a quiet outline button rather than red.
-        scanButton.Text = "Stop Scan";
+        scanButton.Text = "Stop scan";
         scanButton.BackColor = activePalette.HeaderButtonBack;
         scanButton.ForeColor = activePalette.Text;
         scanButton.FlatAppearance.BorderSize = 1;
@@ -360,6 +368,13 @@ public sealed partial class MainForm : Form
         statusSubtitle.Text = subtitle;
         statusDot.Tag = actionNeeded ? "action" : scanning ? "scanning" : stopped ? "stopped" : "clean";
         statusDot.Invalidate();
+        if (lastDashboardScanning && !scanning && !stopped)
+        {
+            lastScanFinishedLocal = DateTime.Now;
+        }
+
+        lastDashboardScanning = scanning;
+        lastDashboardSubtitle = subtitle;
         if (actionNeeded)
         {
             trayIcon.Icon = actionTrayIcon;
@@ -380,6 +395,7 @@ public sealed partial class MainForm : Form
             trayIcon.Icon = cleanTrayIcon;
             trayIcon.Text = "HashGuard - Secure";
         }
+            UpdateHomePage();
     }
 
     private void IgnoreSelectedPublisher(ListView sourceView)
@@ -417,8 +433,12 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        // Exact publisher, and a valid signature for every file except the ones you selected:
+        // a lookalike or self-signed "same name" file is not swept up with them.
+        var selectedResults = sourceView.SelectedItems.Cast<ListViewItem>().Select(FindResultForReviewQueueRow).Where(result => result is not null).ToHashSet();
         var matched = results
-            .Where(result => HashGuardLogic.PublisherMatchesForIgnore(result.SignaturePublisher, publisher))
+            .Where(result => HashGuardLogic.PublisherMatchesForIgnore(result.SignaturePublisher, publisher)
+                && (selectedResults.Contains(result) || HashGuardLogic.SignatureChainValid(result.SignatureSummary)))
             .ToList();
         if (matched.Count == 0)
         {
