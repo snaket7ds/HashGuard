@@ -19,13 +19,20 @@ public sealed partial class HomePage : Page
         Loaded += (_, _) =>
         {
             AppServices.Instance.OutcomeChanged += OnOutcomeChanged;
+            AppServices.Instance.Network.Polled += OnNetworkPolled;
             ApplyTone(useTransitions: false);
         };
-        Unloaded += (_, _) => AppServices.Instance.OutcomeChanged -= OnOutcomeChanged;
+        Unloaded += (_, _) =>
+        {
+            AppServices.Instance.OutcomeChanged -= OnOutcomeChanged;
+            AppServices.Instance.Network.Polled -= OnNetworkPolled;
+        };
         ViewModel.Refresh();
     }
 
     private void OnOutcomeChanged() => DispatcherQueue.TryEnqueue(ViewModel.Refresh);
+
+    private void OnNetworkPolled() => DispatcherQueue.TryEnqueue(ViewModel.RefreshFirewall);
 
     private void Quarantine_Click(object sender, RoutedEventArgs e) => App.MainWindow?.ShowPage("Quarantine");
 

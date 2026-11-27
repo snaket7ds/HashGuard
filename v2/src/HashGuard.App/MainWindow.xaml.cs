@@ -202,6 +202,10 @@ public sealed partial class MainWindow : Window
             case "Activity":
                 Navigate(typeof(ActivityPage), null);
                 break;
+            case "Firewall":
+                Navigate(typeof(FirewallPage), pendingFirewallPath);
+                pendingFirewallPath = null;
+                break;
             case not null:
                 Navigate(typeof(PlaceholderPage), tag);
                 break;
@@ -243,6 +247,29 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.ButtonHoverForegroundColor = AppWindow.TitleBar.ButtonForegroundColor;
         AppWindow.TitleBar.ButtonHoverBackgroundColor = dark ? Windows.UI.Color.FromArgb(0x19, 0xFF, 0xFF, 0xFF) : Windows.UI.Color.FromArgb(0x19, 0, 0, 0);
     }
+
+    private string? pendingFirewallPath;
+
+    /// <summary>Shows the window on the Firewall page, with this program selected (from an alert).</summary>
+    public void ShowFirewall(string? path)
+    {
+        ShowFromTray();
+        if (ContentFrame.Content is FirewallPage page)
+        {
+            if (path is not null)
+            {
+                page.SelectWhenListed(path);
+            }
+
+            return;
+        }
+
+        pendingFirewallPath = path;
+        ShowPage("Firewall");
+    }
+
+    /// <summary>True while the Firewall page is on screen, so alerts about what it already shows can be skipped.</summary>
+    public bool FirewallPageVisible => AppWindow.IsVisible && ContentFrame.Content is FirewallPage;
 
     /// <summary>Selects the navigation item with this tag, which opens its page.</summary>
     public void ShowPage(string tag) =>

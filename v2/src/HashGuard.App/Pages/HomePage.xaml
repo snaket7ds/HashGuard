@@ -105,18 +105,19 @@
                                 <FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource NeutralTextBrush}" />
                             </Border>
                             <TextBlock Grid.Column="1" Text="Firewall" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="18" VerticalAlignment="Center" />
-                            <Border Grid.Column="2" Style="{StaticResource ChipStyle}" Background="{ThemeResource GoodTintBrush}" VerticalAlignment="Center">
-                                <TextBlock Text="Monitoring" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" Foreground="{ThemeResource GoodTextBrush}" />
+                            <Border Grid.Column="2" Style="{StaticResource ChipStyle}" Background="{x:Bind local:HomePage.ChipBackground(ViewModel.FwOn), Mode=OneWay}" VerticalAlignment="Center">
+                                <TextBlock Text="{x:Bind ViewModel.FwChip, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                                           Foreground="{x:Bind local:HomePage.ChipForeground(ViewModel.FwOn), Mode=OneWay}" />
                             </Border>
                         </Grid>
                         <Grid RowSpacing="10">
                             <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
                             <TextBlock Text="Apps online" Style="{StaticResource FactLabelStyle}" />
-                            <TextBlock Text="{x:Bind ViewModel.FwOnline}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.FwOnline, Mode=OneWay}" Style="{StaticResource FactValueStyle}" />
                             <TextBlock Grid.Row="1" Text="Blocked" Style="{StaticResource FactLabelStyle}" />
-                            <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.FwBlocked}" Style="{StaticResource FactValueStyle}" />
-                            <TextBlock Grid.Row="2" Text="Alerts" Style="{StaticResource FactLabelStyle}" />
-                            <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.FwAlerts}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.FwBlocked, Mode=OneWay}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Grid.Row="2" Text="Untrusted online" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.FwUntrusted, Mode=OneWay}" Style="{StaticResource FactValueStyle}" />
                         </Grid>
                     </StackPanel>
                 </Border>

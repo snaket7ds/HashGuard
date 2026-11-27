@@ -25,9 +25,30 @@ public sealed partial class HomeViewModel : ObservableObject
     [ObservableProperty] public partial string DecisionCount { get; set; } = "0";
     [ObservableProperty] public partial bool HasDecisions { get; set; }
 
-    public string FwOnline => NotYet;
-    public string FwBlocked => NotYet;
-    public string FwAlerts => NotYet;
+    [ObservableProperty] public partial string FwOnline { get; set; } = NotYet;
+    [ObservableProperty] public partial string FwBlocked { get; set; } = NotYet;
+    [ObservableProperty] public partial string FwUntrusted { get; set; } = NotYet;
+    [ObservableProperty] public partial string FwChip { get; set; } = "";
+    [ObservableProperty] public partial bool FwOn { get; set; }
+
+    /// <summary>The firewall card's numbers, from the network monitor.</summary>
+    public async void RefreshFirewall()
+    {
+        var services = AppServices.Instance;
+        FwOn = services.Settings.NetworkMonitorEnabled;
+        FwChip = FwOn ? "Monitoring" : "Off";
+
+        // Off the UI thread: the first look at a program checks its signature.
+        var (online, blocked, untrusted) = await Task.Run(() =>
+        {
+            var apps = services.Network.Snapshot();
+            return (apps.Count(a => a.Online), apps.Count(a => a.Blocked), apps.Count(a => a.Online && a.Untrusted));
+        });
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        FwOnline = online.ToString(culture);
+        FwBlocked = blocked.ToString(culture);
+        FwUntrusted = untrusted.ToString(culture);
+    }
     [ObservableProperty] public partial string QuarantineCount { get; set; } = "0";
 
     public void Refresh()
@@ -40,7 +61,7 @@ public sealed partial class HomeViewModel : ObservableObject
         var lastScan = services.LastFullScanLocal;
 
         IsScanning = services.Scans.IsBusy;
-        var status = HomeStatusText.Build(IsScanning, threats, decisions.Count - threats, sourcesOn, sourcesTotal, lastScan, DateTime.Now, firewallOn: false);
+        var status = HomeStatusText.Build(IsScanning, threats, decisions.Count - threats, sourcesOn, sourcesTotal, lastScan, DateTime.Now, firewallOn: settings.NetworkMonitorEnabled);
         Tone = status.Tone;
         Title = status.Title;
         Subtitle = status.Subtitle;
@@ -57,5 +78,6 @@ public sealed partial class HomeViewModel : ObservableObject
         DecisionCount = decisions.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
         HasDecisions = decisions.Count > 0;
         QuarantineCount = services.Quarantine.RestorableCount.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        RefreshFirewall();
     }
 }

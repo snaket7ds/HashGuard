@@ -162,6 +162,61 @@
                 </Grid>
             </Border>
 
+            <!-- Firewall -->
+            <TextBlock Text="Firewall" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Watch network connections in the background" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Needed for new-program alerts and automatic blocking. Off: HashGuard watches only while the Firewall page is open." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.NetworkMonitorEnabled, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  AutomationProperties.Name="Watch network connections in the background" />
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Tell me when a program goes online for the first time" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="Programs already online when watching started are recorded quietly." Style="{StaticResource RowHintStyle}" />
+                    </StackPanel>
+                    <ComboBox Grid.Column="1" SelectedIndex="{x:Bind ViewModel.NotifyModeIndex, Mode=TwoWay}" MinWidth="220" VerticalAlignment="Center"
+                              IsEnabled="{x:Bind ViewModel.NetworkMonitorEnabled, Mode=OneWay}" AutomationProperties.Name="New program alerts">
+                        <ComboBoxItem Content="Only programs I don't trust" />
+                        <ComboBoxItem Content="Every new program" />
+                        <ComboBoxItem Content="Never" />
+                    </ComboBox>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource RowStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Block programs flagged as malicious automatically" Style="{StaticResource RowTitleStyle}" />
+                        <TextBlock Text="As soon as a program a scan flagged as malicious connects, HashGuard blocks it in Windows Firewall. A program you unblock stays allowed until the file changes. Needs HashGuard to run as administrator."
+                                   Style="{StaticResource RowHintStyle}" />
+                        <TextBlock Text="Paused: this copy isn't running as administrator." Style="{StaticResource RowHintStyle}" Foreground="{ThemeResource AttentionTextBrush}"
+                                   Visibility="{x:Bind local:SettingsPage.VisibleWhenNot(ViewModel.IsElevated)}" />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.AutoBlockMalicious, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
+                                  IsEnabled="{x:Bind ViewModel.NetworkMonitorEnabled, Mode=OneWay}" AutomationProperties.Name="Block programs flagged as malicious automatically" />
+                </Grid>
+            </Border>
+
             <!-- Trusted publishers -->
             <TextBlock Text="Trusted publishers" Style="{StaticResource SectionHeaderStyle}" AutomationProperties.HeadingLevel="Level2" />
             <Border Style="{StaticResource RowStyle}">
@@ -258,7 +313,7 @@
             <Border Style="{StaticResource RowStyle}">
                 <StackPanel Spacing="6">
                     <TextBlock Style="{StaticResource RowHintStyle}"
-                               Text="Start with Windows, run as administrator, the daily scan, the Explorer right-click menu, scanning files you open, firewall monitoring and auto-block, automatic updates and usage data. Until then, HashGuard 1.x keeps managing them, and their settings are left as they are." />
+                               Text="Start with Windows, run as administrator, the daily scan, the Explorer right-click menu, scanning files you open, automatic updates and usage data. Until then, HashGuard 1.x keeps managing them, and their settings are left as they are." />
                 </StackPanel>
             </Border>
         </StackPanel>

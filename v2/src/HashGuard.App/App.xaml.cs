@@ -79,6 +79,49 @@ public partial class App : Application
 
         // Later launches of HashGuard.exe hand their request to this copy.
         Program.Instance?.Listen(request => window.DispatcherQueue.TryEnqueue(() => Handle(request)));
+
+        // The network monitor: watches in the background when switched on, tells about new programs.
+        var network = Services.AppServices.Instance.Network;
+        network.NewAppsOnline += apps => window.DispatcherQueue.TryEnqueue(() => NotifyNewApps(apps));
+        network.AutoBlocked += app => window.DispatcherQueue.TryEnqueue(() => Notify(
+            "HashGuard blocked a program",
+            $"{app.Name} was blocked in Windows Firewall because security vendors flag it as malicious. Open Firewall to unblock it.",
+            urgent: true));
+        network.Start();
+    }
+
+    private DateTime lastNetworkNoticeUtc = DateTime.MinValue;
+
+    /// <summary>One notice at most every 10 seconds; several new programs are combined.</summary>
+    private void NotifyNewApps(IReadOnlyList<NetworkAppView> apps)
+    {
+        if (window is null || window.FirewallPageVisible || DateTime.UtcNow - lastNetworkNoticeUtc < TimeSpan.FromSeconds(10))
+        {
+            return; // Already watching the list, or a notice was just shown.
+        }
+
+        if (apps.Count == 1)
+        {
+            var app = apps[0];
+            var where = app.Endpoints.Count > 0 ? app.Endpoints[0].Display : "the network";
+            Notify("New program went online", $"{app.Name} connected to {where} for the first time. {app.Verdict.Label} · {app.Signer}. Open Firewall to block it.", app.Untrusted);
+        }
+        else
+        {
+            var names = string.Join(", ", apps.Take(4).Select(a => a.Name)) + (apps.Count > 4 ? $" and {apps.Count - 4} more" : "");
+            Notify($"{apps.Count} programs went online", $"{names} connected for the first time. Open Firewall to review them.", apps.Any(a => a.Untrusted));
+        }
+    }
+
+    private void Notify(string title, string message, bool urgent)
+    {
+        if (tray is null)
+        {
+            return;
+        }
+
+        lastNetworkNoticeUtc = DateTime.UtcNow;
+        tray.ShowNotification(title, message, urgent ? NotificationIcon.Warning : NotificationIcon.Info);
     }
 
     private void Handle(LaunchRequest request)
@@ -139,8 +182,7 @@ public partial class App : Application
             ContextFlyout = menu,
             NoLeftClickDelay = true,
         };
-        tray.LeftClickCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(() => window?.ShowFromTray());
-        tray.ForceCreate();
+        tray.LeftClickCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(() => window?.ShowFromTray());        tray.ForceCreate();
     }
 
     private void ExitApp()

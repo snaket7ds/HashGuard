@@ -27,6 +27,36 @@ public sealed class AppServices
             OutcomeChanged?.Invoke();
         };
         Quarantine.Changed += () => OutcomeChanged?.Invoke();
+        Network = new NetworkMonitor(
+            HashCache,
+            () =>
+            {
+                var s = Settings;
+                return new NetworkMonitorSettings(s.NetworkMonitorEnabled, s.NetworkNotifyMode, s.AutoBlockMalicious, s.AutoBlockExceptions, s.TrustedPublishers);
+            },
+            key => UpdateSettings(s =>
+            {
+                if (!s.AutoBlockExceptions.Contains(key, StringComparer.Ordinal))
+                {
+                    s.AutoBlockExceptions.Add(key);
+                }
+            }),
+            prefix => UpdateSettings(s => s.AutoBlockExceptions.RemoveAll(key => key.StartsWith(prefix, StringComparison.Ordinal))));
+    }
+
+    /// <summary>Which programs connect where, and HashGuard's firewall blocks.</summary>
+    public NetworkMonitor Network { get; }
+
+    /// <summary>Changes settings on a copy and saves it, so readers never see a half-changed object.</summary>
+    public void UpdateSettings(Action<AppSettings> change)
+    {
+        lock (gate)
+        {
+            var copy = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(System.Text.Json.JsonSerializer.Serialize(settings)) ?? new AppSettings();
+            change(copy);
+            SettingsStore.Save(copy, keys);
+            settings = copy;
+        }
     }
 
     public static AppServices Instance { get; private set; } = null!;

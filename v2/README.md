@@ -35,7 +35,7 @@ Not yet verified: clicking the tray icon/menu, running elevated, 125–150% disp
 0. Spike: shell, Home, tray, single-file publish. **Done.**
 1. Core: move the engine into `HashGuard.Core` with tests. **In progress.**
    - Done: v1's 24 UI-free engine files and their 80 tests; `IReputationProvider` (VirusTotal, MetaDefender, Team Cymru) with one `VirusTotalPacer`; `FileAnalyzer` (per-file pipeline), `RiskScorer`, `SignatureReader`; `SettingsStore` + `Dpapi` (v1's settings.json and encrypted keys), `IgnoreList`, `ProcessCollector`, `ScanLog`, `ScanService` (full, monitoring and chosen-file scans); `QuarantineStore` (v1's manifest and folder), `ActivityLogReader` + `ActivityFeed` (the Activity timeline), stopping a running file before quarantine..
-   - Left in v1's `MainForm`: updates, network monitoring service, open/selected-file watching, and first-run setup (install, shortcuts, the Explorer menu registration). Single-instance start-up and the right-click/daily-scan hand-over are done (`SingleInstance`, `LaunchRequest`). 129 tests.
-2. Pages: Scan, Quarantine, Activity and Settings (sources, keys, scanning, trusted publishers, ignored list, theme) done; left: Firewall, system-integration settings (with the upgrade), tray alerts.
+   - Left in v1's `MainForm`: updates, open/selected-file watching, and first-run setup (install, shortcuts, the Explorer menu registration). Single-instance start-up and the right-click/daily-scan hand-over are done (`SingleInstance`, `LaunchRequest`). 129 tests.
+2. Pages: Scan, Quarantine, Activity and Settings (sources, keys, scanning, trusted publishers, ignored list, theme) and Firewall done; left: system-integration settings (with the upgrade), tray alerts.
 3. Upgrade path: read v1's config, hash cache, quarantine manifest and the "HashGuard" firewall rule group; same release signing key and `HashGuard.exe` asset name so v1's updater can install v2.
 4. Beta, then 2.0.

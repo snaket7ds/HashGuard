@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="HashGuard.App.Pages.FirewallPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:HashGuard.App.ViewModels"
+    xmlns:local="using:HashGuard.App.Pages"
+    NavigationCacheMode="Required">
+
+    <Grid x:Name="LayoutRoot" MaxWidth="1200" Padding="32,4,32,24" RowSpacing="12" ColumnSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="DetailColumn" Width="380" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Title, summary, actions -->
+        <Grid Grid.ColumnSpan="2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Firewall" Style="{StaticResource TitleTextBlockStyle}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Summary, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="8,6,0,0" />
+            <DropDownButton Grid.Column="2" AutomationProperties.Name="More firewall actions">
+                <FontIcon Glyph="&#xE712;" FontSize="14" />
+                <DropDownButton.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                        <MenuFlyoutItem Text="Remove all HashGuard rules…" Click="RemoveAll_Click" IsEnabled="{x:Bind ViewModel.IsElevated, Mode=OneWay}">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="Open network log" Click="OpenLog_Click">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A5;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+        </Grid>
+
+        <!-- Notices -->
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Spacing="8">
+            <InfoBar Severity="Warning" IsClosable="False" IsOpen="{x:Bind local:FirewallPage.HasText(ViewModel.FirewallWarning), Mode=OneWay}"
+                     Title="Blocks may not take effect" Message="{x:Bind ViewModel.FirewallWarning, Mode=OneWay}" />
+            <InfoBar Severity="Informational" IsClosable="True" IsOpen="{x:Bind local:FirewallPage.Not(ViewModel.IsElevated), Mode=OneWay}"
+                     Title="Watching only"
+                     Message="Blocking and unblocking change Windows Firewall rules, which needs HashGuard to run as administrator. Automatic blocking of malicious programs is paused too." />
+            <InfoBar Severity="Informational" IsClosable="True" IsOpen="{x:Bind ViewModel.MonitorOff, Mode=OneWay}"
+                     Title="Background watching is off" Message="HashGuard watches connections only while this page is open. Turn it on in Settings to get alerts and automatic blocking." />
+        </StackPanel>
+
+        <!-- Filters -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12">
+            <AutoSuggestBox Width="280" PlaceholderText="Search programs, publishers or hosts" QueryIcon="Find" TextChanged="Search_TextChanged"
+                            AutomationProperties.Name="Search programs" />
+            <CheckBox Content="Hide trusted publishers" IsChecked="{x:Bind ViewModel.HideTrusted, Mode=TwoWay}" />
+            <CheckBox Content="Show idle" IsChecked="{x:Bind ViewModel.ShowIdle, Mode=TwoWay}" />
+        </StackPanel>
+
+        <!-- Program list -->
+        <Grid Grid.Row="3">
+            <Border Style="{StaticResource CardStyle}" VerticalAlignment="Top" Padding="24,20" Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay}">
+                <TextBlock Text="{x:Bind ViewModel.EmptyText, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" />
+            </Border>
+            <ListView ItemsSource="{x:Bind ViewModel.Apps}" SelectedItem="{x:Bind ViewModel.Selected, Mode=TwoWay}" SelectionMode="Single"
+                      Visibility="{x:Bind local:FirewallPage.VisibleWhenNot(ViewModel.IsEmpty), Mode=OneWay}" AutomationProperties.Name="Programs using the network">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,4" />
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FirewallAppViewModel">
+                        <Border Style="{StaticResource CardStyle}" Padding="14,10">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="32" Height="32" CornerRadius="8" VerticalAlignment="Center" Background="{x:Bind local:FirewallPage.ToneTint(Tone), Mode=OneWay}">
+                                    <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="15" Foreground="{x:Bind local:FirewallPage.ToneText(Tone), Mode=OneWay}" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{x:Bind Name, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{x:Bind ConnectedTo, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="1" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <TextBlock Text="{x:Bind Status, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right" />
+                                    <TextBlock Text="{x:Bind Verdict, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" HorizontalAlignment="Right"
+                                               Foreground="{x:Bind local:FirewallPage.ToneText(Tone), Mode=OneWay}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <!-- Details -->
+        <Border x:Name="DetailPane" Grid.Row="2" Grid.RowSpan="2" Grid.Column="1" Style="{StaticResource CardStyle}" Padding="20" VerticalAlignment="Top">
+            <Grid>
+                <TextBlock Text="Select a program to see where it connects, and to block or allow it." Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="WrapWholeWords"
+                           Visibility="{x:Bind local:FirewallPage.VisibleWhenNot(ViewModel.HasSelection), Mode=OneWay}" />
+                <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.HasSelection, Mode=OneWay}">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="{x:Bind ViewModel.Selected.Name, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind ViewModel.Selected.Path, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                    <Grid ColumnSpacing="12" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition /><RowDefinition /><RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="Status" Style="{StaticResource FactLabelStyle}" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.Selected.Status, Mode=OneWay}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="1" Text="Scan result" Style="{StaticResource FactLabelStyle}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.Selected.Verdict, Mode=OneWay}" TextWrapping="Wrap" />
+                        <TextBlock Grid.Row="2" Text="Signed by" Style="{StaticResource FactLabelStyle}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.Selected.Signer, Mode=OneWay}" TextWrapping="Wrap" />
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Block" Click="Block_Click" Style="{StaticResource AccentButtonStyle}"
+                                Visibility="{x:Bind local:FirewallPage.ShowBlock(ViewModel.Selected.Blocked), Mode=OneWay}" />
+                        <Button Content="Unblock" Click="Unblock_Click"
+                                Visibility="{x:Bind local:FirewallPage.ShowUnblock(ViewModel.Selected.Blocked), Mode=OneWay}" />
+                        <Button Content="Scan" Click="Scan_Click" ToolTipService.ToolTip="Check this program with your reputation sources" />
+                        <Button Content="Show file" Click="ShowFile_Click" />
+                    </StackPanel>
+
+                    <TextBlock Text="Connects to (this session)" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" Margin="0,6,0,0" />
+                    <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{x:Bind ViewModel.Selected.Endpoints, Mode=OneWay}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EndpointRow">
+                                    <StackPanel Padding="0,4" Spacing="1">
+                                        <TextBlock Text="{x:Bind Host}" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+                                        <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                            <Run Text="{x:Bind Address}" /><Run Text=" · " /><Run Text="{x:Bind Network}" /><Run Text=" · last seen " /><Run Text="{x:Bind LastSeen}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1100" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="DetailColumn.Width" Value="0" />
+                        <Setter Target="DetailPane.(Grid.Column)" Value="0" />
+                        <Setter Target="DetailPane.(Grid.Row)" Value="4" />
+                        <Setter Target="DetailPane.(Grid.RowSpan)" Value="1" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+    </Grid>
+</Page>

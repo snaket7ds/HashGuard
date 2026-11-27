@@ -24,6 +24,11 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial bool HashCacheEnabled { get; set; }
     [ObservableProperty] public partial bool DeltaScanEnabled { get; set; }
     [ObservableProperty] public partial int ThemeIndex { get; set; }
+    [ObservableProperty] public partial bool NetworkMonitorEnabled { get; set; }
+    [ObservableProperty] public partial int NotifyModeIndex { get; set; }
+    [ObservableProperty] public partial bool AutoBlockMalicious { get; set; }
+
+    public bool IsElevated => AppServices.Instance.Network.IsElevated;
     [ObservableProperty] public partial string VirusTotalKey { get; set; } = "";
     [ObservableProperty] public partial string MetaDefenderKey { get; set; } = "";
     [ObservableProperty] public partial string SavedText { get; set; } = "";
@@ -59,6 +64,14 @@ public sealed partial class SettingsViewModel : ObservableObject
             HashCacheEnabled = s.HashCacheEnabled;
             DeltaScanEnabled = s.DeltaScanEnabled;
             ThemeIndex = ThemeIndexOf(s);
+            NetworkMonitorEnabled = s.NetworkMonitorEnabled;
+            NotifyModeIndex = NetworkNotifyModes.Normalize(s.NetworkNotifyMode) switch
+            {
+                NetworkNotifyModes.NewApps => 1,
+                NetworkNotifyModes.Never => 2,
+                _ => 0,
+            };
+            AutoBlockMalicious = s.AutoBlockMalicious;
             VirusTotalKey = k.VirusTotal;
             MetaDefenderKey = k.MetaDefender;
             Reset(TrustedPublishers, s.TrustedPublishers.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
@@ -81,6 +94,9 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnUploadUnknownChanged(bool value) => Save();
     partial void OnHashCacheEnabledChanged(bool value) => Save();
     partial void OnDeltaScanEnabledChanged(bool value) => Save();
+    partial void OnNetworkMonitorEnabledChanged(bool value) => Save();
+    partial void OnNotifyModeIndexChanged(int value) => Save();
+    partial void OnAutoBlockMaliciousChanged(bool value) => Save();
 
     partial void OnThemeIndexChanged(int value)
     {
@@ -114,6 +130,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.UseSystemDefaultColors = ThemeIndex == 0;
         settings.ColorMode = ThemeName(ThemeIndex);
         settings.TrustedPublishers = [.. TrustedPublishers];
+        settings.NetworkMonitorEnabled = NetworkMonitorEnabled;
+        settings.NetworkNotifyMode = NotifyModeIndex switch
+        {
+            1 => NetworkNotifyModes.NewApps,
+            2 => NetworkNotifyModes.Never,
+            _ => NetworkNotifyModes.Untrusted,
+        };
+        settings.AutoBlockMalicious = AutoBlockMalicious;
         try
         {
             services.Save(settings, new ApiKeys(VirusTotalKey.Trim(), MetaDefenderKey.Trim()));
