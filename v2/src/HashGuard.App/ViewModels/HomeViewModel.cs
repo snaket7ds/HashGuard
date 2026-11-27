@@ -1,76 +1,60 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
+using HashGuard.App.Services;
 using HashGuard.Core;
 
 namespace HashGuard.App.ViewModels;
 
 /// <summary>
-/// Home page state. In the spike the numbers are sample data; phase 1 wires them to HashGuard.Core.
+/// Home: one verdict for the PC, from the last scan and the user's settings. The firewall card
+/// shows dashes until the network monitor moves to v2.
 /// </summary>
 public sealed partial class HomeViewModel : ObservableObject
 {
-    private int threats;
-    private int needsDecision;
-    private DateTime? lastScan = DateTime.Now.AddHours(-2);
-
-    public HomeViewModel()
-    {
-        Refresh();
-    }
+    private const string NotYet = "—";
 
     [ObservableProperty] public partial HomeTone Tone { get; set; }
     [ObservableProperty] public partial string Title { get; set; } = "";
     [ObservableProperty] public partial string Subtitle { get; set; } = "";
     [ObservableProperty] public partial string LastScanChip { get; set; } = "";
     [ObservableProperty] public partial string SourcesChip { get; set; } = "";
+    [ObservableProperty] public partial bool SourcesAllOn { get; set; }
     [ObservableProperty] public partial bool IsScanning { get; set; }
-
     [ObservableProperty] public partial string AvLastScan { get; set; } = "";
-    public string AvOpenFiles => "On";
-    public string AvSources => "VirusTotal · MetaDefender · Team Cymru";
-
-    public string FwOnline => "14 apps";
-    public string FwBlocked => "2 apps";
-    public string FwAlerts => "Untrusted apps";
-
+    [ObservableProperty] public partial string AvOpenFiles { get; set; } = "";
+    [ObservableProperty] public partial string AvSources { get; set; } = "";
     [ObservableProperty] public partial string DecisionCount { get; set; } = "0";
-    public string QuarantineCount => "1";
+    [ObservableProperty] public partial bool HasDecisions { get; set; }
 
-    /// <summary>Spike-only: lets the preview switch between the hero's states.</summary>
-    public string[] PreviewStates { get; } = ["Protected", "Needs a decision", "Threat found", "Not scanned yet"];
+    public string FwOnline => NotYet;
+    public string FwBlocked => NotYet;
+    public string FwAlerts => NotYet;
+    public string QuarantineCount => NotYet;
 
-    public void ApplyPreviewState(int index)
+    public void Refresh()
     {
-        (threats, needsDecision, lastScan) = index switch
-        {
-            1 => (0, 3, DateTime.Now.AddHours(-2)),
-            2 => (1, 0, DateTime.Now.AddMinutes(-5)),
-            3 => (0, 0, (DateTime?)null),
-            _ => (0, 0, DateTime.Now.AddHours(-2)),
-        };
-        Refresh();
-    }
+        var services = AppServices.Instance;
+        var settings = services.Settings;
+        var (sourcesOn, sourcesTotal) = services.SourcesOnline();
+        var decisions = services.LastOutcome?.NeedsDecision.Where(ScanRules.NeedsAction).ToList() ?? [];
+        var threats = decisions.Count(r => r.IsAlert);
+        var lastScan = services.LastFullScanLocal;
 
-    [RelayCommand(AllowConcurrentExecutions = false)]
-    private async Task ScanAsync()
-    {
-        IsScanning = true;
-        Refresh();
-        await Task.Delay(2500); // Sample scan; the real one comes from HashGuard.Core in phase 1.
-        lastScan = DateTime.Now;
-        IsScanning = false;
-        Refresh();
-    }
-
-    private void Refresh()
-    {
-        var status = HomeStatusText.Build(IsScanning, threats, needsDecision, sourcesOn: 3, sourcesTotal: 3, lastScan, DateTime.Now, firewallOn: true);
+        IsScanning = services.Scans.IsBusy;
+        var status = HomeStatusText.Build(IsScanning, threats, decisions.Count - threats, sourcesOn, sourcesTotal, lastScan, DateTime.Now, firewallOn: false);
         Tone = status.Tone;
         Title = status.Title;
         Subtitle = status.Subtitle;
         LastScanChip = status.LastScanChip;
         SourcesChip = status.SourcesChip;
+        SourcesAllOn = sourcesOn == sourcesTotal;
         AvLastScan = HomeStatusText.FormatLastScan(lastScan, DateTime.Now).Replace("Last scan ", "", StringComparison.Ordinal);
-        DecisionCount = (threats + needsDecision).ToString(System.Globalization.CultureInfo.CurrentCulture);
+        AvOpenFiles = settings.ScanAllFiles ? "On (not in v2 yet)" : "Off";
+        var names = new List<string>();
+        if (settings.VirusTotalEnabled && services.Keys.VirusTotal.Length > 0) names.Add("VirusTotal");
+        if (settings.MetaDefenderEnabled && services.Keys.MetaDefender.Length > 0) names.Add("MetaDefender");
+        if (settings.MhrEnabled) names.Add("Team Cymru");
+        AvSources = names.Count == 0 ? "None" : string.Join(" · ", names);
+        DecisionCount = decisions.Count.ToString(System.Globalization.CultureInfo.CurrentCulture);
+        HasDecisions = decisions.Count > 0;
     }
 }

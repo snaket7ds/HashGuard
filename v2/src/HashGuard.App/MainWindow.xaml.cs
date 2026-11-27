@@ -71,19 +71,45 @@ public sealed partial class MainWindow : Window
         }
 
         var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
-        if (tag == "Home")
+        switch (tag)
         {
-            Navigate(typeof(HomePage), null);
+            case "Home":
+                Navigate(typeof(HomePage), null);
+                break;
+            case "Scan":
+                Navigate(typeof(ScanPage), pendingScanParameter);
+                pendingScanParameter = null;
+                break;
+            case not null:
+                Navigate(typeof(PlaceholderPage), tag);
+                break;
         }
-        else if (tag is not null)
+    }
+
+    private object? pendingScanParameter;
+
+    /// <summary>Opens the Scan page; with <paramref name="startScan"/>, starts a full scan there.</summary>
+    public void ShowScanPage(bool startScan)
+    {
+        var scanItem = Nav.MenuItems.OfType<NavigationViewItem>().First(i => (string)i.Tag == "Scan");
+        if (ReferenceEquals(Nav.SelectedItem, scanItem))
         {
-            Navigate(typeof(PlaceholderPage), tag);
+            ContentFrame.Navigate(typeof(ScanPage), startScan ? "start" : null, new SuppressNavigationTransitionInfo());
+            return;
         }
+
+        pendingScanParameter = startScan ? "start" : null;
+        Nav.SelectedItem = scanItem;
     }
 
     private void Navigate(Type page, object? parameter)
     {
-        if (ContentFrame.CurrentSourcePageType == page && Equals(parameter, (ContentFrame.Content as Page)?.Tag))
+        if (ContentFrame.CurrentSourcePageType == page && parameter is null && page != typeof(PlaceholderPage))
+        {
+            return;
+        }
+
+        if (ContentFrame.CurrentSourcePageType == page && page == typeof(PlaceholderPage) && Equals(parameter, (ContentFrame.Content as Page)?.Tag))
         {
             return;
         }

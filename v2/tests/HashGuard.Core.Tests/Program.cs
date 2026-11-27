@@ -282,27 +282,6 @@ var tests = new (string Name, Action Test)[]
             || config.EndsWith("/config", StringComparison.OrdinalIgnoreCase)
             || config.EndsWith("\\config", StringComparison.OrdinalIgnoreCase));
     }),
-    ("legacy LocalAppData bug folder is merged then removed", () =>
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            return;
-        }
-
-        var legacyRoot = Path.Combine(localAppData, "HashGuard");
-        var legacyConfig = Path.Combine(legacyRoot, "config");
-        Directory.CreateDirectory(legacyConfig);
-        var uniqueName = $"migrate-test-{Guid.NewGuid():N}.json";
-        var marker = Path.Combine(legacyConfig, uniqueName);
-        File.WriteAllText(marker, """{"ok":true}""");
-
-        var primary = AppPaths.GetConfigDirectory(); // merges + deletes leftover LocalAppData\HashGuard
-        var migrated = Path.Combine(primary, uniqueName);
-        AssertTrue(File.Exists(migrated));
-        AssertFalse(Directory.Exists(legacyRoot));
-        try { File.Delete(migrated); } catch { /* cleanup */ }
-    }),
     ("hash cache reusable clean entry respects age", () =>
     {
         var fresh = new CacheEntry

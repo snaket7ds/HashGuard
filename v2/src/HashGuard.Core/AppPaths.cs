@@ -42,7 +42,6 @@ public static class AppPaths
             return Path.Combine(GetConfigRoot(), ConfigFolderName);
         }
 
-        EnsureLegacyLocalAppDataMigration();
         return Path.Combine(AppContext.BaseDirectory, ConfigFolderName);
     }
 
@@ -153,85 +152,4 @@ public static class AppPaths
         }
     }
 
-    /// <summary>
-    /// v1.0.51 incorrectly stored data under %LocalAppData%\HashGuard\.
-    /// Merge any useful files into the app-local config/logs, then delete that
-    /// leftover LocalAppData tree so the bug does not leave orphaned files behind.
-    /// </summary>
-    private static void EnsureLegacyLocalAppDataMigration()
-    {
-        try
-        {
-            var legacyRoot = GetLegacyLocalAppDataRoot();
-            if (string.IsNullOrWhiteSpace(legacyRoot) || !Directory.Exists(legacyRoot))
-            {
-                return;
-            }
-
-            var primaryConfig = Path.Combine(AppContext.BaseDirectory, ConfigFolderName);
-            var primaryLogs = Path.Combine(AppContext.BaseDirectory, "logs");
-            var legacyConfig = Path.Combine(legacyRoot, ConfigFolderName);
-            var legacyLogs = Path.Combine(legacyRoot, "logs");
-
-            if (Directory.Exists(legacyConfig))
-            {
-                MergeDirectory(legacyConfig, primaryConfig);
-            }
-
-            if (Directory.Exists(legacyLogs))
-            {
-                MergeDirectory(legacyLogs, primaryLogs);
-            }
-
-            // Remove the entire mistaken LocalAppData\HashGuard tree after merge.
-            // Retries on later launches if a file was locked the first time.
-            TryDeleteDirectory(legacyRoot);
-        }
-        catch
-        {
-            // Migration/cleanup is best-effort; never block startup.
-        }
-    }
-
-    private static string? GetLegacyLocalAppDataRoot()
-    {
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(localAppData))
-        {
-            return null;
-        }
-
-        return Path.Combine(localAppData, "HashGuard");
-    }
-
-    private static void MergeDirectory(string sourceDir, string destDir)
-    {
-        Directory.CreateDirectory(destDir);
-        foreach (var file in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
-        {
-            var relative = Path.GetRelativePath(sourceDir, file);
-            var dest = Path.Combine(destDir, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-            // Prefer existing app-local files (true pre-1.0.51 data). Only fill gaps from the bug path.
-            if (!File.Exists(dest) || new FileInfo(dest).Length == 0)
-            {
-                File.Copy(file, dest, overwrite: true);
-            }
-        }
-    }
-
-    private static void TryDeleteDirectory(string path)
-    {
-        try
-        {
-            if (Directory.Exists(path))
-            {
-                Directory.Delete(path, recursive: true);
-            }
-        }
-        catch
-        {
-            // Files may be locked; leftover cleanup can retry on next launch.
-        }
-    }
 }
