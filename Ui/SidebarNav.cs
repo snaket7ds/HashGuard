@@ -32,13 +32,14 @@ internal sealed class SidebarNav : Panel
         Padding = new Padding(14, 22, 14, 16);
         Tag = "sidebar";
         DoubleBuffered = true;
+        ResizeRedraw = true;
 
         var brand = new Label
         {
             Dock = DockStyle.Top,
             Height = 52,
             Text = "HashGuard",
-            Font = new Font("Segoe UI Semibold", 13, FontStyle.Regular),
+            Font = UiFonts.Create("Segoe UI Semibold", 13, FontStyle.Regular),
             TextAlign = ContentAlignment.MiddleLeft,
             Padding = new Padding(42, 0, 0, 8),
             Tag = "sidebar-brand",
@@ -84,6 +85,15 @@ internal sealed class SidebarNav : Panel
     public Color BadgeText { get; set; } = Color.White;
     public Color NeutralBadgeBack { get; set; } = Color.FromArgb(232, 234, 238);
     public Color NeutralBadgeText { get; set; } = Color.FromArgb(75, 83, 97);
+    /// <summary>The 1px line between the sidebar and the page (design: #E6E8EC).</summary>
+    public Color DividerColor { get; set; } = Color.FromArgb(230, 232, 236);
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        using var pen = new Pen(DividerColor);
+        e.Graphics.DrawLine(pen, Width - 1, 0, Width - 1, Height);
+    }
 
     public void SetActive(AppPage page)
     {
@@ -299,11 +309,11 @@ internal sealed class SidebarNav : Panel
             }
             else
             {
-                using var glyphFont = new Font("Segoe MDL2 Assets", 11.5f, FontStyle.Regular);
+                using var glyphFont = UiFonts.Create("Segoe MDL2 Assets", 11.5f, FontStyle.Regular);
                 TextRenderer.DrawText(g, glyph, glyphFont, new Rectangle(12, 0, 24, Height), color,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
             }
-            using var textFont = new Font(IsActive ? "Segoe UI Semibold" : "Segoe UI", 10.5f, FontStyle.Regular);
+            using var textFont = UiFonts.Create(IsActive ? "Segoe UI Semibold" : "Segoe UI", 10.5f, FontStyle.Regular);
             var badgeWidth = 0;
             if (!string.IsNullOrEmpty(Badge))
             {
@@ -311,7 +321,7 @@ internal sealed class SidebarNav : Panel
                 badgeWidth = Math.Max(22, size.Width + 14);
                 var badgeRect = new RectangleF(Width - badgeWidth - 10, (Height - 20) / 2f, badgeWidth, 20);
                 RoundedPaint.FillRounded(g, badgeRect, 10, BadgeAlert ? owner.BadgeBack : owner.NeutralBadgeBack);
-                using var badgeFont = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+                using var badgeFont = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
                 TextRenderer.DrawText(g, Badge, badgeFont, Rectangle.Round(badgeRect), BadgeAlert ? owner.BadgeText : owner.NeutralBadgeText,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
             }

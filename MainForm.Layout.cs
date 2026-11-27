@@ -33,9 +33,9 @@ public sealed partial class MainForm : Form
     private void UpdateReviewCount(int needsReview)
     {
         reviewCountLabel.Text = needsReview.ToString("N0");
-        // Solid red with white text when something waits, as designed.
-        reviewCountLabel.PillColor = needsReview > 0 ? Color.FromArgb(180, 35, 24) : activePalette.PillBack;
-        reviewCountLabel.ForeColor = needsReview > 0 ? Color.White : activePalette.MutedText;
+        // As designed: solid red with white text when something waits, soft green "0" when nothing does.
+        reviewCountLabel.PillColor = needsReview > 0 ? Color.FromArgb(180, 35, 24) : activePalette.AccentTint;
+        reviewCountLabel.ForeColor = needsReview > 0 ? Color.White : activePalette.AccentText;
         reviewCountLabel.Invalidate();
         RefreshReviewList();
     }
@@ -107,7 +107,7 @@ public sealed partial class MainForm : Form
         view.GridLines = false;
         view.HideSelection = false;
         view.BorderStyle = view.Name == MainResultsViewName ? BorderStyle.None : BorderStyle.FixedSingle;
-        view.Font = new Font("Segoe UI", 9, FontStyle.Regular);
+        view.Font = UiFonts.Create("Segoe UI", 9, FontStyle.Regular);
     }
 
     private static void PaintStatusBadge(Graphics graphics, Rectangle bounds, string state, ThemePalette palette)

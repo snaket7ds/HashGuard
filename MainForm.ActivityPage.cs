@@ -11,7 +11,12 @@ namespace HashGuardScanner;
 /// </summary>
 public sealed partial class MainForm : Form
 {
-    private sealed record ActivityEntry(DateTime? When, ActivityKind Kind, string Title, string Detail, string Pill, ActivityLogRow? Row, string Path);
+    /// <param name="Folded">A clean file check counted in a <paramref name="Summary"/> row: shown under Clean and in search, not under All.</param>
+    /// <param name="Summary">One row for a batch of file checks ("175 files checked"), shown under All.</param>
+    private sealed record ActivityEntry(DateTime? When, ActivityKind Kind, string Title, string Detail, string Pill, ActivityLogRow? Row, string Path, bool Folded = false, bool Summary = false);
+
+    /// <summary>File checks less than this far apart belong to one batch (a scan, or a burst of opened files).</summary>
+    private static readonly TimeSpan ActivityBatchGap = TimeSpan.FromMinutes(3);
 
     /// <summary>Export report and Open logs, at the right of the Activity title as designed.</summary>
     private Control? activityHeaderTools;
@@ -29,15 +34,15 @@ public sealed partial class MainForm : Form
         var chipClean = new ChipButton("Clean");
         var chipErrors = new ChipButton("Errors");
         var chips = new[] { (chipAll, ActivityFilter.All), (chipAction, ActivityFilter.ActionNeeded), (chipUnknown, ActivityFilter.Unknown), (chipClean, ActivityFilter.Clean), (chipErrors, ActivityFilter.Errors) };
-        var search = new TextBox { PlaceholderText = "Search files, apps or hashes", AccessibleName = "Search activity", Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var search = new TextBox { PlaceholderText = "Search files, apps or hashes", AccessibleName = "Search activity", Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular) };
         var searchBox = new SearchField(search) { Size = new Size(280, 38), Margin = new Padding(0, 3, 0, 0), Anchor = AnchorStyles.Top | AnchorStyles.Right };
         var export = new Button { Text = "Export report", Size = new Size(132, 40), Margin = new Padding(0) };
-        var openLogs = new LinkLabel { Text = "Open logs", AutoSize = true, Margin = new Padding(0, 12, 16, 0), Tag = "accent-link" };
+        var openLogs = new Button { Text = "Open logs", Size = new Size(108, 40), Margin = new Padding(0, 0, 10, 0) };
         var headerTools = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(16, 2, 0, 0), BackColor = SoftAppBack };
         headerTools.Controls.AddRange([openLogs, export]);
         activityHeaderTools = headerTools;
         export.Click += (_, _) => ExportScanReport();
-        openLogs.LinkClicked += (_, _) => OpenLogFolder();
+        openLogs.Click += (_, _) => OpenLogFolder();
 
         var bar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 52, ColumnCount = 2, RowCount = 1, Margin = new Padding(0), BackColor = SoftAppBack };
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -94,12 +99,13 @@ public sealed partial class MainForm : Form
             return true;
         }
 
-        bool Matches(ActivityEntry entry, ActivityFilter which) => which switch
+        // All shows batches as one summary row; Clean lists every clean file; a search looks at every file.
+        bool Matches(ActivityEntry entry, ActivityFilter which, bool searching = false) => which switch
         {
-            ActivityFilter.All => true,
+            ActivityFilter.All => searching ? !entry.Summary : !entry.Folded,
             ActivityFilter.ActionNeeded => entry.Kind is ActivityKind.Threat or ActivityKind.Suspicious or ActivityKind.Unknown or ActivityKind.Error,
             ActivityFilter.Unknown => entry.Kind == ActivityKind.Unknown,
-            ActivityFilter.Clean => entry.Kind == ActivityKind.Clean,
+            ActivityFilter.Clean => entry.Kind == ActivityKind.Clean && !entry.Summary,
             ActivityFilter.Errors => entry.Kind == ActivityKind.Error,
             _ => true,
         };
@@ -113,7 +119,7 @@ public sealed partial class MainForm : Form
 
             var query = search.Text.Trim();
             var shown = entries
-                .Where(entry => Matches(entry, filter))
+                .Where(entry => Matches(entry, filter, searching: query.Length > 0))
                 .Where(entry => query.Length == 0
                     || entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
                     || entry.Detail.Contains(query, StringComparison.OrdinalIgnoreCase)
@@ -286,13 +292,56 @@ public sealed partial class MainForm : Form
     private static IEnumerable<ActivityEntry> BuildActivityEntries(List<ActivityLogRow> rows, List<string> networkLines, List<QuarantineEntry> quarantine)
     {
         var all = new List<ActivityEntry>();
+        var checks = new List<ActivityEntry>();
         foreach (var row in rows)
         {
             var name = ActivityText.DisplayName(row.ProcessNames, row.Path);
             var description = ActivityText.Describe(row.Status, row.Malicious, row.Suspicious, IsHandledActivityRow(row), name);
-            var trust = string.IsNullOrWhiteSpace(row.Trust) ? "" : row.Trust + " · ";
-            all.Add(new ActivityEntry(ActivityText.ParseTimestamp(row.Timestamp), description.Kind, description.Title, trust + row.Path, description.Pill, row, row.Path));
+            var path = ActivityText.FriendlyPath(row.Path);
+            var detail = string.Join(" · ", new[] { ActivityText.FriendlyTrust(row.Trust), path }.Where(part => !string.IsNullOrWhiteSpace(part)));
+            checks.Add(new ActivityEntry(ActivityText.ParseTimestamp(row.Timestamp), description.Kind, description.Title, detail, description.Pill, row, row.Path));
         }
+
+        // Batches of file checks (a scan, or files opened in a burst) become one summary row, as in
+        // the design's "Scan finished · 184 checked · 182 clean · 1 unknown". Their clean files are
+        // folded into it; anything unknown, flagged or failed keeps its own row.
+        var timed = checks.Where(entry => entry.When is not null).OrderBy(entry => entry.When).ToList();
+        all.AddRange(checks.Where(entry => entry.When is null));
+        var batch = new List<ActivityEntry>();
+        void FlushBatch()
+        {
+            var clean = batch.Count(entry => entry.Kind == ActivityKind.Clean);
+            if (batch.Count >= 2 && clean > 0)
+            {
+                var flagged = batch.Count(entry => entry.Kind is ActivityKind.Threat or ActivityKind.Suspicious);
+                var unknown = batch.Count(entry => entry.Kind == ActivityKind.Unknown);
+                var errors = batch.Count(entry => entry.Kind == ActivityKind.Error);
+                var title = $"{batch.Count.ToString("N0", CultureInfo.CurrentCulture)} files checked";
+                var when = batch[^1].When;
+                var started = batch[0].When;
+                var span = started is { } s && when is { } w && w - s >= TimeSpan.FromMinutes(1) ? $" · {s:HH:mm}–{w:HH:mm}" : "";
+                all.Add(new ActivityEntry(when, ActivityKind.Clean, title, ActivityText.BatchSummary(clean, unknown, flagged, errors) + span, "Scan", null, "", Summary: true));
+                all.AddRange(batch.Select(entry => entry.Kind == ActivityKind.Clean ? entry with { Folded = true } : entry));
+            }
+            else
+            {
+                all.AddRange(batch);
+            }
+
+            batch.Clear();
+        }
+
+        foreach (var entry in timed)
+        {
+            if (batch.Count > 0 && entry.When - batch[^1].When > ActivityBatchGap)
+            {
+                FlushBatch();
+            }
+
+            batch.Add(entry);
+        }
+
+        FlushBatch();
 
         foreach (var line in networkLines)
         {
@@ -362,7 +411,7 @@ public sealed partial class MainForm : Form
             ShowInTaskbar = false,
             MinimizeBox = false,
         };
-        var text = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, Font = new Font("Segoe UI", 10, FontStyle.Regular), Text = string.Join(Environment.NewLine, lines) };
+        var text = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular), Text = string.Join(Environment.NewLine, lines) };
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 52, Padding = new Padding(12, 10, 12, 8), WrapContents = false };
         var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.OK };
         buttons.Controls.Add(close);

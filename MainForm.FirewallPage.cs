@@ -32,9 +32,9 @@ public sealed partial class MainForm : Form
         var page = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
 
         // Stat cards + mode switch.
-        var statOnline = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 38, Font = new Font("Segoe UI Semibold", 18, FontStyle.Regular), UseMnemonic = false };
-        var statBlocked = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 38, Font = new Font("Segoe UI Semibold", 18, FontStyle.Regular), UseMnemonic = false };
-        var statLook = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 38, Font = new Font("Segoe UI Semibold", 18, FontStyle.Regular), UseMnemonic = false };
+        var statOnline = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 38, Font = UiFonts.Create("Segoe UI Semibold", 18, FontStyle.Regular), UseMnemonic = false };
+        var statBlocked = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 38, Font = UiFonts.Create("Segoe UI Semibold", 18, FontStyle.Regular), UseMnemonic = false };
+        var statLook = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 38, Font = UiFonts.Create("Segoe UI Semibold", 18, FontStyle.Regular), UseMnemonic = false };
         CardPanel StatCard(string caption, Label value)
         {
             var card = new CardPanel { Dock = DockStyle.Fill, Radius = 16, Padding = new Padding(20, 12, 20, 10) };
@@ -97,7 +97,8 @@ public sealed partial class MainForm : Form
         };
 
         // App list card.
-        var search = new TextBox { BorderStyle = BorderStyle.None, PlaceholderText = "Search apps, publishers or hosts", AccessibleName = "Search apps", Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        // Short enough to show whole beside all four chips (publishers are searched too).
+        var search = new TextBox { BorderStyle = BorderStyle.None, PlaceholderText = "Search apps or hosts", AccessibleName = "Search apps, publishers or hosts", Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular) };
         var searchBox = new SearchField(search) { Size = new Size(240, 38), Margin = new Padding(0, 0, 10, 0) };
         var chipAll = new ChipButton("All");
         var chipOnline = new ChipButton("Online");
@@ -121,18 +122,52 @@ public sealed partial class MainForm : Form
 
         listBar.Resize += (_, _) => FitSearch();
 
-        var list = new CardList { Dock = DockStyle.Fill, AccessibleName = "Apps using the network", EmptyText = "Watching for connections…" };
+        // Rows as designed: avatar + name over publisher, the verdict label, the host, then the switch.
+        var list = new CardList
+        {
+            Dock = DockStyle.Fill,
+            AccessibleName = "Apps using the network",
+            EmptyText = "Watching for connections…",
+            Columns =
+            [
+                new CardColumn("App", CardColumnKind.Main, Width: 250),
+                new CardColumn("Verdict", CardColumnKind.Pill, Width: 112),
+                new CardColumn("Host", CardColumnKind.Text, Weight: 1),
+            ],
+        };
         var listCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10), Margin = new Padding(0, 0, 9, 0) };
         listCard.Controls.Add(list);
         listCard.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, Tag = "hairline" });
         listCard.Controls.Add(listBar);
 
         // Detail card for the selected app.
-        var detailName = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = new Font("Segoe UI Semibold", 13, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
-        var detailPill = new PillLabel { AutoSize = false, Height = 24, Width = 120, Radius = 12, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular) };
-        var detailPillRow = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = Color.Transparent };
-        detailPillRow.Controls.Add(detailPill);
-        var detailPath = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 40, Tag = "muted", UseMnemonic = false };
+        // Header as designed: a 48px letter tile, then the name over the verdict pill.
+        var detailAvatar = new LetterTile { Location = new Point(0, 2) };
+        var detailName = new Label { AutoSize = false, Location = new Point(60, 0), Size = new Size(230, 28), Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Right, Font = UiFonts.Create("Segoe UI Semibold", 13, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
+        var detailPill = new PillLabel { AutoSize = false, Location = new Point(60, 29), Height = 24, Width = 120, Radius = 12, TextAlign = ContentAlignment.MiddleCenter, Font = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular) };
+        var detailHead = new Panel { Dock = DockStyle.Top, Height = 64, BackColor = Color.Transparent };
+        detailHead.Controls.AddRange([detailAvatar, detailName, detailPill]);
+        detailHead.Resize += (_, _) => detailName.Width = Math.Max(40, detailHead.Width - 60);
+        // The whole path, wrapped at any character (paths have no spaces to break at).
+        var detailPath = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 40, Tag = "muted", UseMnemonic = false, Padding = new Padding(0, 0, 0, 6) };
+        var detailPathFull = "";
+        void WrapDetailPath()
+        {
+            var wrapped = TextWrap.Anywhere(detailPathFull, detailPath.Font, detailPath.ClientSize.Width - 2);
+            detailPath.Text = wrapped;
+            detailPath.Height = TextRenderer.MeasureText(wrapped.Length == 0 ? " " : wrapped, detailPath.Font).Height + 8;
+        }
+
+        var lastPathWidth = 0;
+        detailPath.SizeChanged += (_, _) =>
+        {
+            // Re-wrap only when the width changes (setting the height raises this event too).
+            if (detailPath.ClientSize.Width != lastPathWidth)
+            {
+                lastPathWidth = detailPath.ClientSize.Width;
+                WrapDetailPath();
+            }
+        };
         // Facts as a two-column list (muted names, values on the right), as designed.
         var detailFacts = new TableLayoutPanel { Dock = DockStyle.Top, Height = 112, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0, 4, 0, 4) };
         detailFacts.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 98));
@@ -142,12 +177,16 @@ public sealed partial class MainForm : Form
         for (var row = 0; row < 4; row++)
         {
             detailFacts.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
-            detailFacts.Controls.Add(new Label { Text = factNames[row], AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted", UseMnemonic = false }, 0, row);
-            factValues[row] = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular), UseMnemonic = false };
+            // Margin 0 so the names line up with "TALKS TO" and the path above.
+            detailFacts.Controls.Add(new Label { Text = factNames[row], AutoSize = false, Dock = DockStyle.Fill, Margin = new Padding(0), TextAlign = ContentAlignment.MiddleLeft, Tag = "muted", UseMnemonic = false }, 0, row);
+            factValues[row] = new Label { AutoSize = false, Dock = DockStyle.Fill, Margin = new Padding(0), TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Font = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular), UseMnemonic = false };
             detailFacts.Controls.Add(factValues[row], 1, row);
         }
-        var talksTitle = new Label { Text = "TALKS TO", AutoSize = false, Dock = DockStyle.Top, Height = 24, Tag = "muted", Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular), UseMnemonic = false };
-        var talks = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 96, UseMnemonic = false };
+        var talksTitle = new Label { Text = "TALKS TO", AutoSize = false, Dock = DockStyle.Top, Height = 30, Padding = new Padding(0, 8, 0, 0), Tag = "muted", Font = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular), UseMnemonic = false };
+        // One row per host: the host, and an "Internet" / "LAN" badge at the right, as designed.
+        var talks = new TableLayoutPanel { Dock = DockStyle.Top, Height = 0, ColumnCount = 2, BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0) };
+        talks.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        talks.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var primary = new Button { Text = "Block this app", Dock = DockStyle.Top, Height = 42, Tag = "danger-solid" };
         var secondary = new TableLayoutPanel { Dock = DockStyle.Top, Height = 46, ColumnCount = 2, RowCount = 1, Padding = new Padding(0, 6, 0, 0), BackColor = Color.Transparent };
         secondary.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
@@ -156,11 +195,11 @@ public sealed partial class MainForm : Form
         var showFile = new Button { Text = "Show file", Dock = DockStyle.Fill, Margin = new Padding(4, 0, 0, 0) };
         secondary.Controls.Add(scan, 0, 0);
         secondary.Controls.Add(showFile, 1, 0);
-        var connections = new LinkLabel { Text = "All connections this session…", AutoSize = true, Dock = DockStyle.Top, Padding = new Padding(0, 8, 0, 0), Tag = "accent-link" };
+        // Every connection of an app is one double-click on its row away (not a link here, as designed).
         var detailCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(22, 18, 22, 16), Margin = new Padding(9, 0, 0, 0) };
         var detailEmpty = new Label { Text = "Select an app to see where it connects and to block or allow it.", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Tag = "muted", UseMnemonic = false };
         var detailBody = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
-        foreach (var control in new Control[] { connections, secondary, primary, new Panel { Dock = DockStyle.Top, Height = 10, BackColor = Color.Transparent }, talks, talksTitle, detailFacts, detailPath, detailPillRow, detailName })
+        foreach (var control in new Control[] { secondary, primary, new Panel { Dock = DockStyle.Top, Height = 12, BackColor = Color.Transparent }, talks, talksTitle, detailFacts, detailPath, detailHead })
         {
             detailBody.Controls.Add(control);
         }
@@ -182,13 +221,11 @@ public sealed partial class MainForm : Form
 
         string? SelectedPath() => list.SelectedItem?.Tag as string;
 
-        CardTone ToneFor(NetworkAppAssessment assessment, bool blocked) => assessment.Verdict.Kind switch
+        // Letter tiles follow the verdict, as designed: clean apps blue, not scanned amber, malicious red, Windows grey.
+        static CardTone AvatarToneFor(NetworkAppAssessment assessment) => PillToneFor(assessment) switch
         {
-            NetworkVerdictKind.Malicious => CardTone.Bad,
-            NetworkVerdictKind.Suspicious => CardTone.Warn,
-            _ when assessment.Untrusted => CardTone.Warn,
-            _ when assessment.Verdict.Label == "Windows" => CardTone.Neutral,
-            _ => blocked ? CardTone.Neutral : CardTone.Good,
+            CardTone.Good => CardTone.Blue,
+            var tone => tone,
         };
 
         // The verdict pill keeps its own colour: Clean is green even when the publisher isn't verified.
@@ -225,6 +262,15 @@ public sealed partial class MainForm : Form
             NetworkAppActivity? app = null;
             networkTracker?.TryGetApp(path, out app);
             detailName.Text = NetworkActivityTracker.DisplayName(path);
+            detailAvatar.Text = detailName.Text.Length > 0 ? detailName.Text[..1].ToUpperInvariant() : "?";
+            (detailAvatar.TintColor, detailAvatar.InkColor) = AvatarToneFor(assessment) switch
+            {
+                CardTone.Bad => (activePalette.DangerTint, activePalette.DangerText),
+                CardTone.Warn => (activePalette.AttentionTint, activePalette.AttentionText),
+                CardTone.Blue => activePalette.AppBack == ThemePalette.Dark.AppBack ? (Color.FromArgb(30, 42, 66), Color.FromArgb(140, 172, 240)) : (Color.FromArgb(232, 239, 253), Color.FromArgb(36, 87, 197)),
+                _ => (activePalette.NeutralTint, activePalette.MutedText),
+            };
+            detailAvatar.Invalidate();
             detailPill.Text = assessment.Verdict.Label;
             detailPill.Width = TextRenderer.MeasureText(detailPill.Text, detailPill.Font).Width + 24;
             var (tint, ink) = PillToneFor(assessment) switch
@@ -237,21 +283,60 @@ public sealed partial class MainForm : Form
             detailPill.PillColor = tint;
             detailPill.ForeColor = ink;
             detailPill.Invalidate();
-            detailPath.Text = path;
+            detailPathFull = path;
+            WrapDetailPath();
             factValues[0].Text = assessment.Signer;
             factValues[1].Text = app is null ? "—" : app.FirstSeenUtc.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
             factValues[2].Text = app is null ? "—" : $"{app.CurrentConnections} now · {app.TotalConnections} this session";
             factValues[3].Text = blocked ? "Blocked in Windows Firewall" : "Allowed";
-            talks.Text = app is null || app.Endpoints.Count == 0
-                ? "No connections seen this session."
-                : string.Join(Environment.NewLine, app.Endpoints.Values.OrderByDescending(endpoint => endpoint.LastSeenUtc).Take(4)
-                    .Select(endpoint => $"{DescribeEndpoint(endpoint)}   ·   {(endpoint.Scope == RemoteScope.Lan ? "LAN" : "Internet")}"));
+            var endpoints = app?.Endpoints.Values.OrderByDescending(endpoint => endpoint.LastSeenUtc).Take(4).ToList() ?? [];
+            var talksKey = string.Join("|", endpoints.Select(endpoint => DescribeEndpoint(endpoint) + endpoint.Scope));
+            if (talks.Tag as string != talksKey)
+            {
+                talks.Tag = talksKey;
+                talks.SuspendLayout();
+                foreach (Control old in talks.Controls.Cast<Control>().ToList())
+                {
+                    old.Dispose();
+                }
+
+                talks.RowStyles.Clear();
+                talks.RowCount = Math.Max(1, endpoints.Count);
+                if (endpoints.Count == 0)
+                {
+                    talks.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+                    var none = new Label { Text = "No connections seen this session.", AutoSize = false, Dock = DockStyle.Fill, Margin = new Padding(0), TextAlign = ContentAlignment.MiddleLeft, ForeColor = activePalette.MutedText, Tag = "muted", UseMnemonic = false };
+                    talks.Controls.Add(none, 0, 0);
+                    talks.SetColumnSpan(none, 2);
+                }
+
+                for (var index = 0; index < endpoints.Count; index++)
+                {
+                    talks.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+                    talks.Controls.Add(new Label { Text = DescribeEndpoint(endpoints[index]), AutoSize = false, Dock = DockStyle.Fill, Margin = new Padding(0), TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, ForeColor = activePalette.Text, UseMnemonic = false }, 0, index);
+                    var scope = endpoints[index].Scope == RemoteScope.Lan ? "LAN" : "Internet";
+                    talks.Controls.Add(new PillLabel
+                    {
+                        Text = scope,
+                        AutoSize = false,
+                        Size = new Size(TextRenderer.MeasureText(scope, ChipFont).Width + 16, 22),
+                        Margin = new Padding(8, 3, 0, 3),
+                        Radius = 6,
+                        TextAlign = ContentAlignment.MiddleCenter,
+                        Font = ChipFont,
+                        PillColor = activePalette.NeutralTint,
+                        ForeColor = activePalette.MutedText,
+                    }, 1, index);
+                }
+
+                talks.Height = endpoints.Count == 0 ? 26 : endpoints.Count * 28;
+                talks.ResumeLayout();
+            }
             primary.Text = blocked ? "Allow this app" : "Block this app";
             primary.Tag = blocked ? null : "danger-solid";
             primary.Enabled = elevated && exists;
             scan.Enabled = exists;
             showFile.Enabled = exists;
-            connections.Visible = app is not null;
             ApplyAppTheme(primary);
             toolTip.SetToolTip(primary, elevated ? "" : "Turn on Run elevated in Settings");
         }
@@ -279,12 +364,12 @@ public sealed partial class MainForm : Form
                 .Select(row => new CardListItem
                 {
                     LetterAvatar = true,
-                    Tone = ToneFor(row.Assessment, row.Blocked),
+                    Tone = AvatarToneFor(row.Assessment),
                     Title = row.Columns[0],
-                    Detail = $"{row.Assessment.Signer}  ·  {(row.Blocked ? "Blocked · " : "")}{row.Columns[3]}",
+                    Detail = row.Assessment.Signer,
                     Pill = row.Assessment.Verdict.Label,
                     PillTone = PillToneFor(row.Assessment),
-                    Trailing = row.Online ? "online" : row.Columns[5],
+                    Cells = [(row.Blocked ? "Blocked · " : "") + row.Columns[3]],
                     Toggle = File.Exists(row.Path) ? !row.Blocked : null,
                     ToggleLabel = row.Blocked ? "Blocked" : "Allowed",
                     Tag = row.Path,
@@ -374,13 +459,6 @@ public sealed partial class MainForm : Form
             if (SelectedPath() is { } path && File.Exists(path))
             {
                 Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-            }
-        };
-        connections.LinkClicked += (_, _) =>
-        {
-            if (SelectedPath() is { } path && networkTracker is not null && networkTracker.TryGetApp(path, out var app))
-            {
-                ShowNetworkConnectionsDialog(this, app);
             }
         };
         foreach (var (chip, which) in chips)

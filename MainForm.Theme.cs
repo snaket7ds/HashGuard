@@ -118,6 +118,7 @@ public sealed partial class MainForm : Form
             nav.HoverBack = palette.SurfaceHover;
             nav.NeutralBadgeBack = palette.NeutralTint;
             nav.NeutralBadgeText = palette.MutedText;
+            nav.DividerColor = dark ? palette.Hairline : Color.FromArgb(230, 232, 236);
             foreach (Control child in nav.Controls)
             {
                 child.BackColor = nav.BackColor;
@@ -140,6 +141,16 @@ public sealed partial class MainForm : Form
             chip.SelectedBack = palette.AppBack == ThemePalette.Dark.AppBack ? palette.AccentText : Color.FromArgb(17, 24, 39);
             chip.SelectedInk = palette.AppBack == ThemePalette.Dark.AppBack ? palette.AppBack : Color.White;
             chip.Invalidate();
+            return;
+        }
+
+        if (control is DropdownField dropdown)
+        {
+            dropdown.Back = palette.InputBack;
+            dropdown.Border = palette.Border;
+            dropdown.Ink = palette.Text;
+            dropdown.Chevron = palette.MutedText;
+            dropdown.Invalidate();
             return;
         }
 
@@ -192,7 +203,7 @@ public sealed partial class MainForm : Form
                 button.FlatAppearance.BorderSize = 0;
                 button.BackColor = solid;
                 button.ForeColor = Color.White;
-                button.Font = new Font("Segoe UI Semibold", button.Font.Size, FontStyle.Regular);
+                button.Font = UiFonts.Create("Segoe UI Semibold", button.Font.Size, FontStyle.Regular);
                 button.FlatAppearance.MouseOverBackColor = ControlPaint.Dark(solid, 0.05f);
                 button.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(solid, 0.15f);
                 RoundedButtons.Attach(button);
@@ -234,14 +245,14 @@ public sealed partial class MainForm : Form
                 {
                     "brand" => BrandGreen,
                     "neutral" => palette.NeutralTint,
-                    "blue" => ReferenceEquals(palette, ThemePalette.Dark) ? Color.FromArgb(30, 42, 66) : Color.FromArgb(232, 239, 253),
+                    "blue" => palette.AppBack == ThemePalette.Dark.AppBack ? Color.FromArgb(30, 42, 66) : Color.FromArgb(232, 239, 253),
                     _ => palette.AccentTint,
                 };
                 badge.GlyphColor = (badge.Tag as string) switch
                 {
                     "brand" => Color.FromArgb(18, 38, 10),
                     "neutral" => palette.MutedText,
-                    "blue" => ReferenceEquals(palette, ThemePalette.Dark) ? Color.FromArgb(140, 172, 240) : Color.FromArgb(36, 87, 197),
+                    "blue" => palette.AppBack == ThemePalette.Dark.AppBack ? Color.FromArgb(140, 172, 240) : Color.FromArgb(36, 87, 197),
                     _ => palette.AccentText,
                 };
                 badge.Invalidate();

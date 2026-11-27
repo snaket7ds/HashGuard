@@ -38,7 +38,22 @@ internal sealed class CardListItem
     public string ToggleLabel { get; init; } = "";
     /// <summary>A rounded letter avatar instead of the glyph (Firewall app rows).</summary>
     public bool LetterAvatar { get; init; }
+    /// <summary>Text for the list's <see cref="CardColumnKind.Text"/> columns, in order (column mode only).</summary>
+    public IReadOnlyList<string> Cells { get; init; } = [];
 }
+
+internal enum CardColumnKind
+{
+    /// <summary>Icon tile, bold title and muted detail line (always the first column).</summary>
+    Main,
+    /// <summary>The row's pill, left-aligned in its column.</summary>
+    Pill,
+    /// <summary>One entry of <see cref="CardListItem.Cells"/>.</summary>
+    Text,
+}
+
+/// <summary>A column of a <see cref="CardList"/> in column mode: a fixed width, or a share of what is left.</summary>
+internal sealed record CardColumn(string Header, CardColumnKind Kind, int Width = 0, float Weight = 0);
 
 /// <summary>
 /// The redesign's list: rounded icon tile, bold title, muted detail line, coloured pill and a
@@ -51,11 +66,11 @@ internal sealed class CardList : Control
     public const int RowHeight = 64;
     public const int HeaderHeight = 36;
     // Created once: OnPaint runs on every scroll, hover and refresh.
-    private static readonly Font TitleFont = new("Segoe UI Semibold", 10.5f, FontStyle.Regular);
-    private static readonly Font DetailFont = new("Segoe UI", 9f, FontStyle.Regular);
-    private static readonly Font PillFont = new("Segoe UI Semibold", 8.5f, FontStyle.Regular);
-    private static readonly Font GlyphFont = new("Segoe MDL2 Assets", 11f, FontStyle.Regular);
-    private static readonly Font ActionFont = new("Segoe UI Semibold", 9f, FontStyle.Regular);
+    private static readonly Font TitleFont = UiFonts.Create("Segoe UI Semibold", 10.5f, FontStyle.Regular);
+    private static readonly Font DetailFont = UiFonts.Create("Segoe UI", 9f, FontStyle.Regular);
+    private static readonly Font PillFont = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+    private static readonly Font GlyphFont = UiFonts.Create("Segoe MDL2 Assets", 11f, FontStyle.Regular);
+    private static readonly Font ActionFont = UiFonts.Create("Segoe UI Semibold", 9f, FontStyle.Regular);
     private readonly VScrollBar scroll = new() { Dock = DockStyle.Right, Visible = false };
     private IReadOnlyList<CardListItem> items = [];
     private int[] tops = [];
@@ -70,7 +85,7 @@ internal sealed class CardList : Control
         AccessibleRole = AccessibleRole.List;
         Controls.Add(scroll);
         scroll.ValueChanged += (_, _) => Invalidate();
-        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+        Font = UiFonts.Create("Segoe UI", 9.5f, FontStyle.Regular);
     }
 
     public event EventHandler? SelectionChanged;
@@ -101,6 +116,17 @@ internal sealed class CardList : Control
         [CardTone.Neutral] = (Color.FromArgb(240, 241, 244), Color.FromArgb(75, 83, 97)),
         [CardTone.Blue] = (Color.FromArgb(232, 239, 253), Color.FromArgb(36, 87, 197)),
     };
+
+    /// <summary>
+    /// Column mode (as the design's Quarantine table and Firewall rows): the row is laid out in these
+    /// columns instead of title-then-pill. Null = the default card row.
+    /// </summary>
+    public IReadOnlyList<CardColumn>? Columns { get; set; }
+    /// <summary>In column mode, a fixed header row (FILE · WHY · …) that stays put while rows scroll.</summary>
+    public bool ShowColumnHeaders { get; set; }
+    public const int ColumnHeaderHeight = 40;
+    private int HeaderOffset => Columns is not null && ShowColumnHeaders ? ColumnHeaderHeight : 0;
+    private int ViewHeight => Math.Max(0, ClientSize.Height - HeaderOffset);
 
     public IReadOnlyList<CardListItem> Items => items;
     public CardListItem? SelectedItem => selected >= 0 && selected < items.Count ? items[selected] : null;
@@ -171,7 +197,7 @@ internal sealed class CardList : Control
 
     private void UpdateScroll(bool keep)
     {
-        var overflow = totalHeight > ClientSize.Height;
+        var overflow = totalHeight > ViewHeight;
         scroll.Visible = overflow;
         if (!overflow)
         {
@@ -180,10 +206,10 @@ internal sealed class CardList : Control
         }
 
         scroll.Minimum = 0;
-        scroll.LargeChange = Math.Max(1, ClientSize.Height);
+        scroll.LargeChange = Math.Max(1, ViewHeight);
         scroll.SmallChange = RowHeight;
         scroll.Maximum = totalHeight;
-        var max = Math.Max(0, totalHeight - ClientSize.Height);
+        var max = Math.Max(0, totalHeight - ViewHeight);
         scroll.Value = keep ? Math.Min(scroll.Value, max) : 0;
     }
 
@@ -236,7 +262,7 @@ internal sealed class CardList : Control
             return (-1, false);
         }
 
-        var layout = LayoutRow(items[index], tops[index] - Offset, ContentWidth, ActionFont, DetailFont);
+        var layout = LayoutRow(items[index], tops[index] - Offset + HeaderOffset, ContentWidth, ActionFont, DetailFont);
         if (layout.Toggle.Contains(point))
         {
             return (-1, true);
@@ -256,8 +282,8 @@ internal sealed class CardList : Control
 
     private int IndexAt(int y)
     {
-        var absolute = y + Offset;
-        if (absolute < 0 || absolute >= totalHeight || tops.Length == 0)
+        var absolute = y - HeaderOffset + Offset;
+        if (y < HeaderOffset || absolute < 0 || absolute >= totalHeight || tops.Length == 0)
         {
             return -1;
         }
@@ -288,9 +314,9 @@ internal sealed class CardList : Control
             {
                 scroll.Value = Math.Max(0, top - (index > 0 && items[index - 1].IsHeader ? HeaderHeight : 0));
             }
-            else if (bottom > scroll.Value + ClientSize.Height)
+            else if (bottom > scroll.Value + ViewHeight)
             {
-                scroll.Value = Math.Min(Math.Max(0, totalHeight - ClientSize.Height), bottom - ClientSize.Height);
+                scroll.Value = Math.Min(Math.Max(0, totalHeight - ViewHeight), bottom - ViewHeight);
             }
         }
 
@@ -342,7 +368,7 @@ internal sealed class CardList : Control
             case Keys.Enter when SelectedItem is not null: ItemActivated?.Invoke(this, EventArgs.Empty); break;
             case Keys.Space when SelectedItem is { Toggle: not null } toggled: ToggleClicked?.Invoke(toggled); break;
             case Keys.Apps when SelectedItem is not null:
-                MenuRequested?.Invoke(new Point(40, tops[selected] - Offset + RowHeight / 2));
+                MenuRequested?.Invoke(new Point(40, tops[selected] - Offset + HeaderOffset + RowHeight / 2));
                 break;
             default: base.OnKeyDown(e); return;
         }
@@ -354,7 +380,7 @@ internal sealed class CardList : Control
     {
         if (scroll.Visible)
         {
-            var max = Math.Max(0, totalHeight - ClientSize.Height);
+            var max = Math.Max(0, totalHeight - ViewHeight);
             scroll.Value = Math.Clamp(scroll.Value - Math.Sign(e.Delta) * RowHeight * 2, 0, max);
         }
 
@@ -447,8 +473,9 @@ internal sealed class CardList : Control
         var width = ContentWidth;
         if (items.Count == 0)
         {
-            TextRenderer.DrawText(g, EmptyText, Font, new Rectangle(0, 0, width, Math.Min(ClientSize.Height, 160)), Muted,
+            TextRenderer.DrawText(g, EmptyText, Font, new Rectangle(0, HeaderOffset, width, Math.Min(ViewHeight, 160)), Muted,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+            PaintColumnHeaders(g, width, width - 22);
             return;
         }
 
@@ -462,7 +489,7 @@ internal sealed class CardList : Control
         using var hairline = new Pen(Hairline);
         for (var index = first; index < items.Count; index++)
         {
-            var top = tops[index] - Offset;
+            var top = tops[index] - Offset + HeaderOffset;
             if (top > ClientSize.Height)
             {
                 break;
@@ -535,6 +562,19 @@ internal sealed class CardList : Control
             }
 
             var right = layout.Right;
+            if (Columns is { } columns)
+            {
+                PaintColumnRow(g, item, top, columns, layout.Right, tint, ink, bold, small, pillFont);
+                g.DrawLine(hairline, 0, top + RowHeight - 1, width, top + RowHeight - 1);
+                if (index == selected && Focused && ShowFocusCues)
+                {
+                    using var columnFocus = new Pen(ink, 1.5f) { DashStyle = DashStyle.Dot };
+                    g.DrawRectangle(columnFocus, 1, top + 1, width - 3, RowHeight - 3);
+                }
+
+                continue;
+            }
+
             if (!string.IsNullOrEmpty(item.Pill))
             {
                 var pillWidth = TextRenderer.MeasureText(item.Pill, pillFont, Size.Empty, TextFormatFlags.NoPadding).Width + 20;
@@ -559,6 +599,97 @@ internal sealed class CardList : Control
                 g.DrawRectangle(focus, 1, top + 1, width - 3, RowHeight - 3);
             }
         }
+
+        // Drawn last so rows scrolling up pass under it.
+        var headerRight = items.Count > 0 && items.FirstOrDefault(row => !row.IsHeader) is { } sample
+            ? LayoutRow(sample, 0, width, actionFont, small).Right
+            : width - 22;
+        PaintColumnHeaders(g, width, headerRight);
+    }
+
+    /// <summary>Left edge and width of each column between the row's start (22) and <paramref name="right"/>.</summary>
+    private static (int X, int Width)[] PlaceColumns(IReadOnlyList<CardColumn> columns, int right)
+    {
+        const int left = 22, gap = 16;
+        var fixedTotal = columns.Sum(column => column.Width) + gap * Math.Max(0, columns.Count - 1);
+        var weightTotal = columns.Sum(column => column.Weight);
+        var spare = Math.Max(0, right - left - fixedTotal);
+        var placed = new (int X, int Width)[columns.Count];
+        var x = left;
+        for (var index = 0; index < columns.Count; index++)
+        {
+            var column = columns[index];
+            var w = column.Width + (weightTotal > 0 ? (int)(spare * column.Weight / weightTotal) : 0);
+            placed[index] = (x, w);
+            x += w + gap;
+        }
+
+        return placed;
+    }
+
+    private void PaintColumnRow(Graphics g, CardListItem item, int top, IReadOnlyList<CardColumn> columns, int right, Color tint, Color ink, Font bold, Font small, Font pillFont)
+    {
+        var placed = PlaceColumns(columns, right);
+        var cell = 0;
+        for (var index = 0; index < columns.Count; index++)
+        {
+            var (x, w) = placed[index];
+            switch (columns[index].Kind)
+            {
+                case CardColumnKind.Main:
+                    // The icon tile is already drawn at 22; the text starts after it.
+                    var textLeft = 76;
+                    var textWidth = Math.Max(20, x + w - textLeft);
+                    var hasDetail = !string.IsNullOrEmpty(item.Detail);
+                    TextRenderer.DrawText(g, item.Title, bold, new Rectangle(textLeft, hasDetail ? top + 12 : top, textWidth, hasDetail ? 22 : RowHeight), TextColor,
+                        TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | (hasDetail ? 0 : TextFormatFlags.VerticalCenter));
+                    if (hasDetail)
+                    {
+                        TextRenderer.DrawText(g, item.Detail, small, new Rectangle(textLeft, top + 34, textWidth, 20), Muted,
+                            TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                    }
+
+                    break;
+                case CardColumnKind.Pill when !string.IsNullOrEmpty(item.Pill):
+                    var pillWidth = Math.Min(w, TextRenderer.MeasureText(item.Pill, pillFont, Size.Empty, TextFormatFlags.NoPadding).Width + 20);
+                    var pillRect = new RectangleF(x, top + (RowHeight - 24) / 2f, pillWidth, 24);
+                    var (pillTint, pillInk) = item.PillTone is { } pillTone && Tones.TryGetValue(pillTone, out var pt) ? pt : (tint, ink);
+                    RoundedPaint.FillRounded(g, pillRect, 12, pillTint);
+                    TextRenderer.DrawText(g, item.Pill, pillFont, Rectangle.Round(pillRect), pillInk,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                    break;
+                case CardColumnKind.Text:
+                    var text = cell < item.Cells.Count ? item.Cells[cell] : "";
+                    cell++;
+                    TextRenderer.DrawText(g, text, small, new Rectangle(x, top, w, RowHeight), Muted,
+                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+                    break;
+            }
+        }
+    }
+
+    private void PaintColumnHeaders(Graphics g, int width, int right)
+    {
+        if (Columns is not { } columns || HeaderOffset == 0)
+        {
+            return;
+        }
+
+        using (var back = new SolidBrush(Surface))
+        {
+            g.FillRectangle(back, 0, 0, ClientSize.Width, HeaderOffset);
+        }
+
+        var placed = PlaceColumns(columns, right);
+        for (var index = 0; index < columns.Count; index++)
+        {
+            var (x, w) = placed[index];
+            TextRenderer.DrawText(g, columns[index].Header.ToUpperInvariant(), PillFont, new Rectangle(x, 0, Math.Max(w, 40), HeaderOffset), Muted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        }
+
+        using var line = new Pen(Hairline);
+        g.DrawLine(line, 0, HeaderOffset - 1, width, HeaderOffset - 1);
     }
 }
 
@@ -593,8 +724,8 @@ internal sealed class ChipButton : Button
         Selected = selected;
         AccessibleName = string.IsNullOrEmpty(count) ? Label : $"{Label}, {count}";
         AccessibleDescription = selected ? "Selected filter" : null;
-        using var bold = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular);
-        using var small = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+        using var bold = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular);
+        using var small = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
         Width = TextRenderer.MeasureText(Label, bold).Width + (string.IsNullOrEmpty(count) ? 24 : TextRenderer.MeasureText(count, small).Width + 40);
         Invalidate();
     }
@@ -614,8 +745,8 @@ internal sealed class ChipButton : Button
         }
 
         var ink = Selected ? SelectedInk : Ink;
-        using var bold = new Font(Selected ? "Segoe UI Semibold" : "Segoe UI", 9.5f, FontStyle.Regular);
-        using var small = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular);
+        using var bold = UiFonts.Create(Selected ? "Segoe UI Semibold" : "Segoe UI", 9.5f, FontStyle.Regular);
+        using var small = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular);
         var labelWidth = TextRenderer.MeasureText(Label, bold).Width;
         TextRenderer.DrawText(g, Label, bold, new Rectangle(12, 0, labelWidth, Height), ink, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);
         if (!string.IsNullOrEmpty(Count))

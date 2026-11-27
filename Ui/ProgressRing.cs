@@ -15,7 +15,7 @@ internal sealed class ProgressRing : Control
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint | ControlStyles.SupportsTransparentBackColor, true);
         BackColor = Color.Transparent;
         Size = new Size(116, 116);
-        Font = new Font("Segoe UI Semibold", 18, FontStyle.Regular);
+        Font = UiFonts.Create("Segoe UI Semibold", 18, FontStyle.Regular);
         AccessibleRole = AccessibleRole.ProgressBar;
     }
 

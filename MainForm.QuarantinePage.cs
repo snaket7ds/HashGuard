@@ -18,28 +18,43 @@ public sealed partial class MainForm : Form
     private Control BuildQuarantinePage()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
-        var search = new TextBox { PlaceholderText = "Search name, path or hash", AccessibleName = "Search quarantine", Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var search = new TextBox { PlaceholderText = "Search name, path or hash", AccessibleName = "Search quarantine", Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular) };
         var searchBox = new SearchField(search) { Size = new Size(300, 40), Margin = new Padding(0) };
-        var openFolder = new LinkLabel { Text = "Open folder", AutoSize = true, Margin = new Padding(0, 12, 16, 0), Tag = "accent-link" };
-        var repair = new LinkLabel { Text = "Remove missing entries", AutoSize = true, Margin = new Padding(0, 12, 16, 0), Tag = "accent-link", Visible = false };
+        // Outlined buttons beside the search, matching the design's button style.
+        var openFolder = new Button { Text = "Open folder", AutoSize = true, Height = 40, Margin = new Padding(0, 0, 10, 0) };
+        var repair = new Button { Text = "Remove missing entries", AutoSize = true, Height = 40, Margin = new Padding(0, 0, 10, 0), Visible = false };
         var bar = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(16, 2, 0, 0), BackColor = SoftAppBack };
         bar.Controls.AddRange([repair, openFolder, searchBox]);
         quarantineHeaderTools = bar;
 
-        var list = new CardList { Dock = DockStyle.Fill, AccessibleName = "Quarantined files", EmptyText = "Nothing in quarantine. When HashGuard isolates a file, it shows up here." };
-        var listCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10) };
+        // A table as designed: FILE · WHY · CAME FROM · QUARANTINED, with a header row that stays put.
+        var list = new CardList
+        {
+            Dock = DockStyle.Fill,
+            AccessibleName = "Quarantined files",
+            EmptyText = "Nothing in quarantine. When HashGuard isolates a file, it shows up here.",
+            Columns =
+            [
+                new CardColumn("File", CardColumnKind.Main, Weight: 1.3f),
+                new CardColumn("Why", CardColumnKind.Pill, Width: 150),
+                new CardColumn("Came from", CardColumnKind.Text, Weight: 1.6f),
+                new CardColumn("Quarantined", CardColumnKind.Text, Width: 130),
+            ],
+            ShowColumnHeaders = true,
+        };
+        var listCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(2, 4, 2, 10) };
         listCard.Controls.Add(list);
 
-        var selName = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
+        var selName = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = UiFonts.Create("Segoe UI Semibold", 11, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
         var selPath = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 20, Tag = "muted", AutoEllipsis = true, UseMnemonic = false };
-        var selHash = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 20, Tag = "muted", AutoEllipsis = true, Font = new Font("Consolas", 9, FontStyle.Regular), UseMnemonic = false };
+        var selHash = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 20, Tag = "muted", AutoEllipsis = true, Font = UiFonts.Create("Consolas", 9, FontStyle.Regular), UseMnemonic = false };
         var selText = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
         selText.Controls.Add(selHash);
         selText.Controls.Add(selPath);
         selText.Controls.Add(selName);
         var copyHash = new Button { Text = "Copy hash", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0) };
         var restoreDesktop = new Button { Text = "Restore to Desktop", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0) };
-        var restore = new Button { Text = "Restore", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0), Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular) };
+        var restore = new Button { Text = "Restore", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0), Font = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular) };
         var delete = new Button { Text = "Delete permanently", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0), Tag = "danger-solid" };
         var selButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Right, BackColor = Color.Transparent, Margin = new Padding(0) };
         selButtons.Controls.AddRange([copyHash, restoreDesktop, restore, delete]);
@@ -108,9 +123,12 @@ public sealed partial class MainForm : Form
                         Glyph = "",
                         Tone = malicious ? CardTone.Bad : CardTone.Warn,
                         Title = HashGuardLogic.QuarantineDisplayName(entry),
-                        Detail = $"From {directory}",
                         Pill = malicious ? "Malicious" : "Isolated",
-                        Trailing = entry.QuarantinedAtUtc == default ? "" : entry.QuarantinedAtUtc.LocalDateTime.ToString(entry.QuarantinedAtUtc.LocalDateTime.Date == DateTime.Today ? "'Today' HH:mm" : "MMM d", CultureInfo.CurrentCulture),
+                        Cells =
+                        [
+                            directory,
+                            entry.QuarantinedAtUtc == default ? "" : entry.QuarantinedAtUtc.LocalDateTime.ToString(entry.QuarantinedAtUtc.LocalDateTime.Date == DateTime.Today ? "'Today' HH:mm" : "MMM d", CultureInfo.CurrentCulture),
+                        ],
                         Tag = entry,
                     };
                 })
@@ -159,12 +177,12 @@ public sealed partial class MainForm : Form
                 }
             }
         };
-        repair.LinkClicked += (_, _) =>
+        repair.Click += (_, _) =>
         {
             RepairMissingQuarantineEntries();
             Reload();
         };
-        openFolder.LinkClicked += (_, _) =>
+        openFolder.Click += (_, _) =>
         {
             Directory.CreateDirectory(GetQuarantineDirectory());
             Process.Start(new ProcessStartInfo(GetQuarantineDirectory()) { UseShellExecute = true });

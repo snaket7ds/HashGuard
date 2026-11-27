@@ -30,12 +30,12 @@ internal sealed record AlertButton(string Text, AlertButtonKind Kind, Action<Ale
 internal sealed class AlertCard : UserControl
 {
     public const int CardWidth = 384;
-    private readonly Label title = new() { AutoSize = false, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), UseMnemonic = false };
-    private readonly Label body = new() { AutoSize = false, Font = new Font("Segoe UI", 9.5f, FontStyle.Regular), UseMnemonic = false };
-    private readonly Label header = new() { AutoSize = false, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular), Text = "HashGuard · now", UseMnemonic = false };
-    private readonly Button close = new() { Text = "", Font = new Font("Segoe MDL2 Assets", 8, FontStyle.Regular), FlatStyle = FlatStyle.Flat, AccessibleName = "Dismiss", TabIndex = 9 };
+    private readonly Label title = new() { AutoSize = false, Font = UiFonts.Create("Segoe UI Semibold", 10.5f, FontStyle.Regular), UseMnemonic = false };
+    private readonly Label body = new() { AutoSize = false, Font = UiFonts.Create("Segoe UI", 9.5f, FontStyle.Regular), UseMnemonic = false };
+    private readonly Label header = new() { AutoSize = false, Font = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular), Text = "HashGuard · now", UseMnemonic = false };
+    private readonly Button close = new() { Text = "", Font = UiFonts.Create("Segoe MDL2 Assets", 8, FontStyle.Regular), FlatStyle = FlatStyle.Flat, AccessibleName = "Dismiss", TabIndex = 9 };
     private readonly TableLayoutPanel buttonRow = new() { ColumnCount = 1, RowCount = 1, Margin = new Padding(0), Padding = new Padding(0) };
-    private readonly Label confirmation = new() { AutoSize = false, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular), Visible = false, UseMnemonic = false };
+    private readonly Label confirmation = new() { AutoSize = false, Font = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular), Visible = false, UseMnemonic = false };
     private readonly Button undo = new() { Text = "Undo", FlatStyle = FlatStyle.Flat, Visible = false };
     private AlertTone tone;
     private Action? undoAction;
@@ -87,7 +87,7 @@ internal sealed class AlertCard : UserControl
                 FlatStyle = FlatStyle.Flat,
                 AutoEllipsis = false,
                 UseMnemonic = false,
-                Font = new Font(action.Kind == AlertButtonKind.Normal ? "Segoe UI" : "Segoe UI Semibold", 9.5f, FontStyle.Regular),
+                Font = UiFonts.Create(action.Kind == AlertButtonKind.Normal ? "Segoe UI" : "Segoe UI Semibold", 9.5f, FontStyle.Regular),
                 TabIndex = index,
                 Tag = action.Kind,
             };
@@ -212,7 +212,7 @@ internal sealed class AlertCard : UserControl
             };
         var iconRect = confirmed ? new RectangleF(16, 44, 32, 32) : new RectangleF(16, 44, 40, 40);
         RoundedPaint.FillRounded(g, iconRect, 11, tint);
-        using var glyphFont = new Font("Segoe MDL2 Assets", confirmed ? 10 : 12, FontStyle.Regular);
+        using var glyphFont = UiFonts.Create("Segoe MDL2 Assets", confirmed ? 10 : 12, FontStyle.Regular);
         TextRenderer.DrawText(g, glyph, glyphFont, Rectangle.Round(iconRect), glyphColor,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
     }

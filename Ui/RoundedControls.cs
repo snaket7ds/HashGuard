@@ -55,6 +55,8 @@ internal sealed class CardPanel : Panel
     public Color PressedColor { get; set; } = Color.FromArgb(238, 240, 243);
     public Color EdgeColor { get; set; } = Color.FromArgb(232, 235, 238);
     public Color ShadowColor { get; set; } = Color.FromArgb(16, 16, 24, 40);
+    /// <summary>Edge thickness; 2 with the accent colour marks the selected card (Scan page scan types).</summary>
+    public float EdgeWidth { get; set; } = 1;
     public bool Interactive { get; private set; }
 
     public void MakeInteractive()
@@ -107,7 +109,8 @@ internal sealed class CardPanel : Panel
         base.OnPaint(e);
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        var rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 3f);
+        var inset = EdgeWidth / 2f;
+        var rect = new RectangleF(inset, inset, Width - 1f - EdgeWidth, Height - 2.5f - EdgeWidth);
         if (rect.Width <= 0 || rect.Height <= 0)
         {
             return;
@@ -128,7 +131,7 @@ internal sealed class CardPanel : Panel
         using var path = RoundedPaint.RoundedRect(rect, Radius);
         using var brush = new SolidBrush(fill);
         g.FillPath(brush, path);
-        using var edge = new Pen(EdgeColor, 1);
+        using var edge = new Pen(EdgeColor, EdgeWidth);
         g.DrawPath(edge, path);
     }
 }
@@ -143,7 +146,7 @@ internal sealed class IconBadge : Control
         Tag = tone;
         BackColor = Color.Transparent;
         Size = new Size(34, 34);
-        Font = new Font("Segoe MDL2 Assets", 12, FontStyle.Regular);
+        Font = UiFonts.Create("Segoe MDL2 Assets", 12, FontStyle.Regular);
     }
 
     public Color TintColor { get; set; } = Color.FromArgb(237, 247, 227);
@@ -178,6 +181,8 @@ internal sealed class PillLabel : Label
     public int Radius { get; set; } = 10;
     /// <summary>A small status dot before the text (provider chips); Empty = none. Use Padding.Left ≥ 24.</summary>
     public Color DotColor { get; set; } = Color.Empty;
+    /// <summary>A 14px line icon (LineIcons name, e.g. "activity" = clock) before the text; null = none. Use Padding.Left ≥ 30.</summary>
+    public string? Icon { get; set; }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -188,6 +193,10 @@ internal sealed class PillLabel : Label
             using var dot = new SolidBrush(DotColor);
             e.Graphics.FillEllipse(dot, 11, (Height - 7) / 2f, 7, 7);
         }
+        else if (Icon is { } icon)
+        {
+            LineIcons.Draw(e.Graphics, LineIcons.Prefix + icon, new RectangleF(10, (Height - 14) / 2f, 14, 14), ForeColor);
+        }
 
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
         flags |= TextAlign is ContentAlignment.MiddleCenter or ContentAlignment.TopCenter or ContentAlignment.BottomCenter
@@ -195,6 +204,67 @@ internal sealed class PillLabel : Label
             : TextFormatFlags.Left;
         var bounds = new Rectangle(Padding.Left, 0, Math.Max(0, Width - Padding.Horizontal), Height);
         TextRenderer.DrawText(e.Graphics, Text, Font, bounds, ForeColor, flags);
+    }
+}
+
+/// <summary>A rounded tinted square with an app's first letter (Firewall detail card, as designed).</summary>
+internal sealed class LetterTile : Control
+{
+    public LetterTile()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint | ControlStyles.SupportsTransparentBackColor, true);
+        BackColor = Color.Transparent;
+        Size = new Size(48, 48);
+        Font = UiFonts.Create("Segoe UI Bold", 14, FontStyle.Bold);
+    }
+
+    public Color TintColor { get; set; } = Color.FromArgb(232, 239, 253);
+    public Color InkColor { get; set; } = Color.FromArgb(36, 87, 197);
+    public int Radius { get; set; } = 13;
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        RoundedPaint.FillRounded(e.Graphics, new RectangleF(0, 0, Width - 1, Height - 1), Radius, TintColor);
+        TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, InkColor,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+    }
+}
+
+internal static class TextWrap
+{
+    /// <summary>
+    /// Wraps text at any character to fit <paramref name="width"/> (paths have no spaces to break at),
+    /// as the design's "word-break: break-all". At most <paramref name="maxLines"/>; the last one ends in "…".
+    /// </summary>
+    public static string Anywhere(string text, Font font, int width, int maxLines = 3)
+    {
+        if (string.IsNullOrEmpty(text) || width <= 20)
+        {
+            return text;
+        }
+
+        var lines = new List<string>();
+        var start = 0;
+        while (start < text.Length && lines.Count < maxLines)
+        {
+            var length = 1;
+            while (start + length < text.Length
+                && TextRenderer.MeasureText(text.Substring(start, length + 1), font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width <= width)
+            {
+                length++;
+            }
+
+            lines.Add(text.Substring(start, length));
+            start += length;
+        }
+
+        if (start < text.Length && lines.Count > 0)
+        {
+            var last = lines[^1];
+            lines[^1] = (last.Length > 1 ? last[..^1] : last) + "…";
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 }
 

@@ -135,9 +135,9 @@ internal sealed class ModeSwitch : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(ToggleSwitch.SurfaceBehind(this));
         RoundedPaint.FillRounded(g, new RectangleF(0, 0, Width - 1, Height - 1), 11, Color.FromArgb(233, 235, 239));
-        using var bold = new Font("Segoe UI Semibold", 9.75f, FontStyle.Regular);
-        using var regular = new Font("Segoe UI", 9.75f, FontStyle.Regular);
-        using var tagFont = new Font("Segoe UI Semibold", 7.5f, FontStyle.Regular);
+        using var bold = UiFonts.Create("Segoe UI Semibold", 9.75f, FontStyle.Regular);
+        using var regular = UiFonts.Create("Segoe UI", 9.75f, FontStyle.Regular);
+        using var tagFont = UiFonts.Create("Segoe UI Semibold", 7.5f, FontStyle.Regular);
         var monitorWidth = TextRenderer.MeasureText("Monitor", bold).Width + 24;
         var selected = new RectangleF(3, 3, monitorWidth, Height - 7);
         RoundedPaint.FillRounded(g, new RectangleF(selected.X, selected.Y + 1, selected.Width, selected.Height), 8, Color.FromArgb(30, 16, 24, 40));
@@ -202,6 +202,123 @@ internal sealed class SearchField : Panel
 }
 
 /// <summary>
+/// The design's rounded select (Settings → Appearance, New-app alerts) in place of the square
+/// Windows combo box: the chosen option and a chevron; click, Enter, Space or Alt+Down opens the
+/// list, Up/Down change the choice directly.
+/// </summary>
+internal sealed class DropdownField : Control
+{
+    private int selectedIndex = -1;
+
+    public DropdownField()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        TabStop = true;
+        Height = 38;
+        Cursor = Cursors.Hand;
+        AccessibleRole = AccessibleRole.ComboBox;
+    }
+
+    public event EventHandler? SelectedIndexChanged;
+
+    public List<string> Items { get; } = [];
+    public Color Back { get; set; } = Color.White;
+    public Color Border { get; set; } = Color.FromArgb(218, 221, 227);
+    public Color Ink { get; set; } = Color.FromArgb(17, 24, 39);
+    public Color Chevron { get; set; } = Color.FromArgb(91, 100, 114);
+
+    public int SelectedIndex
+    {
+        get => selectedIndex;
+        set
+        {
+            var clamped = Items.Count == 0 ? -1 : Math.Clamp(value, 0, Items.Count - 1);
+            if (clamped == selectedIndex)
+            {
+                return;
+            }
+
+            selectedIndex = clamped;
+            Text = clamped >= 0 ? Items[clamped] : "";
+            AccessibleName = Text;
+            Invalidate();
+            SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void OpenList()
+    {
+        var menu = new ContextMenuStrip { ShowImageMargin = false, ShowCheckMargin = true, Font = Font };
+        for (var index = 0; index < Items.Count; index++)
+        {
+            var choice = index;
+            var item = new ToolStripMenuItem(Items[index]) { Checked = index == selectedIndex };
+            item.Click += (_, _) => SelectedIndex = choice;
+            menu.Items.Add(item);
+        }
+
+        menu.Closed += (_, _) => BeginInvoke(menu.Dispose);
+        menu.MinimumSize = new Size(Width, 0);
+        menu.Show(this, new Point(0, Height + 2));
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        Focus();
+        OpenList();
+        base.OnClick(e);
+    }
+
+    protected override bool IsInputKey(Keys keyData) => keyData is Keys.Up or Keys.Down or Keys.Enter or Keys.Space || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.KeyCode is Keys.Enter or Keys.Space or Keys.F4 || (e.Alt && e.KeyCode == Keys.Down))
+        {
+            OpenList();
+            e.Handled = true;
+        }
+        else if (e.KeyCode is Keys.Up or Keys.Down)
+        {
+            SelectedIndex = Math.Max(0, selectedIndex + (e.KeyCode == Keys.Down ? 1 : -1));
+            e.Handled = true;
+        }
+
+        base.OnKeyDown(e);
+    }
+
+    protected override void OnGotFocus(EventArgs e)
+    {
+        Invalidate();
+        base.OnGotFocus(e);
+    }
+
+    protected override void OnLostFocus(EventArgs e)
+    {
+        Invalidate();
+        base.OnLostFocus(e);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(ToggleSwitch.SurfaceBehind(this));
+        var rect = new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f);
+        RoundedPaint.FillRounded(g, rect, 10, Back);
+        using var path = RoundedPaint.RoundedRect(rect, 10);
+        using var pen = new Pen(Focused ? Color.FromArgb(24, 134, 74) : Border, Focused ? 1.5f : 1f);
+        g.DrawPath(pen, path);
+        TextRenderer.DrawText(g, Text, Font, new Rectangle(12, 0, Math.Max(0, Width - 44), Height), Ink,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        using var chevron = new Pen(Chevron, 1.8f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        var cx = Width - 20f;
+        var cy = Height / 2f;
+        g.DrawLines(chevron, new[] { new PointF(cx - 4.5f, cy - 2), new PointF(cx, cy + 2.5f), new PointF(cx + 4.5f, cy - 2) });
+    }
+}
+
+/// <summary>
 /// Rounded corners for ordinary buttons (the design's 10 px radius). WinForms' flat buttons are
 /// square, so this paints over them with the same colours the theme set (back, border, hover, pressed).
 /// </summary>
@@ -211,9 +328,22 @@ internal static class RoundedButtons
     private sealed class State
     {
         public bool KeyboardFocus;
+        /// <summary>A line icon (LineIcons name) drawn before the text, as on the design's Scan now button; null = none.</summary>
+        public string? Icon;
     }
 
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Button, State> Attached = new();
+
+    /// <summary>Shows a line icon before the button's text (or none with null).</summary>
+    public static void SetIcon(Button button, string? icon)
+    {
+        Attach(button);
+        if (Attached.TryGetValue(button, out var state) && state.Icon != icon)
+        {
+            state.Icon = icon;
+            button.Invalidate();
+        }
+    }
 
     public static void Attach(Button button)
     {
@@ -266,8 +396,24 @@ internal static class RoundedButtons
             g.DrawPath(pen, path);
         }
 
-        TextRenderer.DrawText(g, button.Text, button.Font, Rectangle.Round(rect), ink,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        var textRect = Rectangle.Round(rect);
+        if (Attached.TryGetValue(button, out var iconState) && iconState.Icon is { } icon)
+        {
+            // Icon and text centred together as one group: [icon] 8px [text].
+            const int iconSize = 18, gap = 8;
+            var textWidth = TextRenderer.MeasureText(g, button.Text, button.Font, Size.Empty, TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width;
+            var left = (int)((button.Width - (iconSize + gap + textWidth)) / 2f);
+            LineIcons.Draw(g, LineIcons.Prefix + icon, new RectangleF(left, (button.Height - iconSize) / 2f, iconSize, iconSize), ink);
+            textRect = new Rectangle(left + iconSize + gap, 0, Math.Max(0, button.Width - left - iconSize - gap), button.Height);
+            TextRenderer.DrawText(g, button.Text, button.Font, textRect, ink,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        }
+        else
+        {
+            TextRenderer.DrawText(g, button.Text, button.Font, textRect, ink,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
+        }
+
         if (button.Focused && Attached.TryGetValue(button, out var focusState) && focusState.KeyboardFocus)
         {
             using var focus = RoundedPaint.RoundedRect(new RectangleF(2.5f, 2.5f, button.Width - 5.5f, button.Height - 5.5f), Math.Max(2, radius - 2));

@@ -275,7 +275,7 @@ internal static class FirstRunSetup
             Dock = DockStyle.Top,
             Height = 40,
             Padding = new Padding(16, 12, 16, 0),
-            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Font = UiFonts.Create("Segoe UI", 10, FontStyle.Bold),
         };
         var note = new Label
         {

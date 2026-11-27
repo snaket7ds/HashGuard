@@ -890,6 +890,16 @@ var tests = new (string Name, Action Test)[]
         AssertTrue(ActivityText.ParseTimestamp("2026-11-26 18:40:12 -06:00") is not null);
         AssertTrue(ActivityText.ParseTimestamp("not a date") is null);
     }),
+    ("activity details use plain words, not certificate codes", () =>
+    {
+        AssertEqual("Signed by Microsoft Windows Hardware Compatibility Publisher", ActivityText.FriendlyTrust("Service: SIVDriver; Signed by Microsoft Windows Hardware Compatibility Publisher; certificate outside validity period; NotTimeValid"));
+        AssertEqual("Signed by Microsoft Windows", ActivityText.FriendlyTrust("trusted publisher: Microsoft Windows; trusted install location"));
+        AssertEqual("Not signed", ActivityText.FriendlyTrust("Unsigned or signature unavailable"));
+        AssertEqual("", ActivityText.FriendlyTrust("RevocationStatusUnknown, OfflineRevocation"));
+        AssertEqual(@"C:\WINDOWS\system32\drivers\x.sys", ActivityText.FriendlyPath(@"\??\C:\WINDOWS\system32\drivers\x.sys"));
+        AssertEqual("174 clean · 1 unknown", ActivityText.BatchSummary(174, 1, 0, 0));
+        AssertEqual("2 clean · 1 flagged · 1 couldn't be checked", ActivityText.BatchSummary(2, 0, 1, 1));
+    }),
 };
 
 var failures = new List<string>();

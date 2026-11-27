@@ -40,7 +40,7 @@ public sealed partial class MainForm : Form
         var rightClickScan = new ToggleSwitch { Text = "Add Explorer right-click scan", Checked = rightClickScanBox.Checked, AutoSize = true };
         var startWithWindows = new ToggleSwitch { Text = "Start with Windows", Checked = startWithWindowsBox.Checked, AutoSize = true };
         var startMinimized = new ToggleSwitch { Text = "Start minimized to tray", Checked = startMinimizedBox.Checked, AutoSize = true };
-        var colorMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 180 };
+        var colorMode = new DropdownField { Width = 200 };
         colorMode.Items.AddRange(["Use Windows setting", "Light", "Dark"]);
         colorMode.SelectedIndex = Math.Clamp(colorModeBox.SelectedIndex, 0, colorMode.Items.Count - 1);
         var autoProcessScan = new ToggleSwitch { Text = "Scan automatically at startup", Checked = autoProcessScanBox.Checked, AutoSize = true };
@@ -56,7 +56,7 @@ public sealed partial class MainForm : Form
         var hashCache = new ToggleSwitch { Text = "Enable Hash Cache", Checked = hashCacheEnabledBox.Checked, AutoSize = true };
         var uploadUnknown = new ToggleSwitch { Text = "Allow VirusTotal uploads (approve each file in Review Queue)", Checked = uploadUnknownBox.Checked, AutoSize = true };
         var networkMonitor = new ToggleSwitch { Text = "Watch network connections in the background (needed for alerts and auto-block)", Checked = appSettings.NetworkMonitorEnabled, AutoSize = true };
-        var networkNotify = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 360 };
+        var networkNotify = new DropdownField { Width = 360 };
         networkNotify.Items.AddRange(["When an untrusted app connects for the first time", "When any app connects for the first time", "Never"]);
         networkNotify.SelectedIndex = NetworkNotifyModes.Normalize(appSettings.NetworkNotifyMode) switch
         {
@@ -111,7 +111,7 @@ public sealed partial class MainForm : Form
             ("Provider Status", [reputationValidation]));
 
         var behaviorPage = CreateSettingsPage(
-            ("Windows Integration", [runElevated, startWithWindows, startMinimized, rightClickScan, CreateSettingRow("Colors", colorMode), suppressTray]),
+            ("Windows", [runElevated, startWithWindows, startMinimized, rightClickScan, suppressTray, CreateSettingRow("Appearance", colorMode)]),
             ("Updates and privacy", [autoUpdates, CreateSettingRow(versionRowLabel, updateButton), telemetryEnabled]));
         var antivirusPage = CreateSettingsPage(
             ("Scans", [autoProcessScan, scheduledDaily, CreateSettingRow("Daily scan hour (0-23)", scheduledHour), scanAllFiles]),
@@ -462,7 +462,7 @@ public sealed partial class MainForm : Form
         ["MetaDefender API key"] = "Kept encrypted on this PC",
         ["VirusTotal delay per request"] = "Seconds between lookups; raise it if you hit the free limit",
         ["Request timeout"] = "Seconds to wait for a source to answer",
-        ["Colors"] = "Light, dark or follow Windows",
+        ["Appearance"] = "Light, dark or follow Windows",
         ["Daily scan hour (0-23)"] = "When the daily scan runs",
         ["New-app alerts"] = "When an app goes online for the first time",
         ["HashGuard firewall rules"] = "Removes every rule HashGuard added; your own rules stay",
@@ -521,7 +521,7 @@ public sealed partial class MainForm : Form
         var rows = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = controls.Length + 1, BackColor = Color.Transparent, Margin = new Padding(0) };
         rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         rows.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        rows.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false }, 0, 0);
+        rows.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, Font = UiFonts.Create("Segoe UI Semibold", 11, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false }, 0, 0);
         var height = 34;
         for (var index = 0; index < controls.Length; index++)
         {
@@ -563,8 +563,8 @@ public sealed partial class MainForm : Form
             return holder;
         }
 
-        // Long help wraps to a second line instead of being cut off (Segoe UI is wider than the mockup's font).
-        var twoLines = TextRenderer.MeasureText(help, SystemFonts.MessageBoxFont ?? Control.DefaultFont).Width > 330;
+        // Long help wraps to a second line instead of being cut off.
+        var twoLines = TextRenderer.MeasureText(help, SettingsHelpFont).Width > 330;
         var row = new TableLayoutPanel { Dock = DockStyle.Fill, Height = string.IsNullOrEmpty(help) ? 46 : twoLines ? 74 : 58, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0), Tag = "settings-row" };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -575,11 +575,11 @@ public sealed partial class MainForm : Form
             text.Controls.Add(new Label { Text = help, AutoSize = false, Dock = DockStyle.Top, Height = twoLines ? 36 : 20, Tag = "muted", AutoEllipsis = true, UseMnemonic = false });
         }
 
-        text.Controls.Add(new Label { Text = label, AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 9.75f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false, TextAlign = ContentAlignment.BottomLeft });
+        text.Controls.Add(new Label { Text = label, AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = UiFonts.Create("Segoe UI Semibold", 9.75f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false, TextAlign = ContentAlignment.BottomLeft });
         editor.Dock = DockStyle.None;
         editor.Anchor = AnchorStyles.Right;
         editor.Margin = new Padding(0);
-        if (editor is TextBox or ComboBox)
+        if (editor is TextBox or ComboBox or DropdownField)
         {
             editor.Width = 230;
         }
@@ -594,6 +594,8 @@ public sealed partial class MainForm : Form
     }
 
     private sealed record SettingRowTag(string Label, Control Editor);
+
+    private static readonly Font SettingsHelpFont = UiFonts.Create("Segoe UI", 9);
 
     /// <summary>A labelled field; laid out as a settings row by <see cref="CreateSettingsCardRow"/>.</summary>
     private static Control CreateSettingRow(string labelText, Control editor) =>

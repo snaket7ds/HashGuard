@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.1.5 - 2026-11-27
+
+Every page compared with the design again and the remaining differences fixed:
+
+- **The design's typeface:** HashGuard now ships with Inter (SIL Open Font License, in `Assets/Fonts`) and uses it everywhere, so text looks the same as the design on every PC. It is loaded only inside HashGuard; nothing is installed in Windows. If it can't load, HashGuard falls back to Segoe UI.
+- **Home:** Scan now has its magnifier icon. "Last scan" has its clock, and "reputation sources online" its green dot. A thin line now separates the sidebar from the page.
+- **Scan:**
+  - Running apps and Choose files are a choice: the chosen card has a green edge, and Scan now runs it.
+  - The extra Choose files… button, the subtitle and the Export report link are gone. Export report is on the Activity page.
+  - Provider chips move to a second row instead of being cut off ("Team Cy…").
+  - "Needs your decision" shows a green 0 when nothing waits.
+- **Quarantine:** the list is a table with FILE · WHY · CAME FROM · QUARANTINED headings. Open folder is a button.
+- **Activity:**
+  - Each batch of checks (a scan, or files opened together) is one row, such as "175 files checked · 174 clean · 1 unknown", instead of one "is clean" row per file. Unknown, flagged and failed files keep their own rows. Clean and search still list every file.
+  - Detail lines are plain language ("Signed by Microsoft Windows", "Not signed") instead of certificate codes.
+  - Open logs is a button.
+- **Firewall:**
+  - App rows have columns: name over publisher, verdict, host, switch. The extra "online" word is gone.
+  - Letter tiles follow the verdict: clean apps blue, not scanned amber, malicious red, Windows grey.
+  - The detail card has the app's letter tile next to its name. It shows the whole path, and each host has an Internet or LAN badge.
+  - "All connections this session…" is gone. Double-click an app to see them.
+  - The search hint is shorter so it isn't cut off.
+- **Settings → Behavior:**
+  - The card is called "Windows", and "Colors" is now "Appearance", listed last.
+  - Appearance and New-app alerts use rounded dropdowns.
+- **Fixed:** in dark mode, blue icon tiles used the light-mode colours.
+
 ## v1.1.4 - 2026-11-26
 
 Matched to the owner's real Windows screenshots of Scan, Quarantine and Activity:

@@ -18,26 +18,28 @@ public sealed partial class MainForm : Form
     private readonly Panel scanPageScanSlot = new() { Size = new Size(168, 46), Margin = new Padding(0) };
     // The threat card inside the Home hero (as designed): top flagged file with Details · Ignore · Quarantine.
     private readonly CardPanel homeThreatCard = new() { Dock = DockStyle.Fill, Radius = 14, Padding = new Padding(18, 12, 16, 12), Visible = false, Tag = "threat-card" };
-    private readonly Label homeThreatName = new() { AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
+    private readonly Label homeThreatName = new() { AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = UiFonts.Create("Segoe UI Semibold", 10.5f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
     private readonly Label homeThreatDetail = new() { AutoSize = false, Dock = DockStyle.Top, Height = 22, Tag = "muted", AutoEllipsis = true, UseMnemonic = false };
     private TableLayoutPanel? homePageLayout;
-    private readonly PillLabel homeLastScanChip = new() { AutoSize = false, Height = 26, Width = 190, Padding = new Padding(10, 0, 10, 0), Radius = 13, Font = new Font("Segoe UI", 9, FontStyle.Regular), Tag = "chip-neutral" };
-    private readonly PillLabel homeSourcesChip = new() { AutoSize = false, Height = 26, Width = 230, Padding = new Padding(10, 0, 10, 0), Radius = 13, Font = new Font("Segoe UI", 9, FontStyle.Regular), Tag = "chip-good" };
+    // As designed: the last-scan pill leads with a clock, the sources pill with a status dot.
+    private readonly PillLabel homeLastScanChip = new() { AutoSize = false, Height = 28, Width = 190, Padding = new Padding(30, 0, 10, 0), Radius = 14, Font = UiFonts.Create("Segoe UI Medium", 9, FontStyle.Regular), Tag = "chip-neutral", Icon = "activity" };
+    private readonly PillLabel homeSourcesChip = new() { AutoSize = false, Height = 28, Width = 230, Padding = new Padding(24, 0, 10, 0), Radius = 14, Font = UiFonts.Create("Segoe UI Medium", 9, FontStyle.Regular), Tag = "chip-good" };
     private readonly Label homeAvLastScan = CreateValueLabel();
     private readonly Label homeAvOpenFiles = CreateValueLabel();
     private readonly Label homeAvSources = CreateValueLabel();
     private readonly Label homeFwOnline = CreateValueLabel();
     private readonly Label homeFwBlocked = CreateValueLabel();
     private readonly Label homeFwAlerts = CreateValueLabel();
-    private readonly PillLabel homeAvPill = new() { AutoSize = false, Size = new Size(110, 24), Radius = 12, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular) };
-    private readonly PillLabel homeFwPill = new() { AutoSize = false, Size = new Size(110, 24), Radius = 12, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular) };
+    private readonly PillLabel homeAvPill = new() { AutoSize = false, Size = new Size(110, 24), Radius = 12, TextAlign = ContentAlignment.MiddleCenter, Font = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular) };
+    private readonly PillLabel homeFwPill = new() { AutoSize = false, Size = new Size(110, 24), Radius = 12, TextAlign = ContentAlignment.MiddleCenter, Font = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular) };
     private readonly Label homeTileDecision = CreateTileValueLabel();
     private readonly Label homeTileQuarantine = CreateTileValueLabel();
     private readonly CardPanel homeHero = new() { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(28, 22, 28, 22), Margin = new Padding(0, 0, 0, 18) };
     private readonly ProgressRing scanRing = new() { Size = new Size(116, 116), IdleText = "Ready" };
-    private readonly Label scanRingTitle = new() { AutoSize = false, Dock = DockStyle.Top, Height = 34, Font = new Font("Segoe UI Semibold", 15, FontStyle.Regular), Text = "Ready to scan", UseMnemonic = false };
+    private readonly Label scanRingTitle = new() { AutoSize = false, Dock = DockStyle.Top, Height = 34, Font = UiFonts.Create("Segoe UI Semibold", 15, FontStyle.Regular), Text = "Ready to scan", UseMnemonic = false };
     private readonly Label scanRingDetail = new() { AutoSize = false, Dock = DockStyle.Top, Height = 22, AutoEllipsis = true, Tag = "muted", UseMnemonic = false };
-    private readonly FlowLayoutPanel scanSourceChips = new() { Dock = DockStyle.Top, Height = 34, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0, 6, 0, 0) };
+    // Wraps to a second row when the window is too narrow for all chips, rather than cutting one off.
+    private readonly FlowLayoutPanel scanSourceChips = new() { Dock = DockStyle.Top, Height = 66, WrapContents = true, Margin = new Padding(0), Padding = new Padding(0, 6, 0, 0) };
     private readonly Label scanCountChecked = CreateCountLabel();
     private readonly Label scanCountClean = CreateCountLabel();
     private readonly Label scanCountUnknown = CreateCountLabel();
@@ -51,6 +53,8 @@ public sealed partial class MainForm : Form
     private void BuildLayout()
     {
         BackColor = SoftAppBack;
+        // The design's typeface (bundled Inter); controls without their own font inherit it.
+        Font = UiFonts.Create("Segoe UI", 9);
         trayIcon.Text = "HashGuard";
         trayIcon.Icon = cleanTrayIcon;
         trayIcon.Visible = true;
@@ -218,6 +222,7 @@ public sealed partial class MainForm : Form
         }
 
         firewallPageVisible = page == AppPage.Firewall;
+        currentPage = page;
         sidebar.SetActive(page);
         overlayAlert?.BringToFront();
         UpdateNetworkTimer();
@@ -258,7 +263,7 @@ public sealed partial class MainForm : Form
     private static Control CreatePageHeader(string title, string subtitle)
     {
         var header = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Top, Margin = new Padding(0, 0, 0, 14), BackColor = SoftAppBack };
-        header.Controls.Add(new Label { Text = title, AutoSize = true, Font = new Font("Segoe UI Semibold", 18, FontStyle.Regular), Margin = new Padding(0), UseMnemonic = false, Tag = "page-title" });
+        header.Controls.Add(new Label { Text = title, AutoSize = true, Font = UiFonts.Create("Segoe UI Semibold", 18, FontStyle.Regular), Margin = new Padding(0), UseMnemonic = false, Tag = "page-title" });
         if (!string.IsNullOrWhiteSpace(subtitle))
         {
             header.Controls.Add(new Label { Text = subtitle, AutoSize = true, Margin = new Padding(1, 4, 0, 0), Tag = "muted", UseMnemonic = false });
@@ -287,17 +292,17 @@ public sealed partial class MainForm : Form
         statusTitle.AutoSize = false;
         statusTitle.Dock = DockStyle.Top;
         statusTitle.Height = 40;
-        statusTitle.Font = new Font("Segoe UI Semibold", 19, FontStyle.Regular);
+        statusTitle.Font = UiFonts.Create("Segoe UI Semibold", 19, FontStyle.Regular);
         statusTitle.TextAlign = ContentAlignment.BottomLeft;
         statusTitle.UseMnemonic = false;
         statusSubtitle.AutoSize = false;
         statusSubtitle.Dock = DockStyle.Top;
         statusSubtitle.Height = 44;
-        statusSubtitle.Font = new Font("Segoe UI", 10, FontStyle.Regular);
+        statusSubtitle.Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular);
         statusSubtitle.TextAlign = ContentAlignment.TopLeft;
         statusSubtitle.Tag = "muted";
         statusSubtitle.UseMnemonic = false;
-        var chips = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 32, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0, 2, 0, 0), BackColor = Color.Transparent };
+        var chips = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0, 2, 0, 0), BackColor = Color.Transparent };
         homeLastScanChip.Margin = new Padding(0, 0, 8, 0);
         chips.Controls.Add(homeLastScanChip);
         chips.Controls.Add(homeSourcesChip);
@@ -402,7 +407,7 @@ public sealed partial class MainForm : Form
         head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         var icon = new IconBadge(glyph, tone) { Size = new Size(42, 42), Radius = 12, Anchor = AnchorStyles.Left };
         head.Controls.Add(icon, 0, 0);
-        head.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 12.5f, FontStyle.Regular), UseMnemonic = false }, 1, 0);
+        head.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = UiFonts.Create("Segoe UI Semibold", 12.5f, FontStyle.Regular), UseMnemonic = false }, 1, 0);
         pill.Anchor = AnchorStyles.Right;
         head.Controls.Add(pill, 2, 0);
         layout.Controls.Add(head, 0, 0);
@@ -413,7 +418,7 @@ public sealed partial class MainForm : Form
             layout.Controls.Add(rows[index].Value, 1, index + 1);
         }
 
-        var link = new LinkLabel { Text = linkText, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Bottom, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular), LinkBehavior = LinkBehavior.HoverUnderline, Margin = new Padding(0, 0, 0, 2), Tag = "accent-link" };
+        var link = new LinkLabel { Text = linkText, AutoSize = true, Anchor = AnchorStyles.Left | AnchorStyles.Bottom, Font = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular), LinkBehavior = LinkBehavior.HoverUnderline, Margin = new Padding(0, 0, 0, 2), Tag = "accent-link" };
         link.LinkClicked += (_, _) => onLink();
         layout.Controls.Add(link, 0, rows.Length + 1);
         layout.SetColumnSpan(link, 2);
@@ -421,7 +426,7 @@ public sealed partial class MainForm : Form
         return card;
     }
 
-    private static CardPanel CreateLinkTile(string title, Label detail, Action onClick)
+    private static CardPanel CreateLinkTile(string title, Label detail, Action onClick, bool showChevron = true)
     {
         var tile = new CardPanel { Dock = DockStyle.Fill, Radius = 16, Padding = new Padding(20, 16, 16, 14), AccessibleName = title, AccessibleRole = AccessibleRole.Link, TabStop = true };
         var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(0) };
@@ -429,12 +434,20 @@ public sealed partial class MainForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 20));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false }, 0, 0);
+        layout.Controls.Add(new Label { Text = title, AutoSize = false, Dock = DockStyle.Fill, Font = UiFonts.Create("Segoe UI Semibold", 10.5f, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false }, 0, 0);
         detail.Dock = DockStyle.Fill;
         layout.Controls.Add(detail, 0, 1);
-        var chevron = new Label { Text = "", Font = new Font("Segoe MDL2 Assets", 9, FontStyle.Regular), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, Tag = "chevron" };
-        layout.Controls.Add(chevron, 1, 0);
-        layout.SetRowSpan(chevron, 2);
+        var chevron = new Label { Text = "", Font = UiFonts.Create("Segoe MDL2 Assets", 9, FontStyle.Regular), AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, Tag = "chevron" };
+        if (showChevron)
+        {
+            layout.Controls.Add(chevron, 1, 0);
+            layout.SetRowSpan(chevron, 2);
+        }
+        else
+        {
+            chevron.Dispose();
+            layout.ColumnStyles[1].Width = 0;
+        }
         tile.Controls.Add(layout);
         WireClick(tile, onClick);
         tile.MakeInteractive();
@@ -449,13 +462,13 @@ public sealed partial class MainForm : Form
     }
 
     private static Label CreateValueLabel() =>
-        new() { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular), UseMnemonic = false };
+        new() { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Font = UiFonts.Create("Segoe UI Semibold", 9.5f, FontStyle.Regular), UseMnemonic = false };
 
     private static Label CreateTileValueLabel() =>
         new() { AutoSize = false, Dock = DockStyle.Top, Height = 20, Tag = "muted", UseMnemonic = false };
 
     private static Label CreateCountLabel() =>
-        new() { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = new Font("Segoe UI Semibold", 14, FontStyle.Regular), UseMnemonic = false };
+        new() { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Font = UiFonts.Create("Segoe UI Semibold", 14, FontStyle.Regular), UseMnemonic = false };
 
     private Control BuildScanPage()
     {
@@ -464,25 +477,21 @@ public sealed partial class MainForm : Form
         page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
         page.RowStyles.Add(new RowStyle(SizeType.Absolute, 176));
         page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        page.Controls.Add(CreatePageHeader("Scan", "Check the apps running now, or choose files to check."), 0, 0);
+        page.Controls.Add(CreatePageHeader("Scan", ""), 0, 0);
 
-        // Scan types, as in the design: click one to start it.
+        // Scan types, as designed: a choice of two (the chosen one has a green edge); Scan now runs it.
         var types = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 16), BackColor = SoftAppBack };
         types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         types.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var runningApps = CreateLinkTile("Running apps", new Label { Text = "Every app running now, with its startup entries", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, () =>
-        {
-            if (scanCancellation is null)
-            {
-                _ = StartScanAsync();
-            }
-        });
-        var chooseFilesTile = CreateLinkTile("Choose files", new Label { Text = "Any file you pick", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, ChooseFilesToScan);
-        runningApps.Margin = new Padding(0, 0, 8, 0);
-        chooseFilesTile.Margin = new Padding(8, 0, 0, 0);
-        types.Controls.Add(runningApps, 0, 0);
-        types.Controls.Add(chooseFilesTile, 1, 0);
+        scanTypeRunningCard = CreateLinkTile("Running apps", new Label { Text = "Every app running now, with its startup entries", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, () => SetScanType(files: false), showChevron: false);
+        scanTypeFilesCard = CreateLinkTile("Choose files", new Label { Text = "Any file or folder you pick", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, () => SetScanType(files: true), showChevron: false);
+        scanTypeRunningCard.AccessibleRole = AccessibleRole.RadioButton;
+        scanTypeFilesCard.AccessibleRole = AccessibleRole.RadioButton;
+        scanTypeRunningCard.Margin = new Padding(0, 0, 8, 0);
+        scanTypeFilesCard.Margin = new Padding(8, 0, 0, 0);
+        types.Controls.Add(scanTypeRunningCard, 0, 0);
+        types.Controls.Add(scanTypeFilesCard, 1, 0);
         page.Controls.Add(types, 0, 1);
 
         // Progress card: ring, what is being checked, provider chips, counts, scan / choose files.
@@ -520,9 +529,6 @@ public sealed partial class MainForm : Form
         progressLayout.Controls.Add(counts, 2, 0);
         var actions = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Anchor = AnchorStyles.Right, BackColor = Color.Transparent, Margin = new Padding(0) };
         actions.Controls.Add(scanPageScanSlot);
-        var chooseFiles = new Button { Text = "Choose files…", Size = new Size(168, 40), Margin = new Padding(0, 10, 0, 0) };
-        chooseFiles.Click += (_, _) => ChooseFilesToScan();
-        actions.Controls.Add(chooseFiles);
         progressLayout.Controls.Add(actions, 3, 0);
         progressCard.Controls.Add(progressLayout);
         page.Controls.Add(progressCard, 0, 2);
@@ -543,15 +549,13 @@ public sealed partial class MainForm : Form
         ConfigureResultsView(resultsView);
         var panel = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10), Margin = new Padding(0) };
         var title = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false, Margin = new Padding(0), Padding = new Padding(20, 12, 20, 0), BackColor = Color.White, Tag = "surface" };
-        title.Controls.Add(new Label { Text = "Needs your decision", AutoSize = true, Font = new Font("Segoe UI Semibold", 11.5f, FontStyle.Regular), Margin = new Padding(0, 2, 8, 0), UseMnemonic = false });
+        title.Controls.Add(new Label { Text = "Needs your decision", AutoSize = true, Font = UiFonts.Create("Segoe UI Semibold", 11.5f, FontStyle.Regular), Margin = new Padding(0, 2, 8, 0), UseMnemonic = false });
         reviewCountLabel.Margin = new Padding(0, 5, 0, 0);
         toolTip.SetToolTip(reviewCountLabel, "Items that need a decision");
         title.Controls.Add(reviewCountLabel);
         reviewNoteLabel.Margin = new Padding(12, 6, 0, 0);
         title.Controls.Add(reviewNoteLabel);
-        var export = new LinkLabel { Text = "Export report", AutoSize = true, Margin = new Padding(24, 6, 0, 0), Tag = "accent-link" };
-        export.LinkClicked += (_, _) => ExportScanReport();
-        title.Controls.Add(export);
+        // Export report lives on the Activity page (same report), as designed.
 
         reviewList.Dock = DockStyle.Fill;
         reviewList.AccessibleName = "Needs your decision";
@@ -596,6 +600,46 @@ public sealed partial class MainForm : Form
     }
 
     private readonly CardList reviewList = new();
+    private static readonly Font ChipFont = UiFonts.Create("Segoe UI Medium", 9);
+    private CardPanel? scanTypeRunningCard;
+    private CardPanel? scanTypeFilesCard;
+    private bool scanTypeFiles;
+    private AppPage currentPage = AppPage.Home;
+
+    /// <summary>Picks the Scan page's scan type (radio); Scan now then runs it.</summary>
+    private void SetScanType(bool files)
+    {
+        scanTypeFiles = files;
+        SyncScanTypeCards();
+    }
+
+    private void SyncScanTypeCards()
+    {
+        foreach (var (card, chosen) in new[] { (scanTypeRunningCard, !scanTypeFiles), (scanTypeFilesCard, scanTypeFiles) })
+        {
+            if (card is null)
+            {
+                continue;
+            }
+
+            card.EdgeWidth = chosen ? 2 : 1;
+            card.EdgeColor = chosen ? ShieldGreen : activePalette.Hairline;
+            card.AccessibleDescription = chosen ? "Selected" : null;
+            card.Invalidate();
+        }
+    }
+
+    /// <summary>Scan now: on the Scan page with "Choose files" picked it opens the file picker; otherwise it scans running apps (or stops a scan).</summary>
+    private async Task RunScanButtonAsync()
+    {
+        if (scanCancellation is null && currentPage == AppPage.Scan && scanTypeFiles)
+        {
+            ChooseFilesToScan();
+            return;
+        }
+
+        await StartScanAsync();
+    }
 
     private async void ChooseFilesToScan()
     {
@@ -701,6 +745,7 @@ public sealed partial class MainForm : Form
     private void SyncScanRing(bool countsToo = true)
     {
         var running = scanCancellation is not null || scanGate.IsBusy;
+        SyncScanTypeCards();
         scanRing.Running = running;
         scanRing.Maximum = Math.Max(1, progressBar.Maximum);
         scanRing.Value = Math.Min(progressBar.Value, scanRing.Maximum);
@@ -733,10 +778,11 @@ public sealed partial class MainForm : Form
                 {
                     Text = name,
                     AutoSize = false,
-                    Size = new Size(TextRenderer.MeasureText(name, Font).Width + 38, 26),
-                    Radius = 12,
+                    Font = ChipFont,
+                    Size = new Size(TextRenderer.MeasureText(name, ChipFont).Width + 38, 26),
+                    Radius = 13,
                     Padding = new Padding(24, 0, 10, 0),
-                    Margin = new Padding(0, 0, 8, 0),
+                    Margin = new Padding(0, 0, 8, 6),
                     PillColor = activePalette.PillBack,
                     ForeColor = activePalette.Text,
                     DotColor = activePalette.AccentText,
@@ -757,12 +803,13 @@ public sealed partial class MainForm : Form
         statusSubtitle.Text = scanning && !string.IsNullOrWhiteSpace(lastDashboardSubtitle) ? lastDashboardSubtitle : status.Subtitle;
         homeLastScanChip.Text = status.LastScanChip;
         homeSourcesChip.Text = status.SourcesChip;
-        homeLastScanChip.Width = TextRenderer.MeasureText(homeLastScanChip.Text, homeLastScanChip.Font).Width + 26;
-        homeSourcesChip.Width = TextRenderer.MeasureText(homeSourcesChip.Text, homeSourcesChip.Font).Width + 26;
+        homeLastScanChip.Width = TextRenderer.MeasureText(homeLastScanChip.Text, homeLastScanChip.Font).Width + homeLastScanChip.Padding.Horizontal + 4;
+        homeSourcesChip.Width = TextRenderer.MeasureText(homeSourcesChip.Text, homeSourcesChip.Font).Width + homeSourcesChip.Padding.Horizontal + 4;
         homeLastScanChip.PillColor = activePalette.NeutralTint;
         homeLastScanChip.ForeColor = activePalette.Text;
         homeSourcesChip.PillColor = providers > 0 ? activePalette.AccentTint : activePalette.AttentionTint;
         homeSourcesChip.ForeColor = providers > 0 ? activePalette.AccentText : activePalette.AttentionText;
+        homeSourcesChip.DotColor = providers > 0 ? ShieldGreen : activePalette.AttentionText;
         var topThreat = scanning ? null : FindTopThreat();
         homeThreatCard.Visible = topThreat is not null;
         if (homePageLayout is not null)
@@ -898,7 +945,7 @@ public sealed partial class MainForm : Form
             ScrollBars = ScrollBars.Vertical,
             Dock = DockStyle.Fill,
             BorderStyle = BorderStyle.None,
-            Font = new Font("Segoe UI", 10, FontStyle.Regular),
+            Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular),
             Text = string.Join(Environment.NewLine, new[]
             {
                 Path.GetFileName(result.Path),

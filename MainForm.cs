@@ -62,8 +62,8 @@ public sealed partial class MainForm : Form
 
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
-    private readonly Button scanButton = new() { Text = "Scan now", Width = 168, Height = 46, BackColor = ShieldGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), Tag = "scan-button" };
-    private readonly Button updateButton = new() { Text = "Check for updates", Width = 150, Height = 38, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
+    private readonly Button scanButton = new() { Text = "Scan now", Width = 168, Height = 46, BackColor = ShieldGreen, FlatStyle = FlatStyle.Flat, Font = UiFonts.Create("Segoe UI Semibold", 10.5f, FontStyle.Regular), Tag = "scan-button" };
+    private readonly Button updateButton = new() { Text = "Check for updates", Width = 150, Height = 38, Font = UiFonts.Create("Segoe UI", 9, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
     private readonly CheckBox rightClickScanBox = new() { Text = "Add Explorer right-click scan", AutoSize = true };
     private readonly CheckBox startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };
@@ -89,15 +89,15 @@ public sealed partial class MainForm : Form
         Dock = DockStyle.Fill,
         TextAlign = ContentAlignment.MiddleCenter,
         ForeColor = Color.DimGray,
-        Font = new Font("Segoe UI", 10, FontStyle.Regular),
+        Font = UiFonts.Create("Segoe UI", 10, FontStyle.Regular),
     };
     private readonly ProgressBar progressBar = new();
     private readonly Label statusLabel = new() { AutoEllipsis = false };
     private readonly Label countLabel = new() { AutoSize = true };
     private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "idle" };
-    private readonly Label statusTitle = new() { Text = "Not scanned yet", AutoSize = true, Font = new Font("Segoe UI Semibold", 19, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter };
+    private readonly Label statusTitle = new() { Text = "Not scanned yet", AutoSize = true, Font = UiFonts.Create("Segoe UI Semibold", 19, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label statusSubtitle = new() { Text = "Run a scan to check running apps and local trust signals.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
-    private readonly PillLabel reviewCountLabel = new() { Text = "0", AutoSize = true, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(8, 2, 8, 2), Radius = 10 };
+    private readonly PillLabel reviewCountLabel = new() { Text = "0", AutoSize = true, Font = UiFonts.Create("Segoe UI Semibold", 8.5f, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(8, 2, 8, 2), Radius = 10 };
     private readonly NotifyIcon trayIcon = new();
     private readonly ToolTip toolTip = new();
     private readonly Icon cleanTrayIcon;
@@ -238,7 +238,7 @@ public sealed partial class MainForm : Form
         suppressSettingEvents = false;
         MigrateStartupToElevatedTaskIfNeeded();
 
-        scanButton.Click += async (_, _) => await StartScanAsync();
+        scanButton.Click += async (_, _) => await RunScanButtonAsync();
         processMonitorTimer.Tick += async (_, _) => await ScanNewProcessFilesAsync();
         allFileScanTimer.Tick += async (_, _) => await ScanQueuedAllFileAsync();
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
@@ -329,6 +329,7 @@ public sealed partial class MainForm : Form
         scanButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(20, 116, 64);
         scanButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(17, 98, 54);
         scanButton.FlatStyle = FlatStyle.Flat;
+        RoundedButtons.SetIcon(scanButton, "scan");
     }
 
     private void SetScanButtonStopStyle()
@@ -341,6 +342,7 @@ public sealed partial class MainForm : Form
         scanButton.FlatAppearance.BorderColor = activePalette.HeaderButtonBorder;
         scanButton.FlatAppearance.MouseOverBackColor = activePalette.SurfaceHover;
         scanButton.FlatAppearance.MouseDownBackColor = activePalette.SurfacePressed;
+        RoundedButtons.SetIcon(scanButton, null);
     }
 
     private void SetDashboardState(string title, string subtitle, bool actionNeeded)

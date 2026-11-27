@@ -84,6 +84,57 @@ internal static class ActivityText
             : null;
     }
 
+    /// <summary>
+    /// The log's trust column in plain words: "Signed by Microsoft Windows" or "Not signed".
+    /// Certificate-chain codes (NotTimeValid, RevocationStatusUnknown, …) and service names are
+    /// left for the details window.
+    /// </summary>
+    public static string FriendlyTrust(string? trust)
+    {
+        if (string.IsNullOrWhiteSpace(trust))
+        {
+            return "";
+        }
+
+        string? signer = null;
+        var unsigned = false;
+        foreach (var part in trust.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (signer is null && part.StartsWith("Signed by ", StringComparison.OrdinalIgnoreCase))
+            {
+                signer = part["Signed by ".Length..].Trim();
+            }
+            else if (signer is null && part.StartsWith("trusted publisher:", StringComparison.OrdinalIgnoreCase))
+            {
+                signer = part["trusted publisher:".Length..].Trim();
+            }
+            else if (part.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase))
+            {
+                unsigned = true;
+            }
+        }
+
+        return !string.IsNullOrWhiteSpace(signer) ? $"Signed by {signer}" : unsigned ? "Not signed" : "";
+    }
+
+    /// <summary>A path as people write it: without the NT "\??\" prefix some drivers report.</summary>
+    public static string FriendlyPath(string? path)
+    {
+        var value = path ?? "";
+        return value.StartsWith(@"\??\", StringComparison.Ordinal) ? value[4..] : value;
+    }
+
+    /// <summary>"174 clean · 1 unknown · 1 flagged" for a batch of checks (zero counts left out).</summary>
+    public static string BatchSummary(int clean, int unknown, int flagged, int errors)
+    {
+        var parts = new List<string>();
+        if (clean > 0) parts.Add($"{clean.ToString("N0", CultureInfo.CurrentCulture)} clean");
+        if (unknown > 0) parts.Add($"{unknown.ToString("N0", CultureInfo.CurrentCulture)} unknown");
+        if (flagged > 0) parts.Add($"{flagged.ToString("N0", CultureInfo.CurrentCulture)} flagged");
+        if (errors > 0) parts.Add(errors == 1 ? "1 couldn't be checked" : $"{errors.ToString("N0", CultureInfo.CurrentCulture)} couldn't be checked");
+        return string.Join(" · ", parts);
+    }
+
     /// <summary>The name shown for a row: the process name, else the file name of the path.</summary>
     public static string DisplayName(string processNames, string path)
     {

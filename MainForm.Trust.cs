@@ -66,7 +66,7 @@ public sealed partial class MainForm : Form
         grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         // Left card: trusted publishers. Both cards fill the same height and scroll inside.
-        var trustedTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
+        var trustedTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = UiFonts.Create("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
         var trustedHelp = new Label
         {
             Text = "Only files with a valid signature and this exact publisher name count. They get a lower risk score and no new-app alerts, and are still checked for malware.",
@@ -85,7 +85,7 @@ public sealed partial class MainForm : Form
         leftCard.Controls.Add(leftHead);
 
         // Right card: publishers seen on this PC, searchable and sortable.
-        var seenTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = new Font("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
+        var seenTitle = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 30, Font = UiFonts.Create("Segoe UI Semibold", 11, FontStyle.Regular), UseMnemonic = false };
         var search = new TextBox { Width = 150, PlaceholderText = "Search publishers", AccessibleName = "Search publishers", Margin = new Padding(0, 0, 8, 0) };
         var sortFiles = new ChipButton("Most files");
         var sortName = new ChipButton("A–Z");
