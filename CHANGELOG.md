@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.3 - 2026-11-26
+
+- **Home when a threat is found, as designed:** the red status now holds a card for the most serious flagged file (its name, how many security vendors flag it, whether it's signed, where it is) with **Details · Ignore · Quarantine**. These replace the separate Review and Quarantine buttons.
+- **Firewall detail card:** Signed by, First seen, Connections and Status are now a tidy two-column list.
+- Checked visually: the threat state, the "Needs your decision" rows, the in-window alert and the tray pop-up were rendered with sample data in a separate preview build (`-p:DefineConstants=DESIGN_PREVIEW`) and compared with the design. Release builds don't include that sample data.
+
 ## v1.1.2 - 2026-11-26
 
 - **Every page now looks like the design.** Firewall: stat cards, app rows with a verdict label and an on/off switch to block or allow, and a detail card. Scan: "Running apps" and "Choose files" cards, and "Needs your decision" as card rows with their own Details · Ignore · Quarantine / Send to VirusTotal buttons. Quarantine: card rows plus a card for the selected file (Copy hash · Restore to Desktop · Restore · Delete permanently). Settings: segmented tabs, sections as cards in two columns, each setting with a plain name, a one-line explanation and an on/off switch; "Remove all HashGuard rules" is under Settings → Firewall; Trust uses the same card rows. The Home status badge is the design's shield.
