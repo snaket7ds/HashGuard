@@ -55,7 +55,13 @@ public static class RiskScorer
         var trustedPublisher = HashGuardLogic.SignatureChainValid(result.SignatureSummary)
             && !string.IsNullOrWhiteSpace(result.SignaturePublisher)
             && trustedPublishers.Any(trusted => HashGuardLogic.PublisherEquals(result.SignaturePublisher, trusted));
-        if (unsigned)
+        if (unsigned && result.SignatureSummary == SignatureReader.MismatchSummary)
+        {
+            // A signature that doesn't match the file: changed after signing, or a copied signature.
+            score += 40;
+            reasons.Add("signature doesn't match the file");
+        }
+        else if (unsigned)
         {
             score += 15;
             reasons.Add("unsigned");

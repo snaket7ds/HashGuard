@@ -59,6 +59,38 @@ internal static class V2StartupTests
             False(LegacyHashGuard.IsLegacy(0, null));
             False(LegacyHashGuard.IsLegacy(0, ""));
         }),
+        ("Signatures: Windows catalog-signed files (notepad.exe) are signed by Microsoft", () =>
+        {
+            var notepad = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "notepad.exe");
+            var signature = SignatureReader.ReadUncached(notepad);
+            True(signature.Summary.StartsWith("Signed by Microsoft", StringComparison.Ordinal));
+            True(HashGuardLogic.SignatureChainValid(signature.Summary));
+        }),
+        ("Signatures: embedded signatures verify; a changed copy doesn't; plain files are unsigned", () =>
+        {
+            var embedded = new[] { Environment.ProcessPath!, Path.Combine(AppContext.BaseDirectory, "HashGuard.Core.dll") }
+                .Concat(Directory.GetFiles(Path.GetDirectoryName(typeof(object).Assembly.Location)!, "*.dll").Take(40))
+                .FirstOrDefault(path => SignatureReader.ReadUncached(path) is { } s && HashGuardLogic.SignatureChainValid(s.Summary) && !s.Summary.Contains(SignatureReader.CatalogNote))
+                ?? throw new InvalidOperationException("No file with a valid embedded signature found.");
+
+            var dir = Directory.CreateTempSubdirectory("hg-sig").FullName;
+            try
+            {
+                var copy = Path.Combine(dir, "changed" + Path.GetExtension(embedded));
+                var bytes = File.ReadAllBytes(embedded);
+                bytes[bytes.Length / 3] ^= 0xFF;
+                File.WriteAllBytes(copy, bytes);
+                Equal(SignatureReader.MismatchSummary, SignatureReader.ReadUncached(copy).Summary);
+
+                var plain = Path.Combine(dir, "plain.txt");
+                File.WriteAllText(plain, "hello");
+                Equal(SignatureReader.UnsignedSummary, SignatureReader.ReadUncached(plain).Summary);
+            }
+            finally
+            {
+                Directory.Delete(dir, true);
+            }
+        }),
         ("Legacy: this test process is never reported", () =>
         {
             True(LegacyHashGuard.FindRunning().All(p => p.Pid != Environment.ProcessId));
