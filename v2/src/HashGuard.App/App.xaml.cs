@@ -166,10 +166,10 @@ public partial class App : Application
     {
         using var iconStream = typeof(App).Assembly.GetManifestResourceStream("HashGuard.ico");
         var menu = new MenuFlyout();
-        var open = new MenuFlyoutItem { Text = "Open HashGuard" };
-        open.Click += (_, _) => window?.ShowFromTray();
-        var exit = new MenuFlyoutItem { Text = "Exit" };
-        exit.Click += (_, _) => ExitApp();
+        // Commands, not Click: in PopupMenu mode H.NotifyIcon copies the items into a native menu
+        // and runs each item's Command; it never raises the WinUI Click event.
+        var open = new MenuFlyoutItem { Text = "Open HashGuard", Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => window?.ShowFromTray()) };
+        var exit = new MenuFlyoutItem { Text = "Exit", Command = new CommunityToolkit.Mvvm.Input.RelayCommand(ExitApp) };
         menu.Items.Add(open);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(exit);
@@ -182,14 +182,17 @@ public partial class App : Application
             ContextFlyout = menu,
             NoLeftClickDelay = true,
         };
-        tray.LeftClickCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(() => window?.ShowFromTray());        tray.ForceCreate();
+        tray.LeftClickCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(() => window?.ShowFromTray());
+        tray.ForceCreate();
     }
 
-    private void ExitApp()
+    /// <summary>Exit from the tray menu. Runs after the menu has closed, not inside the tray icon's own callback.</summary>
+    private void ExitApp() => window?.DispatcherQueue.TryEnqueue(() =>
     {
+        Services.AppServices.Instance.Network.Dispose();
         tray?.Dispose();
         tray = null;
         window?.CloseForReal();
         Exit();
-    }
+    });
 }
