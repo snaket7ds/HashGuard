@@ -33,8 +33,9 @@ public sealed partial class MainForm : Form
     private void UpdateReviewCount(int needsReview)
     {
         reviewCountLabel.Text = needsReview.ToString("N0");
-        reviewCountLabel.PillColor = needsReview > 0 ? activePalette.DangerTint : activePalette.PillBack;
-        reviewCountLabel.ForeColor = needsReview > 0 ? activePalette.DangerText : activePalette.MutedText;
+        // Solid red with white text when something waits, as designed.
+        reviewCountLabel.PillColor = needsReview > 0 ? Color.FromArgb(180, 35, 24) : activePalette.PillBack;
+        reviewCountLabel.ForeColor = needsReview > 0 ? Color.White : activePalette.MutedText;
         reviewCountLabel.Invalidate();
         RefreshReviewList();
     }

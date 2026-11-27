@@ -13,6 +13,9 @@ public sealed partial class MainForm : Form
 {
     private sealed record ActivityEntry(DateTime? When, ActivityKind Kind, string Title, string Detail, string Pill, ActivityLogRow? Row, string Path);
 
+    /// <summary>Export report and Open logs, at the right of the Activity title as designed.</summary>
+    private Control? activityHeaderTools;
+
     private Control BuildActivityPage()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
@@ -26,9 +29,13 @@ public sealed partial class MainForm : Form
         var chipClean = new ChipButton("Clean");
         var chipErrors = new ChipButton("Errors");
         var chips = new[] { (chipAll, ActivityFilter.All), (chipAction, ActivityFilter.ActionNeeded), (chipUnknown, ActivityFilter.Unknown), (chipClean, ActivityFilter.Clean), (chipErrors, ActivityFilter.Errors) };
-        var search = new TextBox { Width = 200, PlaceholderText = "Search files, apps or hashes", AccessibleName = "Search activity", Margin = new Padding(0, 6, 10, 0), Font = new Font("Segoe UI", 10, FontStyle.Regular) };
-        var export = new Button { Text = "Export report", AutoSize = true, Height = 36, Margin = new Padding(0, 4, 8, 0) };
-        var openLogs = new LinkLabel { Text = "Open logs", AutoSize = true, Margin = new Padding(0, 14, 0, 0), Tag = "accent-link" };
+        var search = new TextBox { PlaceholderText = "Search files, apps or hashes", AccessibleName = "Search activity", Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var searchBox = new SearchField(search) { Size = new Size(280, 38), Margin = new Padding(0, 3, 0, 0), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        var export = new Button { Text = "Export report", Size = new Size(132, 40), Margin = new Padding(0) };
+        var openLogs = new LinkLabel { Text = "Open logs", AutoSize = true, Margin = new Padding(0, 12, 16, 0), Tag = "accent-link" };
+        var headerTools = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(16, 2, 0, 0), BackColor = SoftAppBack };
+        headerTools.Controls.AddRange([openLogs, export]);
+        activityHeaderTools = headerTools;
         export.Click += (_, _) => ExportScanReport();
         openLogs.LinkClicked += (_, _) => OpenLogFolder();
 
@@ -42,10 +49,22 @@ public sealed partial class MainForm : Form
             chipFlow.Controls.Add(chip);
         }
 
-        var rightFlow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0), BackColor = SoftAppBack };
-        rightFlow.Controls.AddRange([search, export, openLogs]);
         bar.Controls.Add(chipFlow, 0, 0);
-        bar.Controls.Add(rightFlow, 1, 0);
+        bar.Controls.Add(searchBox, 1, 0);
+        bar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        // The search narrows when the chip counts get long, so no chip is ever hidden under it.
+        void FitSearch()
+        {
+            var chipsWidth = chips.Sum(chip => chip.Item1.Width + chip.Item1.Margin.Horizontal);
+            searchBox.Width = Math.Clamp(bar.ClientSize.Width - chipsWidth - 12, 170, 280);
+        }
+
+        bar.Resize += (_, _) => FitSearch();
+        foreach (var (chip, _) in chips)
+        {
+            chip.Resize += (_, _) => FitSearch();
+        }
 
         var list = new CardList { Dock = DockStyle.Fill, EmptyText = "Loading activity…", AccessibleName = "Activity history" };
         var card = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10) };

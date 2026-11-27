@@ -12,14 +12,19 @@ namespace HashGuardScanner;
 /// </summary>
 public sealed partial class MainForm : Form
 {
+    /// <summary>Search (and the folder links) at the right of the Quarantine title, as designed.</summary>
+    private Control? quarantineHeaderTools;
+
     private Control BuildQuarantinePage()
     {
         var page = new Panel { Dock = DockStyle.Fill, BackColor = SoftAppBack };
-        var search = new TextBox { Width = 300, PlaceholderText = "Search name, path or hash", AccessibleName = "Search quarantine", Margin = new Padding(0, 6, 12, 0), Font = new Font("Segoe UI", 10, FontStyle.Regular) };
-        var openFolder = new LinkLabel { Text = "Open quarantine folder", AutoSize = true, Margin = new Padding(0, 10, 16, 0), Tag = "accent-link" };
-        var repair = new LinkLabel { Text = "Remove missing entries", AutoSize = true, Margin = new Padding(0, 10, 0, 0), Tag = "accent-link", Visible = false };
-        var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 48, WrapContents = false, Margin = new Padding(0), BackColor = SoftAppBack };
-        bar.Controls.AddRange([search, openFolder, repair]);
+        var search = new TextBox { PlaceholderText = "Search name, path or hash", AccessibleName = "Search quarantine", Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var searchBox = new SearchField(search) { Size = new Size(300, 40), Margin = new Padding(0) };
+        var openFolder = new LinkLabel { Text = "Open folder", AutoSize = true, Margin = new Padding(0, 12, 16, 0), Tag = "accent-link" };
+        var repair = new LinkLabel { Text = "Remove missing entries", AutoSize = true, Margin = new Padding(0, 12, 16, 0), Tag = "accent-link", Visible = false };
+        var bar = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(16, 2, 0, 0), BackColor = SoftAppBack };
+        bar.Controls.AddRange([repair, openFolder, searchBox]);
+        quarantineHeaderTools = bar;
 
         var list = new CardList { Dock = DockStyle.Fill, AccessibleName = "Quarantined files", EmptyText = "Nothing in quarantine. When HashGuard isolates a file, it shows up here." };
         var listCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10) };
@@ -48,8 +53,6 @@ public sealed partial class MainForm : Form
         selCard.Controls.Add(selLayout);
 
         page.Controls.Add(listCard);
-        page.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 8, BackColor = SoftAppBack });
-        page.Controls.Add(bar);
         page.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 14, BackColor = SoftAppBack });
         page.Controls.Add(selCard);
 

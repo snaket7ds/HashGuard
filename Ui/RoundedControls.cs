@@ -176,15 +176,43 @@ internal sealed class PillLabel : Label
 
     public Color PillColor { get; set; } = Color.FromArgb(247, 248, 250);
     public int Radius { get; set; } = 10;
+    /// <summary>A small status dot before the text (provider chips); Empty = none. Use Padding.Left ≥ 24.</summary>
+    public Color DotColor { get; set; } = Color.Empty;
 
     protected override void OnPaint(PaintEventArgs e)
     {
         RoundedPaint.FillRounded(e.Graphics, new RectangleF(0, 0, Width - 1, Height - 1), Math.Min(Radius, Height / 2f), PillColor);
+        if (!DotColor.IsEmpty)
+        {
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var dot = new SolidBrush(DotColor);
+            e.Graphics.FillEllipse(dot, 11, (Height - 7) / 2f, 7, 7);
+        }
+
         var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis;
         flags |= TextAlign is ContentAlignment.MiddleCenter or ContentAlignment.TopCenter or ContentAlignment.BottomCenter
             ? TextFormatFlags.HorizontalCenter
             : TextFormatFlags.Left;
         var bounds = new Rectangle(Padding.Left, 0, Math.Max(0, Width - Padding.Horizontal), Height);
         TextRenderer.DrawText(e.Graphics, Text, Font, bounds, ForeColor, flags);
+    }
+}
+
+/// <summary>A small rounded grey tile (Scan page counts).</summary>
+internal sealed class StatTile : Panel
+{
+    public StatTile()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+        Tag = "stat-tile";
+    }
+
+    public Color TileColor { get; set; } = Color.FromArgb(247, 248, 250);
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(ToggleSwitch.SurfaceBehind(this));
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        RoundedPaint.FillRounded(e.Graphics, new RectangleF(0, 0, Width - 1, Height - 1), 12, TileColor);
     }
 }

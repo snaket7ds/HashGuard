@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.4 - 2026-11-26
+
+Matched to the owner's real Windows screenshots of Scan, Quarantine and Activity:
+
+- **Scan:**
+  - The scan-type cards are no longer cut off at the bottom.
+  - Checked, Clean, Unknown and Threats are four small grey tiles.
+  - Each provider chip has a green dot.
+  - The "Needs your decision" count is a solid red badge when something waits.
+- **Quarantine:** the search is a rounded field with a magnifier icon at the right of the title, next to "Open folder".
+- **Activity:** Export report and Open logs moved up beside the title. The rounded search field narrows when needed, so no filter chip (Errors included) is hidden under it.
+
 ## v1.1.3 - 2026-11-26
 
 - **Home when a threat is found, as designed:** the red status now holds a card for the most serious flagged file (its name, how many security vendors flag it, whether it's signed, where it is) with **Details · Ignore · Quarantine**. These replace the separate Review and Quarantine buttons.

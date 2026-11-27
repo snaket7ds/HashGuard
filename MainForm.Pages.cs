@@ -192,9 +192,9 @@ public sealed partial class MainForm : Form
             {
                 AppPage.Home => BuildHomePage(),
                 AppPage.Scan => BuildScanPage(),
-                AppPage.Quarantine => WrapPage("Quarantine", "Files here can't run. Restore one only if you trust it, or delete it for good.", BuildQuarantinePage()),
+                AppPage.Quarantine => WrapPage("Quarantine", "Files here can't run. Restore one only if you trust it, or delete it for good.", BuildQuarantinePage(), quarantineHeaderTools),
                 AppPage.Firewall => WrapPage("Firewall", "Every app that talks to the network, with HashGuard's verdict. Turn an app off to block it.", BuildFirewallPage(), firewallModeSwitch),
-                AppPage.Activity => WrapPage("Activity", "Everything HashGuard did: scans, files it checked, apps it blocked and files it quarantined.", BuildActivityPage()),
+                AppPage.Activity => WrapPage("Activity", "Everything HashGuard did: scans, files it checked, apps it blocked and files it quarantined.", BuildActivityPage(), activityHeaderTools),
                 _ => WrapPage("Settings", "", BuildSettingsView()),
             };
             view.Dock = DockStyle.Fill;
@@ -470,6 +470,7 @@ public sealed partial class MainForm : Form
         var types = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 16), BackColor = SoftAppBack };
         types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        types.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var runningApps = CreateLinkTile("Running apps", new Label { Text = "Every app running now, with its startup entries", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, () =>
         {
             if (scanCancellation is null)
@@ -489,7 +490,7 @@ public sealed partial class MainForm : Form
         var progressLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0) };
         progressLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
         progressLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        progressLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 236));
+        progressLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 244));
         progressLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         scanRing.Anchor = AnchorStyles.Left;
         progressLayout.Controls.Add(scanRing, 0, 0);
@@ -498,22 +499,24 @@ public sealed partial class MainForm : Form
         info.Controls.Add(scanRingDetail);
         info.Controls.Add(scanRingTitle);
         progressLayout.Controls.Add(info, 1, 0);
-        var counts = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Margin = new Padding(0, 8, 12, 8) };
+        // Counts as four small grey tiles (label above, number below), as designed.
+        var counts = new TableLayoutPanel { Anchor = AnchorStyles.Left, Size = new Size(228, 108), ColumnCount = 2, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(0, 0, 12, 0) };
         counts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         counts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        foreach (var height in new[] { 20, 30, 20, 30 })
+        counts.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        counts.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        var countTiles = new[] { ("Checked", scanCountChecked), ("Clean", scanCountClean), ("Unknown", scanCountUnknown), ("Threats", scanCountThreats) };
+        for (var index = 0; index < countTiles.Length; index++)
         {
-            counts.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            var (caption, value) = countTiles[index];
+            var tile = new StatTile { Dock = DockStyle.Fill, Margin = new Padding(index % 2 == 0 ? 0 : 5, index < 2 ? 0 : 5, index % 2 == 0 ? 5 : 0, index < 2 ? 5 : 0), Padding = new Padding(12, 5, 8, 2) };
+            value.Dock = DockStyle.Fill;
+            value.TextAlign = ContentAlignment.TopLeft;
+            value.BackColor = Color.Transparent;
+            tile.Controls.Add(value);
+            tile.Controls.Add(new Label { Text = caption, Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 18, BackColor = Color.Transparent, UseMnemonic = false });
+            counts.Controls.Add(tile, index % 2, index / 2);
         }
-
-        counts.Controls.Add(new Label { Text = "Checked", Tag = "muted", AutoSize = false, Dock = DockStyle.Fill }, 0, 0);
-        counts.Controls.Add(new Label { Text = "Clean", Tag = "muted", AutoSize = false, Dock = DockStyle.Fill }, 1, 0);
-        counts.Controls.Add(scanCountChecked, 0, 1);
-        counts.Controls.Add(scanCountClean, 1, 1);
-        counts.Controls.Add(new Label { Text = "Unknown", Tag = "muted", AutoSize = false, Dock = DockStyle.Fill }, 0, 2);
-        counts.Controls.Add(new Label { Text = "Threats", Tag = "muted", AutoSize = false, Dock = DockStyle.Fill }, 1, 2);
-        counts.Controls.Add(scanCountUnknown, 0, 3);
-        counts.Controls.Add(scanCountThreats, 1, 3);
         progressLayout.Controls.Add(counts, 2, 0);
         var actions = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Anchor = AnchorStyles.Right, BackColor = Color.Transparent, Margin = new Padding(0) };
         actions.Controls.Add(scanPageScanSlot);
@@ -730,12 +733,13 @@ public sealed partial class MainForm : Form
                 {
                     Text = name,
                     AutoSize = false,
-                    Size = new Size(TextRenderer.MeasureText(name, Font).Width + 26, 24),
+                    Size = new Size(TextRenderer.MeasureText(name, Font).Width + 38, 26),
                     Radius = 12,
-                    Padding = new Padding(10, 0, 10, 0),
-                    Margin = new Padding(0, 0, 6, 0),
+                    Padding = new Padding(24, 0, 10, 0),
+                    Margin = new Padding(0, 0, 8, 0),
                     PillColor = activePalette.PillBack,
                     ForeColor = activePalette.Text,
+                    DotColor = activePalette.AccentText,
                 });
             }
         }
