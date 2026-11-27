@@ -409,6 +409,7 @@ public sealed partial class MainForm : Form
 
         ReloadNetworkBlockedPaths();
         networkBlockedPaths.Add(FirewallRules.NormalizePath(path));
+        ForgetUserAllowed(path);
         LogNetworkAction("Blocked outgoing (from alert)", path);
         refreshNetworkWindow?.Invoke();
         return true;
@@ -446,7 +447,8 @@ public sealed partial class MainForm : Form
             if (networkBlockedPaths.Contains(app.Path)
                 || networkAutoBlockAttempted.Contains(app.Path)
                 || !File.Exists(app.Path)
-                || GetNetworkVerdict(app.Path).Kind != NetworkVerdictKind.Malicious)
+                || GetNetworkVerdict(app.Path).Kind != NetworkVerdictKind.Malicious
+                || (hashCache.TryGetKnownHash(app.Path, out var knownSha) && HashGuardLogic.IsAutoBlockException(appSettings.AutoBlockExceptions, app.Path, knownSha)))
             {
                 continue;
             }
@@ -565,8 +567,50 @@ public sealed partial class MainForm : Form
 
         ReloadNetworkBlockedPaths();
         networkBlockedPaths.Add(FirewallRules.NormalizePath(path));
+        ForgetUserAllowed(path);
         LogNetworkAction(page.Verification.Checked ? "Blocked outgoing and incoming" : "Blocked outgoing", path);
         return true;
+    }
+
+    /// <summary>
+    /// You unblocked this file: auto-block must not block it again (it did, within seconds, before
+    /// v1.1.1). Keyed by path and hash, so a replaced or updated file is judged afresh.
+    /// </summary>
+    private void RememberUserAllowed(string path)
+    {
+        networkAutoBlockAttempted.Add(path);
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        if (!hashCache.TryGetKnownHash(path, out var sha256))
+        {
+            try
+            {
+                sha256 = FileHash.Sha256FileAsync(path).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                return;
+            }
+        }
+
+        var key = HashGuardLogic.AutoBlockExceptionKey(path, sha256);
+        if (!appSettings.AutoBlockExceptions.Contains(key, StringComparer.Ordinal))
+        {
+            appSettings.AutoBlockExceptions.Add(key);
+            SaveCurrentAppSettings();
+        }
+    }
+
+    private void ForgetUserAllowed(string path)
+    {
+        var prefix = HashGuardLogic.AutoBlockExceptionKey(path, "");
+        if (appSettings.AutoBlockExceptions.RemoveAll(key => key.StartsWith(prefix, StringComparison.Ordinal)) > 0)
+        {
+            SaveCurrentAppSettings();
+        }
     }
 
     private bool UnblockNetworkApp(IWin32Window owner, string path)
@@ -582,14 +626,14 @@ public sealed partial class MainForm : Form
             var removed = FirewallRules.Unblock(path);
             ReloadNetworkBlockedPaths();
             networkBlockedPaths.RemoveWhere(blocked => FirewallRules.PathsEqual(blocked, path));
-            networkAutoBlockAttempted.Remove(path);
+            RememberUserAllowed(path);
             if (removed == 0)
             {
                 MessageBox.Show(owner, "HashGuard found no rule of its own for this program. It may have been removed in Windows Firewall already.", "Nothing to unblock", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return false;
             }
 
-            LogNetworkAction("Unblocked", path);
+            LogNetworkAction("Unblocked (auto-block will leave this file alone)", path);
             return true;
         }
         catch (Exception ex)
@@ -651,9 +695,13 @@ public sealed partial class MainForm : Form
 
         try
         {
+            var unblockedPaths = FirewallRules.ListHashGuardRules().Select(rule => rule.ApplicationPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var removed = FirewallRules.RemoveAllHashGuardRules();
             networkBlockedPaths.Clear();
-            networkAutoBlockAttempted.Clear();
+            foreach (var unblockedPath in unblockedPaths)
+            {
+                RememberUserAllowed(unblockedPath);
+            }
             LogNetworkAction($"Removed all HashGuard firewall rules ({removed})", "Windows Firewall");
         }
         catch (Exception ex)

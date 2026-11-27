@@ -415,6 +415,18 @@ internal static class HashGuardLogic
     public static bool PublisherMatchesForIgnore(string? signaturePublisher, string? trustedOrSelectedPublisher) =>
         PublisherEquals(signaturePublisher, trustedOrSelectedPublisher);
 
+    /// <summary>Key for <see cref="AppSettings.AutoBlockExceptions"/>: the path and the file's hash.</summary>
+    public static string AutoBlockExceptionKey(string path, string? sha256) =>
+        $"{(path ?? "").Trim().Trim('"').Replace('/', '\\').ToUpperInvariant()}|{(sha256 ?? "").Trim().ToLowerInvariant()}";
+
+    /// <summary>
+    /// True when you unblocked this exact file. A different hash (the file was replaced or
+    /// updated) is not covered, so auto-block judges the new file afresh.
+    /// </summary>
+    public static bool IsAutoBlockException(IEnumerable<string> exceptions, string path, string? sha256) =>
+        !string.IsNullOrWhiteSpace(sha256)
+        && exceptions.Contains(AutoBlockExceptionKey(path, sha256), StringComparer.Ordinal);
+
     public static string NormalizePublisher(string? publisher) =>
         string.Join(' ', (publisher ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 

@@ -26,6 +26,7 @@
     <Compile Include="../../Startup/ElevatedStartupTask.cs" Link="Startup/ElevatedStartupTask.cs" />
     <Compile Include="../../Scanning/ScheduledScan.cs" Link="Scanning/ScheduledScan.cs" />
     <Compile Include="../../Ui/HomeStatus.cs" Link="Ui/HomeStatus.cs" />
+    <Compile Include="../../Ui/ActivityText.cs" Link="Ui/ActivityText.cs" />
     <Compile Include="../../Network/ConnectionTable.cs" Link="Network/ConnectionTable.cs" />
     <Compile Include="../../Network/NetworkActivityTracker.cs" Link="Network/NetworkActivityTracker.cs" />
     <Compile Include="../../Network/FirewallRules.cs" Link="Network/FirewallRules.cs" />
