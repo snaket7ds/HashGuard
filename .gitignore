@@ -31,3 +31,6 @@ cloudflare/telemetry/wrangler.toml
 cloudflare/telemetry/node_modules/
 node_modules/
 dist-local/
+
+# v2 local publish output
+v2/out/

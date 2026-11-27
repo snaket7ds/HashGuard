@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HashGuard.App/HashGuard.App.csproj" />
+    <Project Path="src/HashGuard.Core/HashGuard.Core.csproj" />
+  </Folder>
+</Solution>

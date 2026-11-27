@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="HashGuard.App.Pages.HomePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+
+    <ScrollViewer x:Name="Scroller">
+        <StackPanel MaxWidth="1040" Padding="32,4,32,32" Spacing="16" HorizontalAlignment="Stretch">
+            <TextBlock Text="Home" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,4" />
+
+            <!-- Hero: one clear verdict first. -->
+            <Border Style="{StaticResource CardStyle}" Padding="28,24">
+                <Grid ColumnSpacing="24">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Width="72" Height="72" VerticalAlignment="Top">
+                        <Ellipse x:Name="HeroCircle" Fill="{ThemeResource GoodTintBrush}" />
+                        <FontIcon x:Name="HeroIcon" Glyph="&#xEA18;" FontSize="32" Foreground="{ThemeResource GoodTextBrush}" />
+                        <ProgressRing x:Name="HeroRing" Width="72" Height="72" IsActive="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
+                                      Visibility="{x:Bind ViewModel.IsScanning, Mode=OneWay}" />
+                    </Grid>
+
+                    <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock x:Name="HeroTitle" Text="{x:Bind ViewModel.Title, Mode=OneWay}" FontSize="26" FontWeight="SemiBold"
+                                   TextWrapping="WrapWholeWords" AutomationProperties.HeadingLevel="Level2" />
+                        <TextBlock Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="WrapWholeWords" MaxWidth="560" HorizontalAlignment="Left" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+                            <Border Style="{StaticResource ChipStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE823;" FontSize="12" Foreground="{ThemeResource NeutralTextBrush}" />
+                                    <TextBlock Text="{x:Bind ViewModel.LastScanChip, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource ChipStyle}" Background="{ThemeResource GoodTintBrush}">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Ellipse Width="8" Height="8" Fill="{ThemeResource GoodTextBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{x:Bind ViewModel.SourcesChip, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource GoodTextBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Button Grid.Column="2" Style="{StaticResource AccentButtonStyle}" VerticalAlignment="Center"
+                            Padding="18,10" Command="{x:Bind ViewModel.ScanCommand}" AutomationProperties.Name="Scan now">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE721;" FontSize="14" />
+                            <TextBlock Text="Scan now" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Antivirus and firewall at a glance. -->
+            <Grid x:Name="GlanceGrid" ColumnSpacing="16" RowSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="GlanceCol1" Width="*" />
+                    <ColumnDefinition x:Name="GlanceCol2" Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="14">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="36" Height="36" CornerRadius="8" Background="{ThemeResource GoodTintBrush}">
+                                <FontIcon Glyph="&#xEA18;" FontSize="16" Foreground="{ThemeResource GoodTextBrush}" />
+                            </Border>
+                            <TextBlock Grid.Column="1" Text="Antivirus" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="18" VerticalAlignment="Center" />
+                            <Border Grid.Column="2" Style="{StaticResource ChipStyle}" Background="{ThemeResource GoodTintBrush}" VerticalAlignment="Center">
+                                <TextBlock Text="On" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" Foreground="{ThemeResource GoodTextBrush}" />
+                            </Border>
+                        </Grid>
+                        <Grid RowSpacing="10">
+                            <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+                            <TextBlock Text="Last scan" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.AvLastScan, Mode=OneWay}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Grid.Row="1" Text="Scan files I open" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.AvOpenFiles}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Grid.Row="2" Text="Sources" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.AvSources}" Style="{StaticResource FactValueStyle}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border x:Name="FirewallCard" Grid.Column="1" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="14">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="36" Height="36" CornerRadius="8" Background="{ThemeResource NeutralTintBrush}">
+                                <FontIcon Glyph="&#xE774;" FontSize="16" Foreground="{ThemeResource NeutralTextBrush}" />
+                            </Border>
+                            <TextBlock Grid.Column="1" Text="Firewall" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="18" VerticalAlignment="Center" />
+                            <Border Grid.Column="2" Style="{StaticResource ChipStyle}" Background="{ThemeResource GoodTintBrush}" VerticalAlignment="Center">
+                                <TextBlock Text="Monitoring" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold" Foreground="{ThemeResource GoodTextBrush}" />
+                            </Border>
+                        </Grid>
+                        <Grid RowSpacing="10">
+                            <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+                            <TextBlock Text="Apps online" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.FwOnline}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Grid.Row="1" Text="Blocked" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.FwBlocked}" Style="{StaticResource FactValueStyle}" />
+                            <TextBlock Grid.Row="2" Text="Alerts" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.FwAlerts}" Style="{StaticResource FactValueStyle}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Tiles. -->
+                <Button x:Name="DecisionTile" Grid.Row="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="20,16"
+                        AutomationProperties.Name="Needs your decision">
+                    <Grid>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Needs your decision" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.DecisionCount, Mode=OneWay}" FontSize="28" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <FontIcon Glyph="&#xE76C;" FontSize="14" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                    </Grid>
+                </Button>
+                <Button x:Name="QuarantineTile" Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="20,16"
+                        AutomationProperties.Name="Quarantine">
+                    <Grid>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="In quarantine" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.QuarantineCount}" FontSize="28" FontWeight="SemiBold" />
+                        </StackPanel>
+                        <FontIcon Glyph="&#xE76C;" FontSize="14" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                    </Grid>
+                </Button>
+            </Grid>
+
+            <!-- Spike only: flip the hero between its states for review. -->
+            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0" Opacity="0.8">
+                <TextBlock Text="Preview state (spike only)" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <ComboBox x:Name="PreviewPicker" ItemsSource="{x:Bind ViewModel.PreviewStates}" SelectedIndex="0"
+                          SelectionChanged="PreviewPicker_SelectionChanged" MinWidth="180" AutomationProperties.Name="Preview state" />
+            </StackPanel>
+        </StackPanel>
+
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="ToneStates">
+                <VisualState x:Name="Protected" />
+                <VisualState x:Name="Scanning">
+                    <VisualState.Setters>
+                        <Setter Target="HeroCircle.Fill" Value="{ThemeResource NeutralTintBrush}" />
+                        <Setter Target="HeroIcon.Glyph" Value="&#xE721;" />
+                        <Setter Target="HeroIcon.Foreground" Value="{ThemeResource NeutralTextBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Attention">
+                    <VisualState.Setters>
+                        <Setter Target="HeroCircle.Fill" Value="{ThemeResource AttentionTintBrush}" />
+                        <Setter Target="HeroIcon.Glyph" Value="&#xE7BA;" />
+                        <Setter Target="HeroIcon.Foreground" Value="{ThemeResource AttentionTextBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Danger">
+                    <VisualState.Setters>
+                        <Setter Target="HeroCircle.Fill" Value="{ThemeResource DangerTintBrush}" />
+                        <Setter Target="HeroIcon.Glyph" Value="&#xEA39;" />
+                        <Setter Target="HeroIcon.Foreground" Value="{ThemeResource DangerTextBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="NotScanned">
+                    <VisualState.Setters>
+                        <Setter Target="HeroCircle.Fill" Value="{ThemeResource NeutralTintBrush}" />
+                        <Setter Target="HeroIcon.Glyph" Value="&#xE9CE;" />
+                        <Setter Target="HeroIcon.Foreground" Value="{ThemeResource NeutralTextBrush}" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+
+            <VisualStateGroup x:Name="WidthStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="980" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="GlanceCol2.Width" Value="0" />
+                        <Setter Target="FirewallCard.(Grid.Column)" Value="0" />
+                        <Setter Target="FirewallCard.(Grid.Row)" Value="1" />
+                        <Setter Target="DecisionTile.(Grid.Row)" Value="2" />
+                        <Setter Target="QuarantineTile.(Grid.Row)" Value="3" />
+                        <Setter Target="QuarantineTile.(Grid.Column)" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+    </ScrollViewer>
+</Page>

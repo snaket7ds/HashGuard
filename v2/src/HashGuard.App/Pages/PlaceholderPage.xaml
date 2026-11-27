@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="HashGuard.App.Pages.PlaceholderPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel MaxWidth="1040" Padding="32,4,32,32" Spacing="16">
+        <TextBlock x:Name="PageTitle" Style="{StaticResource TitleTextBlockStyle}" Margin="0,0,0,4" />
+        <Border Style="{StaticResource CardStyle}" Padding="28,24">
+            <StackPanel Spacing="6">
+                <TextBlock Text="Built in phase 2" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <TextBlock Text="The spike only builds Home. This page is a stand-in so navigation can be tried."
+                           Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="WrapWholeWords" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</Page>
