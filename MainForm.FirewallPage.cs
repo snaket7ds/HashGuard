@@ -124,7 +124,19 @@ public sealed partial class MainForm : Form
         var detailPillRow = new Panel { Dock = DockStyle.Top, Height = 30, BackColor = Color.Transparent };
         detailPillRow.Controls.Add(detailPill);
         var detailPath = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 40, Tag = "muted", UseMnemonic = false };
-        var detailFacts = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 92, UseMnemonic = false, Font = new Font("Segoe UI", 9.5f, FontStyle.Regular) };
+        // Facts as a two-column list (muted names, values on the right), as designed.
+        var detailFacts = new TableLayoutPanel { Dock = DockStyle.Top, Height = 112, ColumnCount = 2, RowCount = 4, BackColor = Color.Transparent, Margin = new Padding(0), Padding = new Padding(0, 4, 0, 4) };
+        detailFacts.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 98));
+        detailFacts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        var factValues = new Label[4];
+        var factNames = new[] { "Signed by", "First seen", "Connections", "Status" };
+        for (var row = 0; row < 4; row++)
+        {
+            detailFacts.RowStyles.Add(new RowStyle(SizeType.Percent, 25));
+            detailFacts.Controls.Add(new Label { Text = factNames[row], AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Tag = "muted", UseMnemonic = false }, 0, row);
+            factValues[row] = new Label { AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Font = new Font("Segoe UI Semibold", 9.5f, FontStyle.Regular), UseMnemonic = false };
+            detailFacts.Controls.Add(factValues[row], 1, row);
+        }
         var talksTitle = new Label { Text = "TALKS TO", AutoSize = false, Dock = DockStyle.Top, Height = 24, Tag = "muted", Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular), UseMnemonic = false };
         var talks = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 96, UseMnemonic = false };
         var primary = new Button { Text = "Block this app", Dock = DockStyle.Top, Height = 42, Tag = "danger-solid" };
@@ -207,13 +219,10 @@ public sealed partial class MainForm : Form
             detailPill.ForeColor = ink;
             detailPill.Invalidate();
             detailPath.Text = path;
-            detailFacts.Text = string.Join(Environment.NewLine, new[]
-            {
-                $"Signed by      {assessment.Signer}",
-                $"First seen     {(app is null ? "—" : app.FirstSeenUtc.LocalDateTime.ToString("g", CultureInfo.CurrentCulture))}",
-                $"Connections   {(app is null ? "—" : $"{app.CurrentConnections} now · {app.TotalConnections} this session")}",
-                $"Status           {(blocked ? "Blocked in Windows Firewall" : "Allowed")}",
-            });
+            factValues[0].Text = assessment.Signer;
+            factValues[1].Text = app is null ? "—" : app.FirstSeenUtc.LocalDateTime.ToString("g", CultureInfo.CurrentCulture);
+            factValues[2].Text = app is null ? "—" : $"{app.CurrentConnections} now · {app.TotalConnections} this session";
+            factValues[3].Text = blocked ? "Blocked in Windows Firewall" : "Allowed";
             talks.Text = app is null || app.Endpoints.Count == 0
                 ? "No connections seen this session."
                 : string.Join(Environment.NewLine, app.Endpoints.Values.OrderByDescending(endpoint => endpoint.LastSeenUtc).Take(4)

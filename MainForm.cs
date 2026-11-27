@@ -274,6 +274,9 @@ public sealed partial class MainForm : Form
         {
             _ = InitializeTelemetryAsync();
             InitializeNetworkMonitor();
+#if DESIGN_PREVIEW
+            _ = RunDesignPreviewAsync();
+#endif
             ShowFirstRunSetupIfNeeded();
             if (AppPaths.UsingFallbackStorage)
             {

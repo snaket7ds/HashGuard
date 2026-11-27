@@ -16,8 +16,11 @@ public sealed partial class MainForm : Form
     private readonly Dictionary<AppPage, Control> builtPages = [];
     private readonly Panel homeScanSlot = new() { Size = new Size(168, 46), Margin = new Padding(0, 0, 0, 10) };
     private readonly Panel scanPageScanSlot = new() { Size = new Size(168, 46), Margin = new Padding(0) };
-    private readonly Button homeReviewButton = new() { Text = "Review", Size = new Size(168, 42), Margin = new Padding(0, 0, 0, 10), Visible = false, Tag = "danger-solid" };
-    private readonly Button homeQuarantineButton = new() { Text = "Quarantine", Size = new Size(168, 42), Margin = new Padding(0), Visible = false, Tag = "danger-solid" };
+    // The threat card inside the Home hero (as designed): top flagged file with Details · Ignore · Quarantine.
+    private readonly CardPanel homeThreatCard = new() { Dock = DockStyle.Fill, Radius = 14, Padding = new Padding(18, 12, 16, 12), Visible = false, Tag = "threat-card" };
+    private readonly Label homeThreatName = new() { AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false };
+    private readonly Label homeThreatDetail = new() { AutoSize = false, Dock = DockStyle.Top, Height = 22, Tag = "muted", AutoEllipsis = true, UseMnemonic = false };
+    private TableLayoutPanel? homePageLayout;
     private readonly PillLabel homeLastScanChip = new() { AutoSize = false, Height = 26, Width = 190, Padding = new Padding(10, 0, 10, 0), Radius = 13, Font = new Font("Segoe UI", 9, FontStyle.Regular), Tag = "chip-neutral" };
     private readonly PillLabel homeSourcesChip = new() { AutoSize = false, Height = 26, Width = 230, Padding = new Padding(10, 0, 10, 0), Radius = 13, Font = new Font("Segoe UI", 9, FontStyle.Regular), Tag = "chip-good" };
     private readonly Label homeAvLastScan = CreateValueLabel();
@@ -118,8 +121,6 @@ public sealed partial class MainForm : Form
         scanButton.Size = new Size(168, 46);
         scanButton.Dock = DockStyle.Fill;
         resultsView.Name = MainResultsViewName;
-        homeReviewButton.Click += (_, _) => ShowPage(AppPage.Scan);
-        homeQuarantineButton.Click += (_, _) => QuarantineTopThreat();
         progressBar.VisibleChanged += (_, _) => SyncScanRing();
 
         // The Scan page owns resultsView and configures its columns; scans fill it before anyone
@@ -288,8 +289,6 @@ public sealed partial class MainForm : Form
         text.Controls.Add(statusTitle);
         var heroButtons = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Anchor = AnchorStyles.Right, Margin = new Padding(16, 0, 0, 0), BackColor = Color.Transparent };
         heroButtons.Controls.Add(homeScanSlot);
-        heroButtons.Controls.Add(homeReviewButton);
-        heroButtons.Controls.Add(homeQuarantineButton);
         var heroLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0) };
         heroLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 124));
         heroLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -298,7 +297,33 @@ public sealed partial class MainForm : Form
         heroLayout.Controls.Add(statusDot, 0, 0);
         heroLayout.Controls.Add(text, 1, 0);
         heroLayout.Controls.Add(heroButtons, 2, 0);
-        homeHero.Controls.Add(heroLayout);
+        // Threat card under the status, shown only when something is flagged.
+        var threatText = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent };
+        threatText.Controls.Add(homeThreatDetail);
+        threatText.Controls.Add(homeThreatName);
+        var threatDetails = new Button { Text = "Details", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0) };
+        var threatIgnore = new Button { Text = "Ignore", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0) };
+        var threatQuarantine = new Button { Text = "Quarantine", AutoSize = true, Height = 40, Margin = new Padding(8, 0, 0, 0), Tag = "danger-solid" };
+        threatDetails.Click += (_, _) => RunOnTopThreat("Details");
+        threatIgnore.Click += (_, _) => RunOnTopThreat("Ignore");
+        threatQuarantine.Click += (_, _) => RunOnTopThreat("Quarantine");
+        var threatButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Right, BackColor = Color.Transparent, Margin = new Padding(0) };
+        threatButtons.Controls.AddRange([threatDetails, threatIgnore, threatQuarantine]);
+        var threatLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0) };
+        threatLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        threatLayout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        threatLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        threatLayout.Controls.Add(threatText, 0, 0);
+        threatLayout.Controls.Add(threatButtons, 1, 0);
+        homeThreatCard.Controls.Add(threatLayout);
+        homeThreatCard.Margin = new Padding(0, 14, 0, 0);
+        var heroStack = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, BackColor = Color.Transparent, Margin = new Padding(0) };
+        heroStack.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
+        heroStack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        heroStack.Controls.Add(heroLayout, 0, 0);
+        heroStack.Controls.Add(homeThreatCard, 0, 1);
+        homeHero.Controls.Add(heroStack);
+        homePageLayout = page;
         page.Controls.Add(homeHero, 0, 1);
 
         var pillars = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 18), BackColor = SoftAppBack };
@@ -716,8 +741,24 @@ public sealed partial class MainForm : Form
         homeLastScanChip.ForeColor = activePalette.Text;
         homeSourcesChip.PillColor = providers > 0 ? activePalette.AccentTint : activePalette.AttentionTint;
         homeSourcesChip.ForeColor = providers > 0 ? activePalette.AccentText : activePalette.AttentionText;
-        homeReviewButton.Visible = !scanning && needs > 0;
-        homeQuarantineButton.Visible = !scanning && threats > 0;
+        var topThreat = scanning ? null : FindTopThreat();
+        homeThreatCard.Visible = topThreat is not null;
+        if (homePageLayout is not null)
+        {
+            homePageLayout.RowStyles[1].Height = topThreat is null ? 206 : 306;
+        }
+
+        if (topThreat is { } threat)
+        {
+            homeThreatName.Text = Path.GetFileName(threat.Path);
+            var engines = threat.Malicious > 0 ? $"Malicious · {threat.Malicious} security vendor{(threat.Malicious == 1 ? "" : "s")} flag it" : $"Suspicious · {threat.Suspicious} vendor{(threat.Suspicious == 1 ? "" : "s")}";
+            var signer = threat.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase) ? "not signed" : threat.SignaturePublisher;
+            homeThreatDetail.Text = string.Join(" · ", new[] { engines, signer, threat.Path }.Where(part => !string.IsNullOrWhiteSpace(part)));
+            homeThreatCard.SurfaceColor = activePalette.DangerTint == ThemePalette.Light.DangerTint ? Color.FromArgb(254, 246, 245) : activePalette.DangerTint;
+            homeThreatCard.EdgeColor = homeThreatCard.SurfaceColor;
+            homeThreatCard.ShadowColor = Color.Transparent;
+            homeThreatCard.Invalidate();
+        }
         homeHero.EdgeColor = status.Tone == HomeTone.Danger ? activePalette.DangerTint : activePalette.Hairline;
         homeHero.Invalidate();
 
@@ -758,21 +799,27 @@ public sealed partial class MainForm : Form
         pill.Invalidate();
     }
 
-    /// <summary>Home's Quarantine button: the top threat in the review list.</summary>
-    private void QuarantineTopThreat()
+    /// <summary>The most serious flagged file in the review list (malicious before suspicious).</summary>
+    private ScanResult? FindTopThreat() =>
+        resultsView.Items.Cast<ListViewItem>()
+            .Select(FindResultForReviewQueueRow)
+            .Where(result => result is not null && ResultNeedsAction(result) && result.IsAlert)
+            .OrderByDescending(result => result!.Malicious)
+            .ThenByDescending(result => result!.Suspicious)
+            .FirstOrDefault();
+
+    /// <summary>The threat card's buttons: act on the top threat's row in the review list.</summary>
+    private void RunOnTopThreat(string action)
     {
-        var item = resultsView.Items.Cast<ListViewItem>()
-            .FirstOrDefault(row => FindResultForReviewQueueRow(row) is { } result && ResultNeedsAction(result) && result.IsAlert);
-        if (item is null)
+        var threat = FindTopThreat();
+        var row = threat is null ? null : resultsView.Items.Cast<ListViewItem>().FirstOrDefault(item => FindResultForReviewQueueRow(item) == threat);
+        if (row is null)
         {
             ShowPage(AppPage.Scan);
             return;
         }
 
-        resultsView.SelectedItems.Clear();
-        item.Selected = true;
-        QuarantineSelectedFiles(resultsView);
-        UpdateHomePage();
+        RunReviewAction(new CardListItem { Tag = row, Actions = [action] }, action);
     }
 
     /// <summary>Ignore, but ask first when a selected file is flagged malicious or suspicious.</summary>
