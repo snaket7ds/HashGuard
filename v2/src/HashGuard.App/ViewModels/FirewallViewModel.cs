@@ -25,6 +25,15 @@ public sealed partial class FirewallAppViewModel(string path) : ObservableObject
 
     public bool Online => View.Online;
 
+    /// <summary>Blocking changes Windows Firewall rules, which needs administrator rights.</summary>
+    public bool IsElevated => AppServices.Instance.Network.IsElevated;
+
+    public string BlockLabel => View.Blocked ? "Unblock" : "Block";
+
+    public string BlockHint => !IsElevated
+        ? "Run HashGuard as administrator to block or unblock programs"
+        : View.Blocked ? "Remove HashGuard's Windows Firewall rule for this program" : "Stop this program connecting, with a Windows Firewall rule";
+
     /// <summary>"Online", "Blocked", "Idle · 5 min ago"…</summary>
     public string Status => View.Blocked
         ? View.Online ? "Blocked · connection still open" : "Blocked"
@@ -56,6 +65,8 @@ public sealed partial class FirewallAppViewModel(string path) : ObservableObject
         OnPropertyChanged(nameof(Signer));
         OnPropertyChanged(nameof(Blocked));
         OnPropertyChanged(nameof(Online));
+        OnPropertyChanged(nameof(BlockLabel));
+        OnPropertyChanged(nameof(BlockHint));
         OnPropertyChanged(nameof(Status));
         OnPropertyChanged(nameof(ConnectedTo));
         OnPropertyChanged(nameof(Tone));
@@ -157,6 +168,17 @@ public sealed partial class FirewallViewModel : ObservableObject
     }
 
     private void Apply(List<NetworkAppView> views)
+    {
+        // Moving a row makes the list drop its selection (and write null back here), so put it back after.
+        var selected = Selected;
+        ApplyRows(views);
+        if (selected is not null && byPath.ContainsKey(selected.Path) && !ReferenceEquals(Selected, selected))
+        {
+            Selected = selected;
+        }
+    }
+
+    private void ApplyRows(List<NetworkAppView> views)
     {
         var wanted = new HashSet<string>(views.Select(v => v.Path), StringComparer.OrdinalIgnoreCase);
         for (var i = Apps.Count - 1; i >= 0; i--)

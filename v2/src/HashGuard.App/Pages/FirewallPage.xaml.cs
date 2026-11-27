@@ -67,13 +67,34 @@ public sealed partial class FirewallPage : Page
         searchTimer.Start();
     }
 
-    private async void Block_Click(object sender, RoutedEventArgs e)
+    private async void RowBlock_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.Selected is not { } app)
+        if ((sender as FrameworkElement)?.Tag is not FirewallAppViewModel app)
         {
             return;
         }
 
+        ViewModel.Selected = app;
+        if (app.Blocked)
+        {
+            await UnblockAsync(app);
+        }
+        else
+        {
+            await BlockAsync(app);
+        }
+    }
+
+    private async void Block_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.Selected is { } app)
+        {
+            await BlockAsync(app);
+        }
+    }
+
+    private async Task BlockAsync(FirewallAppViewModel app)
+    {
         var sensitive = AppServices.Instance.Network.IsSensitive(app.Path);
         var inbound = new CheckBox { Content = "Also block incoming connections" };
         var content = new StackPanel { Spacing = 12 };
@@ -117,7 +138,15 @@ public sealed partial class FirewallPage : Page
 
     private async void Unblock_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.Selected is { } app && await ViewModel.UnblockAsync(app) is { } error)
+        if (ViewModel.Selected is { } app)
+        {
+            await UnblockAsync(app);
+        }
+    }
+
+    private async Task UnblockAsync(FirewallAppViewModel app)
+    {
+        if (await ViewModel.UnblockAsync(app) is { } error)
         {
             await Tell("Couldn't unblock the program", error);
         }
