@@ -265,24 +265,6 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private static async Task<Stream> DownloadGitHubAssetStreamAsync(HttpClient http, string assetApiUrl)
-    {
-        using var request = new HttpRequestMessage(HttpMethod.Get, assetApiUrl);
-        request.Headers.Accept.Clear();
-        request.Headers.Accept.ParseAdd("application/octet-stream");
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-        if (!response.IsSuccessStatusCode)
-        {
-            var details = await response.Content.ReadAsStringAsync();
-            throw new InvalidOperationException(BuildGitHubHttpError("download the release asset", response.StatusCode, details));
-        }
-
-        var memory = new MemoryStream();
-        await response.Content.CopyToAsync(memory);
-        memory.Position = 0;
-        return memory;
-    }
-
     private static async Task<Stream> DownloadGitHubUrlStreamAsync(HttpClient http, string url, string action)
     {
         using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
@@ -318,13 +300,6 @@ public sealed partial class MainForm : Form
     private static async Task<string> DownloadGitHubUrlTextAsync(HttpClient http, string url, string action)
     {
         await using var stream = await DownloadGitHubUrlStreamAsync(http, url, action);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        return await reader.ReadToEndAsync();
-    }
-
-    private static async Task<string> DownloadGitHubAssetTextAsync(HttpClient http, string assetApiUrl)
-    {
-        await using var stream = await DownloadGitHubAssetStreamAsync(http, assetApiUrl);
         using var reader = new StreamReader(stream, Encoding.UTF8);
         return await reader.ReadToEndAsync();
     }

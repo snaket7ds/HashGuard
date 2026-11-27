@@ -97,6 +97,7 @@ public sealed partial class MainForm : Form
         finally
         {
             scanGate.Exit();
+            UpdateHomePage();
         }
     }
 
@@ -268,6 +269,7 @@ public sealed partial class MainForm : Form
                 finally
                 {
                     scanGate.Exit();
+                    UpdateHomePage();
                 }
             }
         }
@@ -305,8 +307,6 @@ public sealed partial class MainForm : Form
         statusLabel.Text = single
             ? $"Scanning selected file: {FormatDisplayPath(paths[0])}"
             : $"Scanning {paths.Count} selected files...";
-        summaryLabel.Text = "Preparing scan";
-        actionLabel.Text = "Needs review: 0";
         UpdateReviewCount(0);
         SetDashboardState(
             "Scanning",

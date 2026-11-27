@@ -19,38 +19,6 @@ namespace HashGuardScanner;
 
 public sealed partial class MainForm : Form
 {
-    private static Button CreateActivityFilterButton(ActivityFilter filter)
-    {
-        return new Button
-        {
-            Text = filter switch
-            {
-                ActivityFilter.ActionNeeded => "Action Needed",
-                ActivityFilter.Unknown => "Unknown",
-                ActivityFilter.Clean => "Clean",
-                ActivityFilter.Errors => "Errors",
-                _ => "All",
-            },
-            Tag = filter,
-            AutoSize = true,
-            Height = 32,
-            Margin = new Padding(0, 0, 8, 0),
-            FlatStyle = FlatStyle.Flat,
-        };
-    }
-
-    private static Button CreateActivityActionButton(string text)
-    {
-        return new Button
-        {
-            Text = text,
-            Width = Math.Max(96, text.Length * 8 + 24),
-            Height = 32,
-            Margin = new Padding(0, 0, 8, 6),
-            FlatStyle = FlatStyle.Flat,
-        };
-    }
-
     private static bool MatchesActivityFilter(ActivityFilter filter, ActivityLogRow row)
     {
         if (filter == ActivityFilter.ActionNeeded && IsHandledActivityRow(row))
@@ -116,40 +84,6 @@ public sealed partial class MainForm : Form
             .Any(subItem => subItem.Text.Contains(searchText, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string BuildActivityLogSummary(
-        IReadOnlyCollection<ActivityLogRow> visibleRows,
-        IReadOnlyCollection<ActivityLogRow> allRows,
-        string searchText)
-    {
-        var actionNeeded = 0;
-        var unknown = 0;
-        var errors = 0;
-        foreach (var row in allRows)
-        {
-            if (MatchesActivityFilter(ActivityFilter.ActionNeeded, row))
-            {
-                actionNeeded++;
-            }
-
-            if (MatchesActivityFilter(ActivityFilter.Unknown, row))
-            {
-                unknown++;
-            }
-
-            if (MatchesActivityFilter(ActivityFilter.Errors, row))
-            {
-                errors++;
-            }
-        }
-
-        var filtered = visibleRows.Count == allRows.Count && string.IsNullOrWhiteSpace(searchText)
-            ? $"{visibleRows.Count} rows"
-            : $"{visibleRows.Count} of {allRows.Count} rows";
-        var searchSuffix = string.IsNullOrWhiteSpace(searchText) ? "" : $" | Search: {searchText}";
-        var capNote = allRows.Count >= ActivityLogMaxRows ? $" | showing latest {ActivityLogMaxRows}" : "";
-        return $"{filtered}{capNote} | Action needed: {actionNeeded} | Unknown: {unknown} | Errors: {errors}{searchSuffix}";
-    }
-
     private static ListViewItem CreateActivityListViewItem(ActivityLogRow row)
     {
         var item = new ListViewItem(row.Status);
@@ -165,17 +99,6 @@ public sealed partial class MainForm : Form
         item.Tag = row.Link;
         ApplyResultRowColor(item);
         return item;
-    }
-
-    private static string BuildSelectedReasonSummary(ListView sourceView)
-    {
-        if (sourceView.SelectedItems.Count == 0)
-        {
-            return "Select a row to see why HashGuard flagged it and which action is safest.";
-        }
-
-        var item = sourceView.SelectedItems[0];
-        return BuildReasonSummary(item);
     }
 
     private static string BuildReasonSummary(ListViewItem item)
@@ -230,18 +153,6 @@ public sealed partial class MainForm : Form
 
         var reasonText = reasons.Count == 0 ? "No immediate action reason." : string.Join("; ", reasons.Distinct(StringComparer.OrdinalIgnoreCase));
         return $"Status: {status} | Risk: {risk} | Process: {process}{Environment.NewLine}Reason: {reasonText}{Environment.NewLine}Trust: {trust}{Environment.NewLine}Path: {path}";
-    }
-
-    private void ShowScanDetailsDialogSafe()
-    {
-        try
-        {
-            ShowScanDetailsDialog();
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show(this, $"Could not open Activity Log:{Environment.NewLine}{ex.Message}", "Activity Log", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
     }
 
     // Keep Activity Log snappy: only recent files / latest rows, and cache between opens.
@@ -351,7 +262,12 @@ public sealed partial class MainForm : Form
                 }
 
                 var row = ParseCsvLine(line);
+                // The log writes "timestamp_computer_time"; older code looked only for "timestamp".
                 var timestamp = GetCsvValue(row, columns, "timestamp");
+                if (string.IsNullOrWhiteSpace(timestamp))
+                {
+                    timestamp = GetCsvValue(row, columns, "timestamp_computer_time");
+                }
                 var notes = GetCsvValue(row, columns, "notes");
                 if (!string.IsNullOrWhiteSpace(timestamp))
                 {

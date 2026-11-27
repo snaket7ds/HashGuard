@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.2 - 2026-11-26
+
+- **Every page now looks like the design.** Firewall: stat cards, app rows with a verdict label and an on/off switch to block or allow, and a detail card. Scan: "Running apps" and "Choose files" cards, and "Needs your decision" as card rows with their own Details · Ignore · Quarantine / Send to VirusTotal buttons. Quarantine: card rows plus a card for the selected file (Copy hash · Restore to Desktop · Restore · Delete permanently). Settings: segmented tabs, sections as cards in two columns, each setting with a plain name, a one-line explanation and an on/off switch; "Remove all HashGuard rules" is under Settings → Firewall; Trust uses the same card rows. The Home status badge is the design's shield.
+- **The HashGuard shield everywhere:** tray icon (green check, amber while scanning, red "!" when action is needed), window and taskbar icon, and the program icon.
+- **Fixed:** Activity showed every entry under "Earlier" (the log's time column wasn't read); Home kept saying "Scanning" after a scan finished; HashGuard alerted about (and could auto-block) itself.
+- **Smaller and lighter:** the download is 72 MB instead of 162 MB (compressed; about 0.3 s slower to start). About 830 lines of code left over from the old windows were removed. Home no longer re-reads the quarantine list from disk on every refresh, the Scan page no longer recounts all results for every file scanned, and lists reuse their fonts instead of creating them on every repaint.
+
 ## v1.1.1 - 2026-11-26
 
 - **Fixed: unblocking an app didn't stick.** With auto-block on (the default since v1.1.0), unblocking an app HashGuard flags as malicious made HashGuard forget it had blocked it, so it blocked it again a second later and showed the same alert. "Remove all HashGuard rules" did the same for every malicious app. Now an app you unblock stays unblocked: HashGuard remembers that exact file (path and SHA-256), also after a restart. If the file changes, auto-block judges the new file afresh; blocking it again yourself clears the exception.

@@ -69,14 +69,6 @@ public sealed partial class MainForm : Form
         IgnoreSelectedDetection(sourceView, targets);
     }
 
-    private void UpdateIgnoreButtonText(ListView sourceView, Button button)
-    {
-        var targets = GetSelectedIgnoreTargets(sourceView);
-        button.Text = targets.Count > 0 && targets.All(target => IsIgnoredTargetSelected(sourceView, target))
-            ? "Clear Ignore Flag"
-            : "Ignore Selected";
-    }
-
     private static List<IgnoreTarget> GetSelectedIgnoreTargets(ListView sourceView)
     {
         if (sourceView.SelectedIndices.Count == 0)

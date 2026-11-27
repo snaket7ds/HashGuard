@@ -55,11 +55,8 @@ public sealed partial class MainForm : Form
     // Webroot-inspired SecureAnywhere palette (brand green primary, calm neutrals).
     private static readonly Color BrandGreen = Color.FromArgb(125, 204, 38);      // #7DCC26 Webroot green
     private static readonly Color BrandGreenDark = Color.FromArgb(90, 160, 20);
-    private static readonly Color AccentGold = BrandGreen; // primary CTA uses brand green
     private static readonly Color SuccessGreen = Color.FromArgb(76, 175, 40);
-    private static readonly Color AttentionYellow = Color.FromArgb(255, 193, 7);
     private static readonly Color DangerRed = Color.FromArgb(211, 47, 47);
-    private static readonly Color SoftBorder = Color.FromArgb(214, 219, 225);
     private static readonly Color SoftAppBack = Color.FromArgb(245, 246, 248);
     private static readonly Color ShieldGreen = Color.FromArgb(24, 134, 74);   // #18864A, white text passes contrast
 
@@ -67,7 +64,6 @@ public sealed partial class MainForm : Form
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly Button scanButton = new() { Text = "Scan now", Width = 168, Height = 46, BackColor = ShieldGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), Tag = "scan-button" };
     private readonly Button updateButton = new() { Text = "Check for Updates", Width = 140, Height = 36, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
-    private readonly Button settingsButton = new() { Text = "\uE713", Width = 36, Height = 36, Font = new Font("Segoe MDL2 Assets", 11, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
     private readonly CheckBox rightClickScanBox = new() { Text = "Add Explorer right-click scan", AutoSize = true };
     private readonly CheckBox startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };
@@ -101,13 +97,7 @@ public sealed partial class MainForm : Form
     private readonly Panel statusDot = new() { Width = 92, Height = 92, Margin = new Padding(0, 0, 0, 10), Tag = "idle" };
     private readonly Label statusTitle = new() { Text = "Not scanned yet", AutoSize = true, Font = new Font("Segoe UI Semibold", 19, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter };
     private readonly Label statusSubtitle = new() { Text = "Run a scan to check running apps and local trust signals.", AutoSize = true, ForeColor = Color.DimGray, TextAlign = ContentAlignment.MiddleCenter };
-    private readonly PillLabel summaryLabel = new() { Text = "Items scanned: 0", AutoSize = false, Font = new Font("Segoe UI Semibold", 10, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft };
-    private readonly PillLabel actionLabel = new() { Text = "Needs review: 0", AutoSize = false, Font = new Font("Segoe UI Semibold", 10, FontStyle.Regular), TextAlign = ContentAlignment.MiddleLeft };
     private readonly PillLabel reviewCountLabel = new() { Text = "0", AutoSize = true, Font = new Font("Segoe UI Semibold", 8.5f, FontStyle.Regular), TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(8, 2, 8, 2), Radius = 10 };
-    private readonly Label reputationStateLabel = new();
-    private readonly Label reputationProtectionLabel = new();
-    private readonly Label quarantineCountLabel = new();
-    private readonly Label quarantineStateLabel = new();
     private readonly NotifyIcon trayIcon = new();
     private readonly ToolTip toolTip = new();
     private readonly Icon cleanTrayIcon;
@@ -147,7 +137,6 @@ public sealed partial class MainForm : Form
     private string lastSkippedProcessLogSignature = "";
     private bool batchScanUi;
     private bool reviewQueueBusy;
-    private Button? approveUploadButton;
     private int scanUiDirty;
     private DateTime scanUiLastFlushUtc;
     private const int ScanUiFlushEvery = 12;
@@ -255,8 +244,6 @@ public sealed partial class MainForm : Form
         updateCheckTimer.Tick += async (_, _) => await CheckForUpdatesAsync(automatic: true);
         telemetryHeartbeatTimer.Tick += (_, _) => _ = SendTelemetryEventAsync("app_ping");
         updateButton.Click += async (_, _) => await CheckForUpdatesAsync();
-        settingsButton.Click += (_, _) => ShowSettingsDialog();
-        networkButton.Click += (_, _) => ShowNetworkMonitor();
         uploadUnknownBox.CheckedChanged += (_, _) => ConfirmUploads();
         rightClickScanBox.CheckedChanged += (_, _) => RightClickScanPreferenceChanged();
         startWithWindowsBox.CheckedChanged += (_, _) => StartWithWindowsPreferenceChanged();

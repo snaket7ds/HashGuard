@@ -85,8 +85,6 @@ internal sealed class SidebarNav : Panel
     public Color NeutralBadgeBack { get; set; } = Color.FromArgb(232, 234, 238);
     public Color NeutralBadgeText { get; set; } = Color.FromArgb(75, 83, 97);
 
-    public AppPage Active => active;
-
     public void SetActive(AppPage page)
     {
         active = page;
@@ -167,25 +165,90 @@ internal sealed class SidebarNav : Panel
         }
     }
 
-    internal static void PaintBrandMark(Graphics graphics, Rectangle bounds, Color color)
+    /// <summary>A white outlined shield with a white check, dot or "!" (the Home status badge).</summary>
+    internal static void PaintShieldOutline(Graphics graphics, RectangleF bounds, ShieldSymbol symbol)
     {
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var path = new GraphicsPath();
         float x = bounds.X, y = bounds.Y, w = bounds.Width, h = bounds.Height;
-        // A simple shield: flat top corners, curved sides meeting at the bottom point.
+        using var path = new GraphicsPath();
+        path.AddLine(x + w * 0.5f, y, x + w, y + h * 0.14f);
+        path.AddBezier(x + w, y + h * 0.14f, x + w, y + h * 0.62f, x + w * 0.78f, y + h * 0.86f, x + w * 0.5f, y + h);
+        path.AddBezier(x + w * 0.5f, y + h, x + w * 0.22f, y + h * 0.86f, x, y + h * 0.62f, x, y + h * 0.14f);
+        path.CloseFigure();
+        var stroke = Math.Max(1.8f, w / 12f);
+        using var outline = new Pen(Color.White, stroke) { LineJoin = LineJoin.Round };
+        graphics.DrawPath(outline, path);
+        using var pen = new Pen(Color.White, stroke * 1.1f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        using var white = new SolidBrush(Color.White);
+        switch (symbol)
+        {
+            case ShieldSymbol.Check:
+                graphics.DrawLines(pen, new[] { new PointF(x + w * 0.3f, y + h * 0.5f), new PointF(x + w * 0.45f, y + h * 0.64f), new PointF(x + w * 0.72f, y + h * 0.36f) });
+                break;
+            case ShieldSymbol.Exclamation:
+                graphics.DrawLine(pen, x + w * 0.5f, y + h * 0.28f, x + w * 0.5f, y + h * 0.54f);
+                graphics.FillEllipse(white, x + w * 0.5f - stroke * 0.7f, y + h * 0.66f - stroke * 0.7f, stroke * 1.4f, stroke * 1.4f);
+                break;
+            default:
+                graphics.FillEllipse(white, x + w * 0.36f, y + h * 0.35f, w * 0.28f, w * 0.28f);
+                break;
+        }
+    }
+
+    internal static void PaintBrandMark(Graphics graphics, Rectangle bounds, Color color) =>
+        PaintShield(graphics, bounds, color, ShieldSymbol.Check, Color.Empty);
+
+    internal enum ShieldSymbol
+    {
+        Check,
+        Dot,
+        Exclamation,
+    }
+
+    /// <summary>
+    /// The HashGuard shield (app mark, sidebar, alerts and the tray icon): a filled shield with a
+    /// white check, dot or exclamation mark, and an optional outline so it stands out on any taskbar.
+    /// </summary>
+    internal static void PaintShield(Graphics graphics, RectangleF bounds, Color color, ShieldSymbol symbol, Color outline)
+    {
+        graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        float x = bounds.X, y = bounds.Y, w = bounds.Width, h = bounds.Height;
+        using var path = new GraphicsPath();
         path.AddLine(x + w * 0.5f, y, x + w, y + h * 0.14f);
         path.AddBezier(x + w, y + h * 0.14f, x + w, y + h * 0.62f, x + w * 0.78f, y + h * 0.86f, x + w * 0.5f, y + h);
         path.AddBezier(x + w * 0.5f, y + h, x + w * 0.22f, y + h * 0.86f, x, y + h * 0.62f, x, y + h * 0.14f);
         path.CloseFigure();
         using var brush = new SolidBrush(color);
         graphics.FillPath(brush, path);
-        using var pen = new Pen(Color.White, Math.Max(2f, w / 12f)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
-        graphics.DrawLines(pen, new[]
+        if (outline != Color.Empty)
         {
-            new PointF(x + w * 0.3f, y + h * 0.5f),
-            new PointF(x + w * 0.45f, y + h * 0.64f),
-            new PointF(x + w * 0.72f, y + h * 0.36f),
-        });
+            using var outlinePen = new Pen(outline, Math.Max(1.5f, w / 22f)) { LineJoin = LineJoin.Round };
+            graphics.DrawPath(outlinePen, path);
+        }
+
+        var stroke = Math.Max(2f, w / 11f);
+        using var pen = new Pen(Color.White, stroke) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        using var white = new SolidBrush(Color.White);
+        switch (symbol)
+        {
+            case ShieldSymbol.Check:
+                graphics.DrawLines(pen, new[]
+                {
+                    new PointF(x + w * 0.3f, y + h * 0.5f),
+                    new PointF(x + w * 0.45f, y + h * 0.64f),
+                    new PointF(x + w * 0.72f, y + h * 0.36f),
+                });
+                break;
+            case ShieldSymbol.Exclamation:
+                graphics.DrawLine(pen, x + w * 0.5f, y + h * 0.26f, x + w * 0.5f, y + h * 0.55f);
+                var dot = stroke * 1.15f;
+                graphics.FillEllipse(white, x + w * 0.5f - dot / 2, y + h * 0.68f - dot / 2, dot, dot);
+                break;
+            default:
+                var size = w * 0.3f;
+                graphics.FillEllipse(white, x + (w - size) / 2, y + h * 0.47f - size / 2, size, size);
+                break;
+        }
     }
 
     private sealed class NavButton : Button

@@ -40,9 +40,6 @@ public sealed partial class MainForm : Form
     private readonly Label scanCountUnknown = CreateCountLabel();
     private readonly Label scanCountThreats = CreateCountLabel();
     private readonly Label reviewNoteLabel = new() { AutoSize = true, Tag = "muted", Margin = new Padding(12, 8, 0, 0), UseMnemonic = false };
-    private Button? reviewDetailsButton;
-    private Button? reviewIgnoreButton;
-    private Button? reviewQuarantineButton;
     private AlertCard? overlayAlert;
     private DateTime? lastScanFinishedLocal;
     private bool lastDashboardScanning;
@@ -192,8 +189,8 @@ public sealed partial class MainForm : Form
             {
                 AppPage.Home => BuildHomePage(),
                 AppPage.Scan => BuildScanPage(),
-                AppPage.Quarantine => WrapPage("Quarantine", "Files here can't run. Restore one only if you trust it, or delete it for good.", BuildQuarantineView()),
-                AppPage.Firewall => WrapPage("Firewall", "Every app that talks to the network, with HashGuard's verdict. Block any app with one click.", BuildNetworkView()),
+                AppPage.Quarantine => WrapPage("Quarantine", "Files here can't run. Restore one only if you trust it, or delete it for good.", BuildQuarantinePage()),
+                AppPage.Firewall => WrapPage("Firewall", "Every app that talks to the network, with HashGuard's verdict. Turn an app off to block it.", BuildFirewallPage()),
                 AppPage.Activity => WrapPage("Activity", "Everything HashGuard did: scans, files it checked, apps it blocked and files it quarantined.", BuildActivityPage()),
                 _ => WrapPage("Settings", "", BuildSettingsView()),
             };
@@ -419,11 +416,30 @@ public sealed partial class MainForm : Form
 
     private Control BuildScanPage()
     {
-        var page = new TableLayoutPanel { ColumnCount = 1, RowCount = 3, Margin = new Padding(0), Padding = new Padding(0), BackColor = SoftAppBack };
+        var page = new TableLayoutPanel { ColumnCount = 1, RowCount = 4, Margin = new Padding(0), Padding = new Padding(0), BackColor = SoftAppBack };
         page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        page.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
         page.RowStyles.Add(new RowStyle(SizeType.Absolute, 176));
         page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         page.Controls.Add(CreatePageHeader("Scan", "Check the apps running now, or choose files to check."), 0, 0);
+
+        // Scan types, as in the design: click one to start it.
+        var types = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 0, 0, 16), BackColor = SoftAppBack };
+        types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        types.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        var runningApps = CreateLinkTile("Running apps", new Label { Text = "Every app running now, with its startup entries", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, () =>
+        {
+            if (scanCancellation is null)
+            {
+                _ = StartScanAsync();
+            }
+        });
+        var chooseFilesTile = CreateLinkTile("Choose files", new Label { Text = "Any file you pick", Tag = "muted", AutoSize = false, Dock = DockStyle.Top, Height = 20, UseMnemonic = false }, ChooseFilesToScan);
+        runningApps.Margin = new Padding(0, 0, 8, 0);
+        chooseFilesTile.Margin = new Padding(8, 0, 0, 0);
+        types.Controls.Add(runningApps, 0, 0);
+        types.Controls.Add(chooseFilesTile, 1, 0);
+        page.Controls.Add(types, 0, 1);
 
         // Progress card: ring, what is being checked, provider chips, counts, scan / choose files.
         var progressCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(26, 20, 26, 20), Margin = new Padding(0, 0, 0, 18) };
@@ -459,93 +475,184 @@ public sealed partial class MainForm : Form
         var actions = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Anchor = AnchorStyles.Right, BackColor = Color.Transparent, Margin = new Padding(0) };
         actions.Controls.Add(scanPageScanSlot);
         var chooseFiles = new Button { Text = "Choose files…", Size = new Size(168, 40), Margin = new Padding(0, 10, 0, 0) };
-        chooseFiles.Click += async (_, _) =>
-        {
-            using var picker = new OpenFileDialog { Title = "Choose files to scan", Multiselect = true, CheckFileExists = true };
-            if (picker.ShowDialog(this) == DialogResult.OK && picker.FileNames.Length > 0)
-            {
-                await ScanSelectedFilesAsync(picker.FileNames);
-            }
-        };
+        chooseFiles.Click += (_, _) => ChooseFilesToScan();
         actions.Controls.Add(chooseFiles);
         progressLayout.Controls.Add(actions, 3, 0);
         progressCard.Controls.Add(progressLayout);
-        page.Controls.Add(progressCard, 0, 1);
+        page.Controls.Add(progressCard, 0, 2);
 
-        page.Controls.Add(BuildReviewPanel(), 0, 2);
+        page.Controls.Add(BuildReviewPanel(), 0, 3);
         SyncScanRing();
         return page;
     }
 
-    /// <summary>"Needs your decision": the existing review list with Details · Ignore · Quarantine · Send to VirusTotal.</summary>
+    /// <summary>
+    /// "Needs your decision" as designed: one card row per item with its own Details · Ignore ·
+    /// Quarantine / Send to VirusTotal buttons. resultsView stays the data source (the scanning
+    /// code fills it); it sits off-screen, and each button selects its row there and calls the
+    /// existing action.
+    /// </summary>
     private Control BuildReviewPanel()
     {
         ConfigureResultsView(resultsView);
-        var panel = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(20, 12, 20, 12), Margin = new Padding(0) };
-        var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Color.Transparent };
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52));
-        var title = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), BackColor = Color.Transparent };
-        title.Controls.Add(new Label { Text = "Needs your decision", AutoSize = true, Font = new Font("Segoe UI Semibold", 11.5f, FontStyle.Regular), Margin = new Padding(0, 6, 8, 0), UseMnemonic = false });
-        reviewCountLabel.Margin = new Padding(0, 9, 0, 0);
+        var panel = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10), Margin = new Padding(0) };
+        var title = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false, Margin = new Padding(0), Padding = new Padding(20, 12, 20, 0), BackColor = Color.White, Tag = "surface" };
+        title.Controls.Add(new Label { Text = "Needs your decision", AutoSize = true, Font = new Font("Segoe UI Semibold", 11.5f, FontStyle.Regular), Margin = new Padding(0, 2, 8, 0), UseMnemonic = false });
+        reviewCountLabel.Margin = new Padding(0, 5, 0, 0);
         toolTip.SetToolTip(reviewCountLabel, "Items that need a decision");
         title.Controls.Add(reviewCountLabel);
+        reviewNoteLabel.Margin = new Padding(12, 6, 0, 0);
         title.Controls.Add(reviewNoteLabel);
-        layout.Controls.Add(title, 0, 0);
-        var listHost = new Panel { Dock = DockStyle.Fill };
-        listHost.Controls.Add(resultsEmptyLabel);
-        listHost.Controls.Add(resultsView);
-        resultsEmptyLabel.BringToFront();
-        layout.Controls.Add(listHost, 0, 1);
+        var export = new LinkLabel { Text = "Export report", AutoSize = true, Margin = new Padding(24, 6, 0, 0), Tag = "accent-link" };
+        export.LinkClicked += (_, _) => ExportScanReport();
+        title.Controls.Add(export);
 
-        var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0, 10, 0, 0), BackColor = Color.Transparent };
-        var details = CreateQueueActionButton("Details");
-        var ignore = CreateQueueActionButton("Ignore");
-        var quarantine = CreateQueueActionButton("Quarantine");
-        quarantine.Tag = "danger-button";
-        quarantine.Font = new Font("Segoe UI Semibold", 9, FontStyle.Regular);
-        var upload = CreateQueueActionButton("Send to VirusTotal");
-        var export = CreateQueueActionButton("Export");
-        export.Tag = "quiet-button";
-        reviewDetailsButton = details;
-        reviewIgnoreButton = ignore;
-        reviewQuarantineButton = quarantine;
-        approveUploadButton = upload;
-        details.Click += (_, _) => ShowReviewDetails(resultsView);
-        ignore.Click += (_, _) => ToggleSelectedIgnoreFlagWithConfirm(resultsView);
-        quarantine.Click += (_, _) => QuarantineSelectedFiles(resultsView);
-        upload.Click += async (_, _) => await ApproveSelectedVirusTotalUploadsAsync(resultsView);
-        export.Click += (_, _) => ExportScanReport();
-        resultsView.SelectedIndexChanged += (_, _) =>
+        reviewList.Dock = DockStyle.Fill;
+        reviewList.AccessibleName = "Needs your decision";
+        reviewList.EmptyText = "Nothing needs you. Unknown files and anything flagged show up here.";
+        resultsView.Dock = DockStyle.None;
+        resultsView.Size = new Size(1, 1);
+        resultsView.Location = new Point(-10, -10);
+        resultsView.TabStop = false;
+        resultsEmptyLabel.Visible = false;
+        panel.Controls.Add(reviewList);
+        panel.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 1, Tag = "hairline" });
+        panel.Controls.Add(title);
+        panel.Controls.Add(resultsView);
+
+        reviewList.ActionClicked += (item, action) => RunReviewAction(item, item.Actions[action]);
+        reviewList.ItemActivated += (_, _) =>
         {
-            if (reviewQueueBusy)
+            if (reviewList.SelectedItem is { } item)
             {
+                RunReviewAction(item, "Details");
+            }
+        };
+        var menu = new ContextMenuStrip();
+        menu.Opening += (_, args) =>
+        {
+            menu.Items.Clear();
+            if (reviewList.SelectedItem is not { } item)
+            {
+                args.Cancel = true;
                 return;
             }
 
-            ReconcileReviewQueue(updateSummary: false);
-            UpdateReviewQueueActionButtons(details, details, ignore, ignore, quarantine);
+            foreach (var action in item.Actions.Concat(["Open file location", "Ignore publisher"]).Distinct())
+            {
+                menu.Items.Add(action, null, (_, _) => RunReviewAction(item, action));
+            }
         };
-        resultsView.DoubleClick += (_, _) => ShowReviewDetails(resultsView);
-        resultsView.Enter += (_, _) => ReconcileReviewQueue();
-        resultsView.MouseDown += (_, _) => ReconcileReviewQueue();
-        foreach (var button in new[] { details, ignore, quarantine, upload })
-        {
-            button.Enabled = false;
-            buttons.Controls.Add(button);
-        }
-
-        var spacer = new Panel { Width = 24, Height = 1, Margin = new Padding(0), BackColor = Color.Transparent };
-        buttons.Controls.Add(spacer);
-        buttons.Controls.Add(export);
-        layout.Controls.Add(buttons, 0, 2);
-        panel.Controls.Add(layout);
+        reviewList.MenuRequested += point => menu.Show(reviewList, point);
+        panel.Disposed += (_, _) => menu.Dispose();
+        RefreshReviewList();
         return panel;
     }
 
+    private readonly CardList reviewList = new();
+
+    private async void ChooseFilesToScan()
+    {
+        using var picker = new OpenFileDialog { Title = "Choose files to scan", Multiselect = true, CheckFileExists = true };
+        if (picker.ShowDialog(this) == DialogResult.OK && picker.FileNames.Length > 0)
+        {
+            await ScanSelectedFilesAsync(picker.FileNames);
+        }
+    }
+
+    /// <summary>Selects the review row in resultsView and runs the existing action on it.</summary>
+    private async void RunReviewAction(CardListItem item, string action)
+    {
+        if (item.Tag is not ListViewItem row || row.ListView != resultsView)
+        {
+            return;
+        }
+
+        resultsView.SelectedItems.Clear();
+        row.Selected = true;
+        switch (action)
+        {
+            case "Details":
+                ShowReviewDetails(resultsView);
+                break;
+            case "Ignore":
+            case "Unignore":
+                ToggleSelectedIgnoreFlagWithConfirm(resultsView);
+                break;
+            case "Quarantine":
+                QuarantineSelectedFiles(resultsView);
+                break;
+            case "Send to VirusTotal":
+                await ApproveSelectedVirusTotalUploadsAsync(resultsView);
+                break;
+            case "Open file location":
+                OpenSelectedFileLocation(resultsView);
+                break;
+            case "Ignore publisher":
+                IgnoreSelectedPublisher(resultsView);
+                break;
+        }
+
+        RefreshReviewList();
+        UpdateHomePage();
+    }
+
+    /// <summary>Rebuilds the card rows from resultsView (cheap: the review list is short).</summary>
+    private void RefreshReviewList()
+    {
+        var items = new List<CardListItem>();
+        foreach (ListViewItem row in resultsView.Items)
+        {
+            if (FindResultForReviewQueueRow(row) is not { } result)
+            {
+                continue;
+            }
+
+            var name = Path.GetFileName(result.Path);
+            var ignored = string.Equals(result.Status, "ignored", StringComparison.OrdinalIgnoreCase);
+            var description = ActivityText.Describe(result.Status, result.Malicious, result.Suspicious, ignored, string.IsNullOrWhiteSpace(name) ? result.ProcessNames : name);
+            var canUpload = GetVirusTotalUploadTargets([row]).Count > 0;
+            var (glyph, tone) = description.Kind switch
+            {
+                ActivityKind.Threat => ("!", CardTone.Bad),
+                ActivityKind.Suspicious => ("!", CardTone.Warn),
+                ActivityKind.Unknown => ("?", CardTone.Warn),
+                ActivityKind.Error => ("\uE711", CardTone.Neutral),
+                ActivityKind.Handled => ("–", CardTone.Neutral),
+                _ => ("!", CardTone.Warn),
+            };
+            var titleText = description.Kind == ActivityKind.Clean ? $"{name} needs a look ({result.RiskLevel} risk)" : description.Title;
+            var signer = result.SignatureSummary.StartsWith("Unsigned", StringComparison.OrdinalIgnoreCase) ? "not signed" : string.IsNullOrWhiteSpace(result.SignaturePublisher) ? "" : $"signed by {result.SignaturePublisher}";
+            var detail = string.Join(" · ", new[] { description.Kind == ActivityKind.Clean ? result.TrustSummary : "", signer, Path.GetDirectoryName(result.Path) ?? "" }.Where(part => !string.IsNullOrWhiteSpace(part)));
+            string[] actions = ignored
+                ? ["Details", "Unignore"]
+                : (description.Kind is ActivityKind.Threat or ActivityKind.Suspicious or ActivityKind.Clean)
+                    ? ["Details", "Ignore", "Quarantine"]
+                    : canUpload ? ["Details", "Ignore", "Send to VirusTotal"] : ["Details", "Ignore", "Quarantine"];
+            items.Add(new CardListItem
+            {
+                Glyph = glyph,
+                Tone = tone,
+                Title = titleText,
+                Detail = detail,
+                Actions = actions,
+                DangerAction = Array.IndexOf(actions, "Quarantine"),
+                PrimaryAction = Array.IndexOf(actions, "Send to VirusTotal"),
+                Tag = row,
+            });
+        }
+
+        // Most urgent first: threats, then suspicious, then the rest.
+        items = items.OrderBy(item => item.Tone switch { CardTone.Bad => 0, CardTone.Warn => 1, _ => 2 }).ToList();
+        reviewList.SetItems(items, keepScroll: true);
+    }
+
     /// <summary>Keeps the Scan page's ring, title and counts in step with the scan (called with the summary).</summary>
-    private void SyncScanRing()
+    /// <summary>
+    /// Keeps the Scan page in step with the scan. Per file only the ring and the current path move
+    /// (<paramref name="countsToo"/> false); the counts are recomputed with the summary refresh.
+    /// </summary>
+    private void SyncScanRing(bool countsToo = true)
     {
         var running = scanCancellation is not null || scanGate.IsBusy;
         scanRing.Running = running;
@@ -555,6 +662,11 @@ public sealed partial class MainForm : Form
         scanRingDetail.Text = running
             ? statusLabel.Text
             : results.Count == 0 ? "Scan the apps running now, or choose files." : HomeStatusText.FormatLastScan(lastScanFinishedLocal, DateTime.Now);
+        if (!countsToo)
+        {
+            return;
+        }
+
         scanCountChecked.Text = results.Count.ToString("N0");
         scanCountClean.Text = results.Count(result => !ResultNeedsAction(result) && result.Status != "error").ToString("N0");
         scanCountUnknown.Text = results.Count(result => result.Status is "unknown" or "uploaded").ToString("N0");
@@ -573,9 +685,9 @@ public sealed partial class MainForm : Form
                 var name = provider switch { "VT" => "VirusTotal", "Malware Hash History" => "Team Cymru", _ => provider };
                 scanSourceChips.Controls.Add(new PillLabel
                 {
-                    Text = "● " + name,
+                    Text = name,
                     AutoSize = false,
-                    Size = new Size(TextRenderer.MeasureText("● " + name, Font).Width + 24, 24),
+                    Size = new Size(TextRenderer.MeasureText(name, Font).Width + 26, 24),
                     Radius = 12,
                     Padding = new Padding(10, 0, 10, 0),
                     Margin = new Padding(0, 0, 6, 0),
@@ -596,8 +708,8 @@ public sealed partial class MainForm : Form
         var status = HomeStatusText.Build(scanning, threats, needs, providers, 3, lastScanFinishedLocal, DateTime.Now, appSettings.NetworkMonitorEnabled);
         statusTitle.Text = status.Title;
         statusSubtitle.Text = scanning && !string.IsNullOrWhiteSpace(lastDashboardSubtitle) ? lastDashboardSubtitle : status.Subtitle;
-        homeLastScanChip.Text = "⏱  " + status.LastScanChip;
-        homeSourcesChip.Text = "●  " + status.SourcesChip;
+        homeLastScanChip.Text = status.LastScanChip;
+        homeSourcesChip.Text = status.SourcesChip;
         homeLastScanChip.Width = TextRenderer.MeasureText(homeLastScanChip.Text, homeLastScanChip.Font).Width + 26;
         homeSourcesChip.Width = TextRenderer.MeasureText(homeSourcesChip.Text, homeSourcesChip.Font).Width + 26;
         homeLastScanChip.PillColor = activePalette.NeutralTint;
@@ -625,7 +737,7 @@ public sealed partial class MainForm : Form
         SetPill(homeFwPill, appSettings.NetworkMonitorEnabled ? "On" : "Monitor off", appSettings.NetworkMonitorEnabled ? "good" : "warn");
 
         homeTileDecision.Text = needs == 0 ? "Nothing to decide" : needs == 1 ? "1 item" : $"{needs:N0} items";
-        var restorable = HashGuardLogic.CountRestorableQuarantineEntries(LoadQuarantineManifest());
+        var restorable = GetRestorableQuarantineCount();
         homeTileQuarantine.Text = restorable == 0 ? "Nothing isolated" : restorable == 1 ? "1 file isolated" : $"{restorable:N0} files isolated";
         sidebar.SetBadge(AppPage.Scan, HomeStatusText.BadgeText(needs), alert: true);
         sidebar.SetBadge(AppPage.Quarantine, HomeStatusText.BadgeText(restorable), alert: false);
@@ -688,11 +800,6 @@ public sealed partial class MainForm : Form
         }
 
         ToggleSelectedIgnoreFlag(view);
-        if (reviewIgnoreButton is not null)
-        {
-            UpdateIgnoreButtonText(view, reviewIgnoreButton);
-        }
-
         UpdateHomePage();
     }
 
