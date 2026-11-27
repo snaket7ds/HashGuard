@@ -57,6 +57,7 @@ public static class AppPaths
 
     public static string GetLogDirectory() => Path.Combine(GetConfigRoot(), "logs");
     public static string GetNetworkActionLogPath() => Path.Combine(GetLogDirectory(), "network-actions.log");
+    public static string GetNetworkAppsPath() => Path.Combine(GetConfigDirectory(), "network-apps.json");
 
     /// <summary>Log folders to read from. In fallback mode, older logs next to the app are still read.</summary>
     public static IEnumerable<string> GetLogDirectories()

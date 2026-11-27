@@ -5,8 +5,9 @@ namespace HashGuard.Core;
 
 public sealed class HashCache
 {
-    private readonly Dictionary<string, CacheEntry> entries = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, FileStateEntry> fileStates = new(StringComparer.OrdinalIgnoreCase);
+    // Concurrent: a scan checks several files at once, and the network monitor reads while scans write.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CacheEntry> entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, FileStateEntry> fileStates = new(StringComparer.OrdinalIgnoreCase);
     private bool loaded;
     private bool dirty;
     private int unsavedMutations;
@@ -58,10 +59,10 @@ public sealed class HashCache
     public bool Remove(string sha256)
     {
         forgottenAtUtc[sha256] = DateTime.UtcNow;
-        var removed = entries.Remove(sha256);
+        var removed = entries.TryRemove(sha256, out _);
         foreach (var path in fileStates.Where(pair => string.Equals(pair.Value.Sha256, sha256, StringComparison.OrdinalIgnoreCase)).Select(pair => pair.Key).ToList())
         {
-            fileStates.Remove(path);
+            fileStates.TryRemove(path, out _);
             removed = true;
         }
 
@@ -242,9 +243,15 @@ public sealed class HashCache
         });
     }
 
+    /// <summary>
+    /// Remembers which hash this file had at this size and time, for every verdict. v1 kept it only
+    /// for clean files, so a file flagged malicious could never be looked up by path: the Firewall
+    /// page showed it as "Not scanned" and auto-block never fired. Reusing a clean verdict still
+    /// requires a clean entry (<see cref="TryGetUnchangedFile"/>).
+    /// </summary>
     public void SetFileState(ScanResult result)
     {
-        if (string.IsNullOrWhiteSpace(result.Sha256) || !entries.TryGetValue(result.Sha256, out var entry) || !IsReusableCleanEntry(entry))
+        if (string.IsNullOrWhiteSpace(result.Sha256) || !entries.ContainsKey(result.Sha256))
         {
             return;
         }
@@ -535,7 +542,7 @@ public sealed class HashCache
             {
                 if (!File.Exists(path))
                 {
-                    fileStates.Remove(path);
+                    fileStates.TryRemove(path, out _);
                     MarkDirty();
                 }
             }
