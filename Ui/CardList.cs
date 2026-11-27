@@ -23,6 +23,8 @@ internal sealed class CardListItem
     public string Title { get; init; } = "";
     public string Detail { get; init; } = "";
     public string Pill { get; init; } = "";
+    /// <summary>Colour of the pill when it differs from the row (e.g. "Clean" stays green on an unverified app).</summary>
+    public CardTone? PillTone { get; init; }
     public string Trailing { get; init; } = "";
     public object? Tag { get; init; }
     /// <summary>Buttons drawn in the row, left to right (e.g. Details, Ignore, Quarantine).</summary>
@@ -537,8 +539,9 @@ internal sealed class CardList : Control
             {
                 var pillWidth = TextRenderer.MeasureText(item.Pill, pillFont, Size.Empty, TextFormatFlags.NoPadding).Width + 20;
                 var pillRect = new RectangleF(right - pillWidth, top + (RowHeight - 24) / 2f, pillWidth, 24);
-                RoundedPaint.FillRounded(g, pillRect, 12, tint);
-                TextRenderer.DrawText(g, item.Pill, pillFont, Rectangle.Round(pillRect), ink,
+                var (pillTint, pillInk) = item.PillTone is { } pillTone && Tones.TryGetValue(pillTone, out var pt) ? pt : (tint, ink);
+                RoundedPaint.FillRounded(g, pillRect, 12, pillTint);
+                TextRenderer.DrawText(g, item.Pill, pillFont, Rectangle.Round(pillRect), pillInk,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
                 right -= pillWidth + 16;
             }

@@ -153,6 +153,13 @@ internal sealed class IconBadge : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         RoundedPaint.FillRounded(e.Graphics, new RectangleF(0, 0, Width - 1, Height - 1), Radius, TintColor);
+        if (LineIcons.IsIcon(Text))
+        {
+            var size = Math.Min(Width, Height) * 0.52f;
+            LineIcons.Draw(e.Graphics, Text, new RectangleF((Width - size) / 2f, (Height - size) / 2f, size, size), GlyphColor);
+            return;
+        }
+
         TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, GlyphColor,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
     }

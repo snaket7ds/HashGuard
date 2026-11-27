@@ -4,6 +4,18 @@
 
 - **Home when a threat is found, as designed:** the red status now holds a card for the most serious flagged file (its name, how many security vendors flag it, whether it's signed, where it is) with **Details · Ignore · Quarantine**. These replace the separate Review and Quarantine buttons.
 - **Firewall detail card:** Signed by, First seen, Connections and Status are now a tidy two-column list.
+- **Matched to the real Windows screenshots:**
+  - The old status bar along the bottom of the window ("Monitoring active…", "1 / 1") is gone. It isn't in the design, and scan progress shows on the Scan page.
+  - Buttons have rounded corners.
+  - The sidebar and Home cards use the design's line icons. Firewall is a brick wall, Quarantine a box, and the Firewall card's icon sits on a blue tile.
+  - Firewall page:
+    - **Monitor | Ask first (Soon)** is a grey segmented switch next to the page title.
+    - The stat cards are no longer cut off at the bottom.
+    - The search field is rounded, with a magnifier icon.
+    - All four filter chips fit.
+    - "Clean" is always green.
+    - The detail card shows the first app straight away.
+  - Settings → Behavior: a single "Updates and privacy" card with a "HashGuard 1.1.3 · Check for updates" row replaces the version info box. Long help text wraps instead of being cut off.
 - Checked visually: the threat state, the "Needs your decision" rows, the in-window alert and the tray pop-up were rendered with sample data in a separate preview build (`-p:DefineConstants=DESIGN_PREVIEW`) and compared with the design. Release builds don't include that sample data.
 
 ## v1.1.2 - 2026-11-26

@@ -85,7 +85,8 @@ public sealed partial class MainForm : Form
 
         var content = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0), BackColor = SoftAppBack };
         content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        // The old status bar is gone (not in the design); progress shows on the Scan page.
+        content.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
         pageHost.BackColor = SoftAppBack;
         content.Controls.Add(pageHost, 0, 0);
 
@@ -114,6 +115,7 @@ public sealed partial class MainForm : Form
         bottom.Controls.Add(countLabel, 1, 0);
         footer.Controls.Add(bottom);
         footer.Controls.Add(progressBar);
+        footer.Visible = false;
         content.Controls.Add(footer, 0, 1);
         root.Controls.Add(content, 1, 0);
         Controls.Add(root);
@@ -191,7 +193,7 @@ public sealed partial class MainForm : Form
                 AppPage.Home => BuildHomePage(),
                 AppPage.Scan => BuildScanPage(),
                 AppPage.Quarantine => WrapPage("Quarantine", "Files here can't run. Restore one only if you trust it, or delete it for good.", BuildQuarantinePage()),
-                AppPage.Firewall => WrapPage("Firewall", "Every app that talks to the network, with HashGuard's verdict. Turn an app off to block it.", BuildFirewallPage()),
+                AppPage.Firewall => WrapPage("Firewall", "Every app that talks to the network, with HashGuard's verdict. Turn an app off to block it.", BuildFirewallPage(), firewallModeSwitch),
                 AppPage.Activity => WrapPage("Activity", "Everything HashGuard did: scans, files it checked, apps it blocked and files it quarantined.", BuildActivityPage()),
                 _ => WrapPage("Settings", "", BuildSettingsView()),
             };
@@ -225,12 +227,28 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private Control WrapPage(string title, string subtitle, Control body)
+    private Control WrapPage(string title, string subtitle, Control body, Control? headerRight = null)
     {
         var page = new TableLayoutPanel { ColumnCount = 1, RowCount = 2, Margin = new Padding(0), Padding = new Padding(0), BackColor = SoftAppBack };
         page.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         page.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        page.Controls.Add(CreatePageHeader(title, subtitle), 0, 0);
+        var header = CreatePageHeader(title, subtitle);
+        if (headerRight is null)
+        {
+            page.Controls.Add(header, 0, 0);
+        }
+        else
+        {
+            // Title on the left, a control (e.g. the Firewall mode switch) on the right, as designed.
+            var bar = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2, RowCount = 1, Margin = new Padding(0), BackColor = SoftAppBack };
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            header.Margin = new Padding(0, 0, 0, 14);
+            headerRight.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            bar.Controls.Add(header, 0, 0);
+            bar.Controls.Add(headerRight, 1, 0);
+            page.Controls.Add(bar, 0, 0);
+        }
         body.Dock = DockStyle.Fill;
         body.Margin = new Padding(0);
         page.Controls.Add(body, 0, 1);
@@ -330,11 +348,11 @@ public sealed partial class MainForm : Form
         pillars.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         pillars.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         pillars.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var av = CreatePillarCard("", "accent", "Antivirus", homeAvPill,
+        var av = CreatePillarCard("icon:shield", "accent", "Antivirus", homeAvPill,
             [("Last scan", homeAvLastScan), ("Files you open", homeAvOpenFiles), ("Reputation sources", homeAvSources)],
             "Scan settings →", () => ShowPage(AppPage.Settings));
         av.Margin = new Padding(0, 0, 9, 0);
-        var fw = CreatePillarCard("", "blue", "Firewall", homeFwPill,
+        var fw = CreatePillarCard("icon:firewall", "blue", "Firewall", homeFwPill,
             [("Apps online now", homeFwOnline), ("Blocked by HashGuard", homeFwBlocked), ("New-app alerts", homeFwAlerts)],
             "Open Firewall →", () => ShowPage(AppPage.Firewall));
         fw.Margin = new Padding(9, 0, 0, 0);

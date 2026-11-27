@@ -20,6 +20,9 @@ public sealed partial class MainForm : Form
         NeedsLook,
     }
 
+    /// <summary>The Monitor | Ask first switch, shown at the right of the Firewall page title.</summary>
+    private Control? firewallModeSwitch;
+
     private Control BuildFirewallPage()
     {
         EnsureNetworkTracker();
@@ -40,30 +43,26 @@ public sealed partial class MainForm : Form
             return card;
         }
 
-        var stats = new TableLayoutPanel { Dock = DockStyle.Top, Height = 86, ColumnCount = 4, RowCount = 1, Margin = new Padding(0), BackColor = SoftAppBack };
+        var stats = new TableLayoutPanel { Dock = DockStyle.Top, Height = 84, ColumnCount = 3, RowCount = 1, Margin = new Padding(0), BackColor = SoftAppBack };
         for (var column = 0; column < 3; column++)
         {
             stats.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f / 3));
         }
 
-        stats.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        // Without this the row sizes to the cards' preferred height and cuts their bottoms off.
+        stats.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var onlineCard = StatCard("Online now", statOnline);
         var blockedCard = StatCard("Blocked", statBlocked);
         var lookCard = StatCard("Needs a look", statLook);
         onlineCard.Margin = new Padding(0, 0, 8, 0);
         blockedCard.Margin = new Padding(4, 0, 4, 0);
-        lookCard.Margin = new Padding(8, 0, 16, 0);
+        lookCard.Margin = new Padding(8, 0, 0, 0);
         stats.Controls.Add(onlineCard, 0, 0);
         stats.Controls.Add(blockedCard, 1, 0);
         stats.Controls.Add(lookCard, 2, 0);
-        var mode = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Anchor = AnchorStyles.Top | AnchorStyles.Right, Margin = new Padding(0, 4, 0, 0), BackColor = SoftAppBack };
-        var modeMonitor = new ChipButton("Monitor") { AccessibleDescription = "Current firewall mode" };
-        var modeAsk = new ChipButton("Ask first · Soon") { Enabled = false, Margin = new Padding(6, 0, 0, 0) };
-        modeMonitor.SetState("", true);
-        modeAsk.SetState("", false);
-        toolTip.SetToolTip(modeAsk, "Coming in a later version: ask before an app connects for the first time.");
-        mode.Controls.AddRange([modeMonitor, modeAsk]);
-        stats.Controls.Add(mode, 3, 0);
+        var mode = new ModeSwitch { Margin = new Padding(16, 2, 0, 0) };
+        toolTip.SetToolTip(mode, "Monitor: HashGuard watches and alerts. Ask first (coming in a later version): ask before an app connects for the first time.");
+        firewallModeSwitch = mode;
 
         // Banner for anything that stops blocking from working.
         var bannerText = new List<string>();
@@ -98,19 +97,29 @@ public sealed partial class MainForm : Form
         };
 
         // App list card.
-        var search = new TextBox { Width = 260, PlaceholderText = "Search apps, publishers or hosts", AccessibleName = "Search apps", Margin = new Padding(0, 6, 10, 0), Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var search = new TextBox { BorderStyle = BorderStyle.None, PlaceholderText = "Search apps, publishers or hosts", AccessibleName = "Search apps", Font = new Font("Segoe UI", 10, FontStyle.Regular) };
+        var searchBox = new SearchField(search) { Size = new Size(240, 38), Margin = new Padding(0, 0, 10, 0) };
         var chipAll = new ChipButton("All");
         var chipOnline = new ChipButton("Online");
         var chipBlocked = new ChipButton("Blocked");
         var chipLook = new ChipButton("Needs a look");
         var chips = new[] { (chipAll, FirewallFilter.All), (chipOnline, FirewallFilter.Online), (chipBlocked, FirewallFilter.Blocked), (chipLook, FirewallFilter.NeedsLook) };
-        var listBar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 52, WrapContents = false, Padding = new Padding(16, 6, 16, 0), BackColor = Color.White, Tag = "surface" };
-        listBar.Controls.Add(search);
+        var listBar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 56, WrapContents = false, Padding = new Padding(12, 6, 12, 0), BackColor = Color.White, Tag = "surface" };
+        listBar.Controls.Add(searchBox);
         foreach (var (chip, _) in chips)
         {
-            chip.Margin = new Padding(0, 4, 6, 0);
+            chip.Margin = new Padding(0, 1, 6, 0);
             listBar.Controls.Add(chip);
         }
+
+        // The search field takes whatever the chips leave, so every chip (Needs a look too) stays visible.
+        void FitSearch()
+        {
+            var chipsWidth = chips.Sum(chip => chip.Item1.Width + chip.Item1.Margin.Horizontal);
+            searchBox.Width = Math.Max(150, listBar.ClientSize.Width - listBar.Padding.Horizontal - chipsWidth - searchBox.Margin.Horizontal - 4);
+        }
+
+        listBar.Resize += (_, _) => FitSearch();
 
         var list = new CardList { Dock = DockStyle.Fill, AccessibleName = "Apps using the network", EmptyText = "Watching for connections…" };
         var listCard = new CardPanel { Dock = DockStyle.Fill, Radius = 18, Padding = new Padding(6, 10, 6, 10), Margin = new Padding(0, 0, 9, 0) };
@@ -182,6 +191,16 @@ public sealed partial class MainForm : Form
             _ => blocked ? CardTone.Neutral : CardTone.Good,
         };
 
+        // The verdict pill keeps its own colour: Clean is green even when the publisher isn't verified.
+        static CardTone PillToneFor(NetworkAppAssessment assessment) => assessment.Verdict.Kind switch
+        {
+            NetworkVerdictKind.Malicious => CardTone.Bad,
+            NetworkVerdictKind.Suspicious => CardTone.Warn,
+            _ when assessment.Verdict.Label == "Windows" => CardTone.Neutral,
+            _ when assessment.Verdict.Label.Contains("Clean", StringComparison.OrdinalIgnoreCase) => CardTone.Good,
+            _ => CardTone.Warn,
+        };
+
         bool Matches(NetworkRow row, FirewallFilter which) => which switch
         {
             FirewallFilter.Online => row.Online && !row.Blocked,
@@ -208,7 +227,7 @@ public sealed partial class MainForm : Form
             detailName.Text = NetworkActivityTracker.DisplayName(path);
             detailPill.Text = assessment.Verdict.Label;
             detailPill.Width = TextRenderer.MeasureText(detailPill.Text, detailPill.Font).Width + 24;
-            var (tint, ink) = ToneFor(assessment, blocked) switch
+            var (tint, ink) = PillToneFor(assessment) switch
             {
                 CardTone.Bad => (activePalette.DangerTint, activePalette.DangerText),
                 CardTone.Warn => (activePalette.AttentionTint, activePalette.AttentionText),
@@ -247,7 +266,7 @@ public sealed partial class MainForm : Form
             var rows = BuildNetworkRows("", hideTrusted: false, showIdle: true);
             foreach (var (chip, which) in chips)
             {
-                chip.SetState(rows.Count(row => Matches(row, which)).ToString("N0", CultureInfo.CurrentCulture), which == filter);
+                chip.SetState("", which == filter);
             }
 
             var query = search.Text.Trim();
@@ -264,6 +283,7 @@ public sealed partial class MainForm : Form
                     Title = row.Columns[0],
                     Detail = $"{row.Assessment.Signer}  ·  {(row.Blocked ? "Blocked · " : "")}{row.Columns[3]}",
                     Pill = row.Assessment.Verdict.Label,
+                    PillTone = PillToneFor(row.Assessment),
                     Trailing = row.Online ? "online" : row.Columns[5],
                     Toggle = File.Exists(row.Path) ? !row.Blocked : null,
                     ToggleLabel = row.Blocked ? "Blocked" : "Allowed",
@@ -271,6 +291,12 @@ public sealed partial class MainForm : Form
                 })
                 .ToList();
             list.SetItems(items, keepScroll: true);
+            // As designed, the detail card always shows an app: the first one until you pick another.
+            if (list.SelectedItem is null && items.Count > 0)
+            {
+                list.SelectTag(items[0].Tag!);
+            }
+
             statOnline.Text = (networkTracker?.Apps.Count(app => app.CurrentConnections > 0 && !networkBlockedPaths.Contains(app.Path)) ?? 0).ToString("N0", CultureInfo.CurrentCulture);
             statBlocked.Text = networkBlockedPaths.Count.ToString("N0", CultureInfo.CurrentCulture);
             var look = rows.Count(row => row.Online && row.Assessment.Untrusted && !row.Blocked);
@@ -286,6 +312,7 @@ public sealed partial class MainForm : Form
             filter = FirewallFilter.All;
             search.Text = "";
             RefreshRows();
+            FitSearch();
             if (list.SelectTag(path))
             {
                 list.Focus();
@@ -374,6 +401,7 @@ public sealed partial class MainForm : Form
         refreshNetworkWindow = RefreshRows;
         selectNetworkApp = SelectApp;
         RefreshRows();
+        FitSearch();
         return page;
     }
 }

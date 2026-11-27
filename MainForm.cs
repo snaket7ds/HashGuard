@@ -63,7 +63,7 @@ public sealed partial class MainForm : Form
     private readonly TextBox apiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly TextBox metaDefenderApiKeyBox = new() { UseSystemPasswordChar = true };
     private readonly Button scanButton = new() { Text = "Scan now", Width = 168, Height = 46, BackColor = ShieldGreen, FlatStyle = FlatStyle.Flat, Font = new Font("Segoe UI Semibold", 10.5f, FontStyle.Regular), Tag = "scan-button" };
-    private readonly Button updateButton = new() { Text = "Check for Updates", Width = 140, Height = 36, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
+    private readonly Button updateButton = new() { Text = "Check for updates", Width = 150, Height = 38, Font = new Font("Segoe UI", 9, FontStyle.Regular) };
     private readonly CheckBox freeApiLimitBox = new() { Text = "Free API limits (4/min, 500/day)", AutoSize = true, Checked = true };
     private readonly CheckBox rightClickScanBox = new() { Text = "Add Explorer right-click scan", AutoSize = true };
     private readonly CheckBox startWithWindowsBox = new() { Text = "Start with Windows", AutoSize = true };

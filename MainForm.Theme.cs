@@ -181,7 +181,10 @@ public sealed partial class MainForm : Form
                 comboBox.BackColor = palette.InputBack;
                 comboBox.ForeColor = palette.Text;
                 break;
-            case Button button when button.Tag as string is "scan-button" or "nav-item":
+            case Button button when button.Tag as string is "nav-item" or "chip":
+                break;
+            case Button button when button.Tag as string is "scan-button":
+                RoundedButtons.Attach(button);
                 break;
             case Button button when button.Tag as string is "danger-solid" or "primary-button":
                 var solid = button.Tag as string == "danger-solid" ? Color.FromArgb(180, 35, 24) : ShieldGreen;
@@ -192,8 +195,10 @@ public sealed partial class MainForm : Form
                 button.Font = new Font("Segoe UI Semibold", button.Font.Size, FontStyle.Regular);
                 button.FlatAppearance.MouseOverBackColor = ControlPaint.Dark(solid, 0.05f);
                 button.FlatAppearance.MouseDownBackColor = ControlPaint.Dark(solid, 0.15f);
+                RoundedButtons.Attach(button);
                 break;
             case Button button:
+                RoundedButtons.Attach(button);
                 button.FlatStyle = FlatStyle.Flat;
                 button.FlatAppearance.BorderSize = 1;
                 button.FlatAppearance.BorderColor = header ? palette.HeaderButtonBorder : palette.Border;
@@ -229,12 +234,14 @@ public sealed partial class MainForm : Form
                 {
                     "brand" => BrandGreen,
                     "neutral" => palette.NeutralTint,
+                    "blue" => ReferenceEquals(palette, ThemePalette.Dark) ? Color.FromArgb(30, 42, 66) : Color.FromArgb(232, 239, 253),
                     _ => palette.AccentTint,
                 };
                 badge.GlyphColor = (badge.Tag as string) switch
                 {
                     "brand" => Color.FromArgb(18, 38, 10),
                     "neutral" => palette.MutedText,
+                    "blue" => ReferenceEquals(palette, ThemePalette.Dark) ? Color.FromArgb(140, 172, 240) : Color.FromArgb(36, 87, 197),
                     _ => palette.AccentText,
                 };
                 badge.Invalidate();

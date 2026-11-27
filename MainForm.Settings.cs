@@ -88,19 +88,12 @@ public sealed partial class MainForm : Form
             BorderStyle = BorderStyle.FixedSingle,
             Tag = "callout",
         };
-        var updateInfo = new Label
-        {
-            Text = BuildVersionAndUpdateInfo(),
-            Dock = DockStyle.Top,
-            AutoSize = false,
-            Height = 96,
-            Padding = new Padding(10),
-            BackColor = Color.FromArgb(248, 250, 252),
-            ForeColor = Color.FromArgb(35, 35, 35),
-            TextAlign = ContentAlignment.TopLeft,
-            BorderStyle = BorderStyle.FixedSingle,
-            Tag = "callout",
-        };
+        // One row as designed ("HashGuard 1.1.3 · …  [Check for updates]"); the details are its tooltip.
+        var versionRowLabel = $"HashGuard {CurrentVersion}";
+        SettingRowHelp[versionRowLabel] = AppPaths.UsingFallbackStorage
+            ? $"Settings and logs in {AppPaths.GetConfigRoot()}"
+            : "Signed releases from GitHub";
+        toolTip.SetToolTip(updateButton, BuildVersionAndUpdateInfo());
 
         // Tabs + footer only (no large header strip — frees vertical space for Behavior/Version content).
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(0), BackColor = SoftAppBack };
@@ -118,9 +111,8 @@ public sealed partial class MainForm : Form
             ("Provider Status", [reputationValidation]));
 
         var behaviorPage = CreateSettingsPage(
-            ("Windows Integration", [runElevated, startWithWindows, startMinimized, rightClickScan, CreateSettingRow("Colors", colorMode), autoUpdates, suppressTray]),
-            ("Privacy", [telemetryEnabled]),
-            ("Version and Updates", [updateInfo, CreateSettingRow("Updates", updateButton)]));
+            ("Windows Integration", [runElevated, startWithWindows, startMinimized, rightClickScan, CreateSettingRow("Colors", colorMode), suppressTray]),
+            ("Updates and privacy", [autoUpdates, CreateSettingRow(versionRowLabel, updateButton), telemetryEnabled]));
         var antivirusPage = CreateSettingsPage(
             ("Scans", [autoProcessScan, scheduledDaily, CreateSettingRow("Daily scan hour (0-23)", scheduledHour), scanAllFiles]),
             ("Speed", [hashCache, deltaScan, preferDelta]));
@@ -571,14 +563,16 @@ public sealed partial class MainForm : Form
             return holder;
         }
 
-        var row = new TableLayoutPanel { Dock = DockStyle.Fill, Height = string.IsNullOrEmpty(help) ? 46 : 58, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0), Tag = "settings-row" };
+        // Long help wraps to a second line instead of being cut off (Segoe UI is wider than the mockup's font).
+        var twoLines = TextRenderer.MeasureText(help, SystemFonts.MessageBoxFont ?? Control.DefaultFont).Width > 330;
+        var row = new TableLayoutPanel { Dock = DockStyle.Fill, Height = string.IsNullOrEmpty(help) ? 46 : twoLines ? 74 : 58, ColumnCount = 2, RowCount = 1, BackColor = Color.Transparent, Margin = new Padding(0), Tag = "settings-row" };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         row.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         var text = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Margin = new Padding(0, 4, 12, 4) };
         if (!string.IsNullOrEmpty(help))
         {
-            text.Controls.Add(new Label { Text = help, AutoSize = false, Dock = DockStyle.Top, Height = 20, Tag = "muted", AutoEllipsis = true, UseMnemonic = false });
+            text.Controls.Add(new Label { Text = help, AutoSize = false, Dock = DockStyle.Top, Height = twoLines ? 36 : 20, Tag = "muted", AutoEllipsis = true, UseMnemonic = false });
         }
 
         text.Controls.Add(new Label { Text = label, AutoSize = false, Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 9.75f, FontStyle.Regular), AutoEllipsis = true, UseMnemonic = false, TextAlign = ContentAlignment.BottomLeft });

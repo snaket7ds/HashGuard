@@ -57,11 +57,11 @@ internal sealed class SidebarNav : Panel
         };
         bottom = new Panel { Dock = DockStyle.Bottom, Height = 48, Tag = "sidebar" };
 
-        AddItem(AppPage.Home, "Home", "");
-        AddItem(AppPage.Scan, "Scan", "");
-        AddItem(AppPage.Quarantine, "Quarantine", "");
-        AddItem(AppPage.Firewall, "Firewall", "");
-        AddItem(AppPage.Activity, "Activity", "");
+        AddItem(AppPage.Home, "Home", "icon:home");
+        AddItem(AppPage.Scan, "Scan", "icon:scan");
+        AddItem(AppPage.Quarantine, "Quarantine", "icon:quarantine");
+        AddItem(AppPage.Firewall, "Firewall", "icon:firewall");
+        AddItem(AppPage.Activity, "Activity", "icon:activity");
         var settings = CreateButton(AppPage.Settings, "Settings", "");
         settings.Dock = DockStyle.Fill;
         bottom.Controls.Add(settings);
@@ -293,9 +293,16 @@ internal sealed class SidebarNav : Panel
             }
 
             var color = IsActive ? owner.ActiveText : owner.ItemText;
-            using var glyphFont = new Font("Segoe MDL2 Assets", 11.5f, FontStyle.Regular);
-            TextRenderer.DrawText(g, glyph, glyphFont, new Rectangle(12, 0, 24, Height), color,
-                TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+            if (LineIcons.IsIcon(glyph))
+            {
+                LineIcons.Draw(g, glyph, new RectangleF(14, (Height - 20) / 2f, 20, 20), color);
+            }
+            else
+            {
+                using var glyphFont = new Font("Segoe MDL2 Assets", 11.5f, FontStyle.Regular);
+                TextRenderer.DrawText(g, glyph, glyphFont, new Rectangle(12, 0, 24, Height), color,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
+            }
             using var textFont = new Font(IsActive ? "Segoe UI Semibold" : "Segoe UI", 10.5f, FontStyle.Regular);
             var badgeWidth = 0;
             if (!string.IsNullOrEmpty(Badge))
