@@ -50,10 +50,62 @@ public sealed partial class MainWindow : Window
         StartupProbe.Attach(this);
     }
 
+    /// <summary>Shows the window from the tray or the taskbar and brings it to the front.</summary>
     public void ShowFromTray()
     {
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+        {
+            presenter.Restore();
+        }
+
         AppWindow.Show();
         Activate();
+        Win32.SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+
+    private readonly HashGuard.Core.ScanRequestQueue fileRequests = new();
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? fileRequestTimer;
+
+    /// <summary>
+    /// A right-click "Scan with HashGuard" request. Requests arriving together (a multi-file
+    /// selection starts one launch per file) are gathered and scanned as one batch, after any
+    /// scan that is already running.
+    /// </summary>
+    public void QueueScanFile(string rawPath)
+    {
+        var path = HashGuard.Core.ScanPathSecurity.TryNormalizeScanPath(rawPath, out _);
+        if (path is null || fileRequests.TryEnqueue(path, DateTimeOffset.UtcNow) != HashGuard.Core.ScanRequestOutcome.Queued)
+        {
+            return;
+        }
+
+        ShowFromTray();
+        if (fileRequestTimer is null)
+        {
+            fileRequestTimer = DispatcherQueue.CreateTimer();
+            fileRequestTimer.IsRepeating = false;
+            fileRequestTimer.Tick += (_, _) => DrainFileRequests();
+        }
+
+        fileRequestTimer.Interval = TimeSpan.FromMilliseconds(400);
+        fileRequestTimer.Stop();
+        fileRequestTimer.Start();
+    }
+
+    private void DrainFileRequests()
+    {
+        if (Services.AppServices.Instance.Scans.IsBusy)
+        {
+            fileRequestTimer!.Interval = TimeSpan.FromSeconds(1);
+            fileRequestTimer.Start();
+            return;
+        }
+
+        var files = fileRequests.DequeueAll();
+        if (files.Count > 0)
+        {
+            ShowScanPage(files);
+        }
     }
 
     public void CloseForReal()
@@ -95,16 +147,19 @@ public sealed partial class MainWindow : Window
     private object? pendingScanParameter;
 
     /// <summary>Opens the Scan page; with <paramref name="startScan"/>, starts a full scan there.</summary>
-    public void ShowScanPage(bool startScan)
+    public void ShowScanPage(bool startScan) => ShowScanPage(startScan ? "start" : null);
+
+    /// <summary>Opens the Scan page with a parameter: "start" for a full scan, or a list of files to scan.</summary>
+    private void ShowScanPage(object? parameter)
     {
         var scanItem = Nav.MenuItems.OfType<NavigationViewItem>().First(i => (string)i.Tag == "Scan");
         if (ReferenceEquals(Nav.SelectedItem, scanItem))
         {
-            ContentFrame.Navigate(typeof(ScanPage), startScan ? "start" : null, new SuppressNavigationTransitionInfo());
+            ContentFrame.Navigate(typeof(ScanPage), parameter, new SuppressNavigationTransitionInfo());
             return;
         }
 
-        pendingScanParameter = startScan ? "start" : null;
+        pendingScanParameter = parameter;
         Nav.SelectedItem = scanItem;
     }
 
@@ -133,6 +188,10 @@ public sealed partial class MainWindow : Window
     {
         [System.Runtime.InteropServices.LibraryImport("user32.dll")]
         internal static partial uint GetDpiForWindow(nint hwnd);
+
+        [System.Runtime.InteropServices.LibraryImport("user32.dll")]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        internal static partial bool SetForegroundWindow(nint hwnd);
     }
 }
 

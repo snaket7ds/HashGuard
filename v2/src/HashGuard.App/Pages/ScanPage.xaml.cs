@@ -19,9 +19,20 @@ public sealed partial class ScanPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         ViewModel.Load();
-        if (e.Parameter is "start" && !ViewModel.IsScanning)
+        if (ViewModel.IsScanning)
+        {
+            return;
+        }
+
+        if (e.Parameter is "start")
         {
             RunningAppsChoice.IsChecked = true;
+            _ = ViewModel.ScanOrStopAsync();
+        }
+        else if (e.Parameter is IReadOnlyList<string> { Count: > 0 } files)
+        {
+            // Files from Explorer's right-click menu.
+            ViewModel.SetChosenFiles(files);
             _ = ViewModel.ScanOrStopAsync();
         }
     }

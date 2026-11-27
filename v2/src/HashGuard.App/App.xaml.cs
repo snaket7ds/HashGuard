@@ -1,5 +1,6 @@
 using H.NotifyIcon;
 using H.NotifyIcon.Core;
+using HashGuard.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -58,10 +59,62 @@ public partial class App : Application
 
         window = new MainWindow();
         MainWindow = window;
-        window.Activate();
+
+        // Started with Windows or by the daily scan task: stay in the tray.
+        var launch = Program.Launch;
+        if (launch.Kind is not (LaunchKind.Minimized or LaunchKind.ScheduledScan))
+        {
+            window.Activate();
+        }
 
         // The tray icon is created after the window is up, so it never delays the first frame.
         window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, CreateTrayIcon);
+
+        if (launch.Kind is LaunchKind.ScanFile or LaunchKind.ScheduledScan)
+        {
+            window.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => Handle(launch));
+        }
+
+        // Later launches of HashGuard.exe hand their request to this copy.
+        Program.Instance?.Listen(request => window.DispatcherQueue.TryEnqueue(() => Handle(request)));
+    }
+
+    private void Handle(LaunchRequest request)
+    {
+        switch (request.Kind)
+        {
+            case LaunchKind.Show:
+                window?.ShowFromTray();
+                break;
+            case LaunchKind.ScanFile when request.Path is not null:
+                window?.QueueScanFile(request.Path);
+                break;
+            case LaunchKind.ScheduledScan:
+                _ = RunScheduledScanAsync();
+                break;
+        }
+    }
+
+    /// <summary>The daily scan: quiet, no window. Skipped when a scan is already running.</summary>
+    private static async Task RunScheduledScanAsync()
+    {
+        var services = Services.AppServices.Instance;
+        if (services.Scans.IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await services.Scans.ScanRunningAppsAsync() is not null)
+            {
+                services.MarkFullScan(DateTime.Now);
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteCrashLog(ex);
+        }
     }
 
     private void CreateTrayIcon()

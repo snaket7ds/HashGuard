@@ -16,6 +16,8 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Program.cs has its own Main, so a second launch can hand over to the running copy first. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
 
   <!-- Release publish: one HashGuard.exe, like v1, so v1's updater can install it. -->
