@@ -194,7 +194,7 @@ public sealed partial class MainForm : Form
                 AppPage.Scan => BuildScanPage(),
                 AppPage.Quarantine => WrapPage("Quarantine", "Files here can't run. Restore one only if you trust it, or delete it for good.", BuildQuarantineView()),
                 AppPage.Firewall => WrapPage("Firewall", "Every app that talks to the network, with HashGuard's verdict. Block any app with one click.", BuildNetworkView()),
-                AppPage.Activity => WrapPage("Activity", "Everything HashGuard checked, with filters and search.", BuildActivityView()),
+                AppPage.Activity => WrapPage("Activity", "Everything HashGuard did: scans, files it checked, apps it blocked and files it quarantined.", BuildActivityPage()),
                 _ => WrapPage("Settings", "", BuildSettingsView()),
             };
             view.Dock = DockStyle.Fill;

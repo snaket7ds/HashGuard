@@ -200,6 +200,11 @@ internal sealed class AppSettings
     public string NetworkNotifyMode { get; set; } = NetworkNotifyModes.Untrusted;
     /// <summary>Block a program in Windows Firewall as soon as it connects if its cached verdict is malicious.</summary>
     public bool AutoBlockMalicious { get; set; } = true;
+    /// <summary>
+    /// Files you unblocked yourself ("path|sha256"): auto-block leaves them alone until the file
+    /// changes. Without this, an unblocked malicious app was re-blocked within seconds.
+    /// </summary>
+    public List<string> AutoBlockExceptions { get; set; } = [];
     public List<string> TrustedPublishers { get; set; } =
     [
         // Exact certificate names (matching is exact since v1.1.0).

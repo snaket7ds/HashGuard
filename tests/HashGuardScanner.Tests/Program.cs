@@ -852,6 +852,44 @@ var tests = new (string Name, Action Test)[]
         AssertEqual(new System.Drawing.Point(-400, 768), PopupPlacement.BottomRight(left, new System.Drawing.Size(384, 200), 16));
         AssertEqual(new System.Drawing.Point(0, 0), PopupPlacement.BottomRight(new System.Drawing.Rectangle(0, 0, 300, 100), new System.Drawing.Size(384, 200), 16));
     }),
+    ("an app you unblocked stays unblocked until the file changes", () =>
+    {
+        var exceptions = new List<string> { HashGuardLogic.AutoBlockExceptionKey(@"C:\Users\you\Downloads\tool.exe", "ABCDEF") };
+        AssertTrue(HashGuardLogic.IsAutoBlockException(exceptions, @"c:\users\you\downloads\TOOL.exe", "abcdef"));
+        AssertTrue(HashGuardLogic.IsAutoBlockException(exceptions, "\"C:/Users/you/Downloads/tool.exe\"", "abcdef"));
+        AssertFalse(HashGuardLogic.IsAutoBlockException(exceptions, @"C:\Users\you\Downloads\tool.exe", "123456"));
+        AssertFalse(HashGuardLogic.IsAutoBlockException(exceptions, @"C:\Other\tool.exe", "abcdef"));
+        AssertFalse(HashGuardLogic.IsAutoBlockException(exceptions, @"C:\Users\you\Downloads\tool.exe", ""));
+        AssertEqual(0, new AppSettings().AutoBlockExceptions.Count);
+    }),
+    ("activity rows read as plain sentences", () =>
+    {
+        AssertEqual("curl.exe is flagged as malicious", ActivityText.Describe("malicious", 4, 0, false, "curl.exe").Title);
+        AssertEqual("Threat · 4 engines", ActivityText.Describe("malicious", 4, 0, false, "x").Pill);
+        AssertEqual(ActivityKind.Suspicious, ActivityText.Describe("suspicious", 0, 2, false, "x").Kind);
+        AssertEqual(ActivityKind.Unknown, ActivityText.Describe("unknown", 0, 0, false, "x").Kind);
+        AssertEqual("x was sent to VirusTotal", ActivityText.Describe("uploaded", 0, 0, false, "x").Title);
+        AssertEqual(ActivityKind.Error, ActivityText.Describe("error", 0, 0, false, "x").Kind);
+        AssertEqual(ActivityKind.Handled, ActivityText.Describe("malicious", 3, 0, true, "x").Kind);
+        AssertEqual("Ignored", ActivityText.Describe("ignored", 0, 0, false, "x").Pill);
+        AssertEqual("x is clean", ActivityText.Describe("clean/seen", 0, 0, false, "x").Title);
+    }),
+    ("activity names prefer the process, else the file", () =>
+    {
+        AssertEqual("ShellExperienceHost", ActivityText.DisplayName("ShellExperienceHost, Other", @"C:\Windows\a.exe"));
+        AssertEqual("svchost.exe", ActivityText.DisplayName("Service: SIVDriver", @"C:\Windows\System32\svchost.exe"));
+        AssertEqual("a.exe", ActivityText.DisplayName("", @"C:\Tools\a.exe"));
+    }),
+    ("activity groups by today, yesterday or a date", () =>
+    {
+        var today = new DateTime(2026, 11, 26, 9, 0, 0);
+        AssertEqual("Today", ActivityText.DayHeader(today.AddHours(5), today));
+        AssertEqual("Yesterday", ActivityText.DayHeader(today.AddDays(-1), today));
+        AssertFalse(ActivityText.DayHeader(today.AddDays(-3), today) is "Today" or "Yesterday");
+        AssertTrue(ActivityText.ParseTimestamp("2026-11-26T14:02:00-06:00") is not null);
+        AssertTrue(ActivityText.ParseTimestamp("2026-11-26 18:40:12 -06:00") is not null);
+        AssertTrue(ActivityText.ParseTimestamp("not a date") is null);
+    }),
 };
 
 var failures = new List<string>();

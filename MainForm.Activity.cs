@@ -377,7 +377,8 @@ public sealed partial class MainForm : Form
                     GetCsvValue(row, columns, "sha256"),
                     GetCsvValue(row, columns, "path"),
                     notes,
-                    GetCsvValue(row, columns, "link")));
+                    GetCsvValue(row, columns, "link"),
+                    timestamp));
             }
         }
         catch
@@ -440,7 +441,8 @@ public sealed partial class MainForm : Form
         string Sha256,
         string Path,
         string Notes,
-        string Link);
+        string Link,
+        string Timestamp = "");
 
     private static string GetCsvValue(List<string> row, Dictionary<string, int> columns, string columnName)
     {

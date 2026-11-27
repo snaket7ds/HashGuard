@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.1.1 - 2026-11-26
+
+- **Fixed: unblocking an app didn't stick.** With auto-block on (the default since v1.1.0), unblocking an app HashGuard flags as malicious made HashGuard forget it had blocked it, so it blocked it again a second later and showed the same alert. "Remove all HashGuard rules" did the same for every malicious app. Now an app you unblock stays unblocked: HashGuard remembers that exact file (path and SHA-256), also after a restart. If the file changes, auto-block judges the new file afresh; blocking it again yourself clears the exception.
+- **New Activity page, as designed.** One history grouped by day (Today, Yesterday, dates) that mixes file checks with firewall blocks, unblocks and quarantines. Each row reads as a sentence ("curl.exe is flagged as malicious") with a coloured icon, the file and its trust details, a label (Threat · 4 engines, Unknown, Clean, Firewall, Quarantine) and the time. Filter chips with counts (All, Action needed, Unknown, Clean, Errors), search, Export report and Open logs. Double-click or Enter opens the details; right-click has Open VirusTotal report, Open file location, Copy hash, Copy summary, Ignore, Quarantine and Stop the running process. The list draws only what's on screen, so long histories scroll smoothly.
+
 ## v1.1.0 - 2026-11-26
 
 - **New design.** HashGuard has a sidebar with Home · Scan · Quarantine · Firewall · Activity, and Settings at the bottom; every item is a page in the main window instead of a separate window. Where things moved:

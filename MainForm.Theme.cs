@@ -133,6 +133,23 @@ public sealed partial class MainForm : Form
             return;
         }
 
+        if (control is ChipButton chip)
+        {
+            chip.Back = palette.Surface;
+            chip.Border = palette.Border;
+            chip.Ink = palette.Text;
+            chip.SelectedBack = palette.AppBack == ThemePalette.Dark.AppBack ? palette.AccentText : Color.FromArgb(17, 24, 39);
+            chip.SelectedInk = palette.AppBack == ThemePalette.Dark.AppBack ? palette.AppBack : Color.White;
+            chip.Invalidate();
+            return;
+        }
+
+        if (control is CardList cardList)
+        {
+            cardList.ApplyPalette(palette);
+            return;
+        }
+
         if (control is LinkLabel link)
         {
             link.LinkColor = palette.AccentText;
