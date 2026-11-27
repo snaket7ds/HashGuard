@@ -4,4 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>HashGuard.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HashGuard.Core.Tests" />
+  </ItemGroup>
 </Project>

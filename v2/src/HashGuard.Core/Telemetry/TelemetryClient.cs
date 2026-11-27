@@ -1,0 +1,69 @@
+using System.Text;
+using System.Text.Json;
+
+namespace HashGuard.Core;
+
+/// <summary>Anonymous usage events (install ID, version and counts only; no paths, hashes or app names).</summary>
+public static class TelemetryClient
+{
+    public static object BuildPayload(
+        string eventType,
+        string installId,
+        string appVersion,
+        string osVersion,
+        Dictionary<string, object>? data)
+    {
+        return new
+        {
+            eventType,
+            installId,
+            appVersion,
+            osVersion,
+            sentAtUtc = DateTimeOffset.UtcNow,
+            data = data ?? [],
+        };
+    }
+
+    public static bool IsSafeEventType(string eventType) =>
+        eventType is "app_install" or "app_start" or "app_ping" or "scan_complete" or "firewall_block";
+
+    public static async Task<bool> SendAsync(
+        string endpointUrl,
+        string eventType,
+        string installId,
+        string appVersion,
+        Dictionary<string, object>? data = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(endpointUrl)
+            || !IsSafeEventType(eventType)
+            || string.IsNullOrWhiteSpace(installId)
+            || installId.Length < 8
+            || string.Equals(installId, "probe", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            var payload = BuildPayload(eventType, installId, appVersion, Environment.OSVersion.VersionString, data);
+            var json = JsonSerializer.Serialize(payload);
+            // Defense in depth: refuse to send anything that looks like it carries a path, hash,
+            // key, or machine/user identifier, even if a future caller passes unexpected data.
+            if (!HashGuardLogic.TelemetryPayloadLooksSafe(json))
+            {
+                return false;
+            }
+
+            using var http = AppHttp.Create(TimeSpan.FromSeconds(5));
+            http.DefaultRequestHeaders.UserAgent.ParseAdd($"HashGuard/{appVersion}");
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(endpointUrl, content, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+}

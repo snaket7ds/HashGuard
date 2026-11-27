@@ -3,4 +3,7 @@
     <Project Path="src/HashGuard.App/HashGuard.App.csproj" />
     <Project Path="src/HashGuard.Core/HashGuard.Core.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HashGuard.Core.Tests/HashGuard.Core.Tests.csproj" />
+  </Folder>
 </Solution>
