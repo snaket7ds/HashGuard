@@ -20,8 +20,6 @@
             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xEA18;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                 <TextBlock Text="HashGuard" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
-                <TextBlock Text="v2 preview" Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextFillColorTertiaryBrush}" VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
 
