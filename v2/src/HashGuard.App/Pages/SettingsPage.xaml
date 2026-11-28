@@ -393,8 +393,10 @@
                         <ToggleSwitch x:Name="DailyScanSwitch" Grid.Column="1" IsOn="{x:Bind ViewModel.DailyScan, Mode=TwoWay}" IsEnabled="{x:Bind ViewModel.CanChangeDailyScan, Mode=OneWay}"
                                       Toggled="DailyScan_Toggled" OnContent="On" OffContent="Off" MinWidth="0" AutomationProperties.Name="Daily scan" />
                     </Grid>
-                    <NumberBox Header="Hour (0–23)" Value="{x:Bind ViewModel.DailyScanHour, Mode=TwoWay}" Minimum="0" Maximum="23" SpinButtonPlacementMode="Compact" Width="160"
-                               HorizontalAlignment="Left" IsEnabled="{x:Bind ViewModel.CanChangeDailyScan, Mode=OneWay}" ValueChanged="DailyHour_Changed" />
+                    <ComboBox x:Name="DailyHourBox" Header="Time" ItemsSource="{x:Bind local:SettingsPage.DailyScanTimes}" Width="220"
+                              SelectedIndex="{x:Bind local:SettingsPage.HourIndex(ViewModel.DailyScanHour), Mode=OneWay}"
+                              HorizontalAlignment="Left" IsEnabled="{x:Bind ViewModel.CanChangeDailyScan, Mode=OneWay}" SelectionChanged="DailyHour_Changed"
+                              AutomationProperties.Name="Daily scan time" />
                 </StackPanel>
             </Border>
 

@@ -102,14 +102,37 @@ public sealed partial class SettingsPage : Page
         });
     }
 
-    private async void DailyHour_Changed(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    /// <summary>The 24 whole hours from midnight to 11 PM, in the Windows time format (12- or 24-hour).</summary>
+    public static IReadOnlyList<string> DailyScanTimes { get; } = Enumerable.Range(0, 24)
+        .Select(hour =>
+        {
+            var time = DateTime.Today.AddHours(hour).ToString("t", System.Globalization.CultureInfo.CurrentCulture);
+            return hour switch
+            {
+                0 => $"{time} (midnight)",
+                12 => $"{time} (noon)",
+                _ => time,
+            };
+        })
+        .ToArray();
+
+    public static int HourIndex(double hour) => double.IsNaN(hour) ? 12 : Math.Clamp((int)hour, 0, 23);
+
+    private async void DailyHour_Changed(object sender, SelectionChangedEventArgs args)
     {
-        if (double.IsNaN(args.OldValue) || double.IsNaN(args.NewValue) || !ViewModel.DailyScan)
+        var hour = DailyHourBox.SelectedIndex;
+        if (loading || hour < 0 || hour == HourIndex(ViewModel.DailyScanHour))
+        {
+            return; // Set from the saved value, not by you.
+        }
+
+        ViewModel.DailyScanHour = hour;
+        ViewModel.Save();
+        if (!ViewModel.DailyScan)
         {
             return;
         }
 
-        var hour = (int)args.NewValue;
         var elevated = ViewModel.RunElevated;
         await ApplyAsync(integration =>
         {
