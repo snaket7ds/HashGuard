@@ -228,7 +228,7 @@ public sealed partial class SettingsPage : Page
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot,
-                Title = "Scan files you open or select?",
+                Title = "Turn on real-time scan?",
                 Content = "HashGuard watches the files Windows lists as recently opened, and every 15 seconds the file selected in each File Explorer window. It checks them by hash only, when no other scan is running, and never uploads them. Pictures, video, audio and camera raw files are skipped.",
                 PrimaryButtonText = "Turn on",
                 CloseButtonText = "Cancel",

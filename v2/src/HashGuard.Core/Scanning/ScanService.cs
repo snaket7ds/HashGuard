@@ -124,7 +124,7 @@ public sealed class ScanService(HashCache hashCache, Func<ScanConfiguration> con
                     .Where(p => !string.IsNullOrWhiteSpace(p))
                     .Select(Path.GetFullPath)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(p => p, p => new List<ProcessFile> { new(0, kind == ScanKind.FileActivity ? "File activity" : Path.GetFileName(p), p) }, StringComparer.OrdinalIgnoreCase);
+                    .ToDictionary(p => p, p => new List<ProcessFile> { new(0, kind == ScanKind.FileActivity ? "Real-time scan" : Path.GetFileName(p), p) }, StringComparer.OrdinalIgnoreCase);
             }
             else
             {

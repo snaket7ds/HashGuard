@@ -34,7 +34,7 @@ Not yet verified: clicking the tray icon/menu, running elevated, 125–150% disp
 
 0. Spike: shell, Home, tray, single-file publish. **Done.**
 1. Core: the engine in `HashGuard.Core` with tests. **Done** (152 tests).
-   - Scanning: `IReputationProvider` (VirusTotal, MetaDefender, Team Cymru) with one `VirusTotalPacer`, `FileAnalyzer`, `RiskScorer`, `SignatureReader` (WinVerifyTrust, including Windows catalogs), `ScanService`, `BackgroundScanner` (start-up scan, new programs, files you open: `FileActivityWatcher`).
+   - Scanning: `IReputationProvider` (VirusTotal, MetaDefender, Team Cymru) with one `VirusTotalPacer`, `FileAnalyzer`, `RiskScorer`, `SignatureReader` (WinVerifyTrust, including Windows catalogs), `ScanService`, `BackgroundScanner` (start-up scan, new programs, real-time scan of files you open: `FileActivityWatcher`).
    - Storage: `SettingsStore` + `Dpapi`, `IgnoreList`, `HashCache`, `ScanLog`, `QuarantineStore`, `ActivityLogReader` + `ActivityFeed`.
    - Network: `NetworkMonitor` (connections, alerts, block/unblock, auto-block).
    - Windows: `SingleInstance` + `LaunchRequest`, `WindowsIntegration` (start at sign-in, elevated task, daily scan, Explorer menu), `Installer`, `UpdateService`, `LegacyHashGuard`.

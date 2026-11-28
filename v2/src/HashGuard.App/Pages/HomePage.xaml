@@ -87,7 +87,7 @@
                             <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
                             <TextBlock Text="Last scan" Style="{StaticResource FactLabelStyle}" />
                             <TextBlock Text="{x:Bind ViewModel.AvLastScan, Mode=OneWay}" Style="{StaticResource FactValueStyle}" />
-                            <TextBlock Grid.Row="1" Text="Scan files I open" Style="{StaticResource FactLabelStyle}" />
+                            <TextBlock Grid.Row="1" Text="Real-time scan" Style="{StaticResource FactLabelStyle}" />
                             <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.AvOpenFiles}" Style="{StaticResource FactValueStyle}" />
                             <TextBlock Grid.Row="2" Text="Sources" Style="{StaticResource FactLabelStyle}" />
                             <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.AvSources}" Style="{StaticResource FactValueStyle}" />

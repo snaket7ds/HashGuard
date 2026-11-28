@@ -69,7 +69,7 @@ public sealed partial class HomeViewModel : ObservableObject
         SourcesChip = status.SourcesChip;
         SourcesAllOn = sourcesOn == sourcesTotal;
         AvLastScan = HomeStatusText.FormatLastScan(lastScan, DateTime.Now).Replace("Last scan ", "", StringComparison.Ordinal);
-        AvOpenFiles = settings.ScanAllFiles ? "On (not in v2 yet)" : "Off";
+        AvOpenFiles = settings.ScanAllFiles ? "On" : "Off";
         var names = new List<string>();
         if (settings.VirusTotalEnabled && services.Keys.VirusTotal.Length > 0) names.Add("VirusTotal");
         if (settings.MetaDefenderEnabled && services.Keys.MetaDefender.Length > 0) names.Add("MetaDefender");

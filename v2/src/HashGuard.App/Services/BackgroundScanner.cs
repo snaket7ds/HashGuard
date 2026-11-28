@@ -4,8 +4,8 @@ namespace HashGuard.App.Services;
 
 /// <summary>
 /// The scans HashGuard runs by itself, as v1 did: a full scan when it starts (if switched on), then
-/// every 5 seconds a check of programs that started or changed since, and, when "Scan files I open
-/// or select" is on, files you open or select every 15 seconds. Background checks wait for any
+/// every 5 seconds a check of programs that started or changed since, and, when "Real-time scan"
+/// is on, files you open or select every 15 seconds. Background checks wait for any
 /// other scan and never upload files.
 /// </summary>
 public sealed class BackgroundScanner : IDisposable
