@@ -37,12 +37,18 @@ public sealed class Installer(string sourceExe, string? installDirectory = null,
 
     internal Func<string, IReadOnlyList<int>>? FindRunningOverride { get; init; }
 
+    /// <summary>Replaceable in tests, so they never touch the real registry or Task Scheduler.</summary>
+    internal IIntegrationStore? IntegrationStoreOverride { get; init; }
+
     /// <summary>True when HashGuard already runs from the install folder (nothing to copy).</summary>
     public bool IsRunningInstalled => FirewallRules.PathsEqual(sourceExe, InstalledExe);
 
     /// <summary>Copies, makes shortcuts and starts the installed copy. Throws when the copy fails.</summary>
     public void Install(InstallOptions options)
     {
+        // A new install (not an upgrade, where your earlier choices stand) turns the Windows
+        // features on: start at sign-in, the Explorer menu and the daily scan.
+        var newInstall = !File.Exists(InstalledExe);
         if (!IsRunningInstalled)
         {
             StopInstalledCopy();
@@ -59,6 +65,14 @@ public sealed class Installer(string sourceExe, string? installDirectory = null,
         if (options.DesktopShortcut)
         {
             createShortcut(Path.Combine(desktopDirectory ?? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "HashGuard.lnk"), InstalledExe);
+        }
+
+        if (newInstall)
+        {
+            // The installer runs as administrator, so the settings' "Run as administrator" choice
+            // can get its prompt-free start-up task straight away.
+            var settings = new SettingsStore(Path.Combine(InstallDirectory, AppPaths.ConfigFolderName, AppPaths.AppSettingsFileName)).Load();
+            new WindowsIntegration(InstalledExe, isElevated: true, IntegrationStoreOverride).TurnOnDefaults(settings);
         }
 
         (StartOverride ?? (exe => Process.Start(new ProcessStartInfo(exe, PostInstallArgument) { UseShellExecute = true })))(InstalledExe);

@@ -28,7 +28,7 @@ internal static class FirstRunSetup
         {
             content.Children.Add(new TextBlock
             {
-                Text = $"Installing copies HashGuard to {Installer.DefaultInstallDirectory} and adds it to the Start menu. Windows asks for permission.",
+                Text = $"Installing copies HashGuard to {Installer.DefaultInstallDirectory} and adds it to the Start menu. It starts with Windows in the tray, adds “Scan with HashGuard” to File Explorer and scans daily; you can turn each off in Settings. Windows asks for permission.",
                 TextWrapping = TextWrapping.WrapWholeWords,
                 Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             });

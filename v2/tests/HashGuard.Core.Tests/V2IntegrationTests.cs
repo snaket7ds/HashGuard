@@ -97,6 +97,7 @@ internal static class V2IntegrationTests
                 CreateShortcutOverride = (link, _) => shortcuts.Add(link),
                 StartOverride = exe => started = exe,
                 FindRunningOverride = _ => [],
+                IntegrationStoreOverride = new FakeStore(),
             };
             installer.Install(new InstallOptions(DesktopShortcut: true));
 
@@ -111,12 +112,48 @@ internal static class V2IntegrationTests
             var source = Write(dir, "portable", "HashGuard.exe");
             var target = Path.Combine(dir, "Program Files", "HashGuard");
             Write(dir, Path.Combine("Program Files", "HashGuard"), "HashGuard.exe");
-            var busy = new Installer(source, target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, FindRunningOverride = _ => [42] };
+            var busy = new Installer(source, target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, FindRunningOverride = _ => [42], IntegrationStoreOverride = new FakeStore() };
             Throws<IOException>(() => busy.Install(new InstallOptions(false)));
 
-            var installed = new Installer(Path.Combine(target, "HashGuard.exe"), target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { } };
+            var installed = new Installer(Path.Combine(target, "HashGuard.exe"), target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, IntegrationStoreOverride = new FakeStore() };
             True(installed.IsRunningInstalled);
             installed.Install(new InstallOptions(false));
+        })),
+        ("Installer: a new install turns on start at sign-in, the Explorer menu and the daily scan", () => WithTemp(dir =>
+        {
+            var source = Write(dir, "portable", "HashGuard.exe");
+            var target = Path.Combine(dir, "Program Files", "HashGuard");
+            var store = new FakeStore();
+            new Installer(source, target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, FindRunningOverride = _ => [], IntegrationStoreOverride = store }
+                .Install(new InstallOptions(false));
+
+            var exe = Path.Combine(target, "HashGuard.exe");
+            Equal($"\"{exe}\" --minimized", store.Run);
+            True(store.Menu!.StartsWith($"\"{exe}\"", StringComparison.Ordinal));
+            Equal(exe, store.Daily);
+            Equal(new AppSettings().ScheduledScanHour, store.DailyHour);
+        })),
+        ("Installer: an upgrade keeps your choices, and another copy's registrations are left alone", () => WithTemp(dir =>
+        {
+            // Upgrade: the exe is already installed and everything was switched off.
+            var source = Write(dir, "portable", "HashGuard.exe");
+            var target = Path.Combine(dir, "Program Files", "HashGuard");
+            Write(dir, Path.Combine("Program Files", "HashGuard"), "HashGuard.exe");
+            var upgrade = new FakeStore();
+            new Installer(source, target, Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, FindRunningOverride = _ => [], IntegrationStoreOverride = upgrade }
+                .Install(new InstallOptions(false));
+            Equal<string?>(null, upgrade.Run);
+            Equal<string?>(null, upgrade.Menu);
+            Equal<string?>(null, upgrade.Daily);
+
+            // New install, but another existing copy has the Explorer menu: only that one is skipped.
+            var other = Write(dir, "other", "HashGuard.exe");
+            var shared = new FakeStore { Menu = $"\"{other}\" --scan-file \"%1\"" };
+            new Installer(source, Path.Combine(dir, "Fresh", "HashGuard"), Path.Combine(dir, "Start")) { CreateShortcutOverride = (_, _) => { }, StartOverride = _ => { }, FindRunningOverride = _ => [], IntegrationStoreOverride = shared }
+                .Install(new InstallOptions(false));
+            Equal($"\"{other}\" --scan-file \"%1\"", shared.Menu);
+            True(shared.Run is not null);
+            True(shared.Daily is not null);
         })),
     ];
 

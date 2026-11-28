@@ -224,6 +224,49 @@ public sealed class WindowsIntegration(string executablePath, bool isElevated, I
     }
 
     /// <summary>
+    /// A new install's defaults: start at sign-in (in the tray), Explorer's "Scan with HashGuard"
+    /// and the daily scan (unless switched off in settings). Each is only added when nothing is
+    /// registered for it yet; one that another existing copy owns is left alone. Never throws.
+    /// </summary>
+    public void TurnOnDefaults(AppSettings settings)
+    {
+        var status = Read();
+        TryApply(() =>
+        {
+            if (!status.StartWithWindows && status.StartupOwner is null)
+            {
+                SetStartWithWindows(on: true, settings.RunElevated);
+            }
+        });
+        TryApply(() =>
+        {
+            if (!status.RightClickMenu && status.RightClickOwner is null)
+            {
+                SetRightClickMenu(true);
+            }
+        });
+        TryApply(() =>
+        {
+            if (settings.ScheduledDailyScan && !status.DailyScan && status.DailyScanOwner is null)
+            {
+                SetDailyScan(true, settings.ScheduledScanHour, settings.RunElevated);
+            }
+        });
+
+        static void TryApply(Action apply)
+        {
+            try
+            {
+                apply();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // Best-effort: the install itself succeeded; the switch stays off in Settings.
+            }
+        }
+    }
+
+    /// <summary>
     /// At start-up: re-points registrations that name a HashGuard.exe which no longer exists (moved
     /// or reinstalled) to this copy, and upgrades a Run-key start to the elevated task once running
     /// as administrator with "Run as administrator" on. Never throws.
