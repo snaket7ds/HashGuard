@@ -11,6 +11,15 @@
 #
 # Running it again updates HashGuard in place. Read this script before you pipe it into
 # PowerShell: https://github.com/snaket7ds/HashGuard/blob/main/install.ps1
+#
+# Beta: when a beta (a GitHub pre-release) is newer than the latest release, the installer asks
+# which one you want; pressing Enter keeps the stable release. To choose without being asked:
+#
+#   $env:HASHGUARD_CHANNEL = 'beta';   irm https://raw.githubusercontent.com/snaket7ds/HashGuard/main/install.ps1 | iex
+#   $env:HASHGUARD_CHANNEL = 'stable'; irm https://raw.githubusercontent.com/snaket7ds/HashGuard/main/install.ps1 | iex
+#
+# A beta is checked exactly like a release (SHA-256 and release signature). Betas then keep
+# offering newer betas; switch back in Settings > Updates > Update channel.
 
 $HashGuardRepo = 'snaket7ds/HashGuard'
 
@@ -73,7 +82,32 @@ function Test-HashGuardReleaseSignature {
     try { return $ecdsa.VerifyHash($hash, $raw) } finally { $ecdsa.Dispose(); $key.Dispose() }
 }
 
+function Select-HashGuardRelease {
+    # Picks the release to install. $Releases is GitHub's list (newest first), $Latest the latest
+    # full release. 'beta' takes the newest published release of any kind; 'stable' the latest
+    # full release; '' asks when a beta newer than the latest release exists (Enter = stable).
+    param($Releases, $Latest, [string]$Channel, [scriptblock]$Ask)
+
+    $beta = @($Releases | Where-Object { -not $_.draft -and $_.prerelease } |
+        Sort-Object { [DateTime]$_.published_at } -Descending) | Select-Object -First 1
+    $newerBeta = $beta -and (-not $Latest -or [DateTime]$beta.published_at -gt [DateTime]$Latest.published_at)
+
+    switch ($Channel.Trim().ToLowerInvariant()) {
+        'beta' { if ($newerBeta) { return $beta } else { return $Latest } }
+        'stable' { return $Latest }
+        '' { }
+        default { throw "Unknown HASHGUARD_CHANNEL '$Channel': use 'stable' or 'beta'." }
+    }
+
+    if (-not $newerBeta) { return $Latest }
+    if (-not $Latest) { return $beta }
+    $answer = & $Ask $Latest.tag_name $beta.tag_name
+    if ("$answer".Trim().ToLowerInvariant() -in 'b', 'beta') { return $beta }
+    return $Latest
+}
+
 function Install-HashGuard {
+    param([string]$Channel = $env:HASHGUARD_CHANNEL)
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
 
@@ -86,9 +120,17 @@ function Install-HashGuard {
     Write-Host ''
     Write-Host 'HashGuard installer' -ForegroundColor Green
     $headers = @{ 'User-Agent' = 'HashGuard-Installer'; 'Accept' = 'application/vnd.github+json' }
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$HashGuardRepo/releases/latest" -Headers $headers
+    $latest = $null
+    try { $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/$HashGuardRepo/releases/latest" -Headers $headers } catch { }
+    $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$HashGuardRepo/releases?per_page=30" -Headers $headers
+    $release = Select-HashGuardRelease -Releases $releases -Latest $latest -Channel "$Channel" -Ask {
+        param($stableTag, $betaTag)
+        Write-Host "  A beta is available: $betaTag (latest release: $stableTag)"
+        try { Read-Host '  Install [S]table or [B]eta? (Enter = Stable)' } catch { 's' }
+    }
+    if (-not $release) { throw 'No HashGuard release was found on GitHub. Nothing was installed.' }
     $tag = [string]$release.tag_name
-    Write-Host "  Latest release: $tag"
+    Write-Host ("  Installing: $tag" + $(if ($release.prerelease) { ' (beta)' } else { '' }))
 
     $work = Join-Path ([IO.Path]::GetTempPath()) ('HashGuard-install-' + [Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $work | Out-Null
