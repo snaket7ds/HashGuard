@@ -17,6 +17,26 @@ public static class AppPaths
 
     private static readonly Lazy<StorageRoot> Root = new(ResolveStorageRoot);
 
+    /// <summary>
+    /// The folder HashGuard.exe is in. Not <see cref="AppContext.BaseDirectory"/>: the release build
+    /// is a single file that unpacks itself to %TEMP%\.net\HashGuard\..., and BaseDirectory points
+    /// there, so config and logs would land in a temporary folder instead of next to the exe.
+    /// </summary>
+    public static string AppFolder { get; } = ResolveAppFolder(Environment.ProcessPath, AppContext.BaseDirectory);
+
+    /// <summary>The exe's folder; the base directory when there is no exe of our own (run through dotnet.exe).</summary>
+    internal static string ResolveAppFolder(string? processPath, string baseDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(processPath)
+            || string.Equals(Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase)
+            || Path.GetDirectoryName(processPath) is not { Length: > 0 } folder)
+        {
+            return baseDirectory;
+        }
+
+        return folder;
+    }
+
     /// <summary>True when the app folder could not be written and storage moved to LocalAppData.</summary>
     public static bool UsingFallbackStorage => Root.Value.UsingFallback;
 
@@ -42,7 +62,7 @@ public static class AppPaths
             return Path.Combine(GetConfigRoot(), ConfigFolderName);
         }
 
-        return Path.Combine(AppContext.BaseDirectory, ConfigFolderName);
+        return Path.Combine(AppFolder, ConfigFolderName);
     }
 
     public static string GetAppSettingsPath() => Path.Combine(GetConfigDirectory(), AppSettingsFileName);
@@ -65,7 +85,7 @@ public static class AppPaths
         yield return GetLogDirectory();
         if (UsingFallbackStorage)
         {
-            yield return Path.Combine(AppContext.BaseDirectory, "logs");
+            yield return Path.Combine(AppFolder, "logs");
         }
     }
 
@@ -73,7 +93,7 @@ public static class AppPaths
 
     private static StorageRoot ResolveStorageRoot()
     {
-        var appRoot = AppContext.BaseDirectory;
+        var appRoot = AppFolder;
         var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var (path, usingFallback) = ChooseStorageRoot(appRoot, localAppData, IsDirectoryWritable);
         if (usingFallback)

@@ -122,7 +122,7 @@ public sealed class AppServices
     }
 
     /// <summary>Start with Windows, the daily scan task and the Explorer menu, for this copy's exe.</summary>
-    public WindowsIntegration Integration { get; } = new(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "HashGuard.exe"), IsRunningElevated());
+    public WindowsIntegration Integration { get; } = new(Environment.ProcessPath ?? Path.Combine(AppPaths.AppFolder, "HashGuard.exe"), IsRunningElevated());
 
     /// <summary>
     /// Whether this is an installed copy (under Program Files). Only an installed copy repairs Windows
@@ -132,7 +132,7 @@ public sealed class AppServices
     {
         get
         {
-            var dir = Path.GetFullPath(AppContext.BaseDirectory);
+            var dir = Path.GetFullPath(AppPaths.AppFolder);
             return new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 }
                 .Select(Environment.GetFolderPath)
                 .Where(path => path.Length > 0)

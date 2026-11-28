@@ -13,6 +13,16 @@ internal static class V2StartupTests
             Equal(new LaunchRequest(LaunchKind.ScanFile, @"C:\a b\x.exe"), LaunchRequest.Parse(["--scan-file", @"C:\a b\x.exe"]));
             Equal(new LaunchRequest(LaunchKind.Show), LaunchRequest.Parse(["--scan-file"]));
         }),
+        ("App folder: the exe's folder, never the single-file unpack folder", () =>
+        {
+            // The release exe unpacks to %TEMP%\.net\HashGuard\<id>\ and AppContext.BaseDirectory
+            // points there; config, keys and logs must still come from next to HashGuard.exe.
+            Equal(@"C:\Program Files\HashGuard", AppPaths.ResolveAppFolder(@"C:\Program Files\HashGuard\HashGuard.exe", @"C:\Users\u\AppData\Local\Temp\.net\HashGuard\O9DwFBnLz8NK\"));
+            Equal(@"D:\tools\bin\", AppPaths.ResolveAppFolder(@"C:\Program Files\dotnet\dotnet.exe", @"D:\tools\bin\"));
+            Equal(@"D:\tools\bin\", AppPaths.ResolveAppFolder(null, @"D:\tools\bin\"));
+            Equal(Path.GetDirectoryName(Environment.ProcessPath!), AppPaths.AppFolder);
+            Equal(Path.Combine(AppPaths.AppFolder, "config"), AppPaths.GetConfigDirectory());
+        }),
         ("Launch: messages round-trip; junk is refused", () =>
         {
             foreach (var request in new[] { new LaunchRequest(LaunchKind.Show), new LaunchRequest(LaunchKind.Minimized), new LaunchRequest(LaunchKind.ScheduledScan), new LaunchRequest(LaunchKind.ScanFile, @"C:\x.exe") })

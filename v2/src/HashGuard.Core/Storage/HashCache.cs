@@ -619,7 +619,7 @@ public sealed class HashCache
         // shaped like the cache would silently seed bogus entries.
         yield return AppPaths.GetHashCachePath();
         yield return Path.Combine(AppPaths.GetConfigDirectory(), "cache.json");
-        yield return Path.Combine(AppContext.BaseDirectory, "hash-cache.json");
+        yield return Path.Combine(AppPaths.AppFolder, "hash-cache.json");
     }
 
     private async Task LoadFromPathAsync(string cachePath)
