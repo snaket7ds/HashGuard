@@ -45,6 +45,24 @@ internal static class V2IntegrationTests
             Equal(mine, store.Daily);
             Equal(7, store.DailyHour);
         })),
+        ("Integration: start-up repair never creates an administrator task or anything new", () => WithTemp(dir =>
+        {
+            var mine = Write(dir, "v2", "HashGuard.exe");
+            // Running as administrator with "Run as administrator" on and a Run-key start: left as it is.
+            var store = new FakeStore { Run = $"\"{mine}\" --minimized" };
+            new WindowsIntegration(mine, isElevated: true, store).RepairAtStartup(new AppSettings { RunElevated = true, ScheduledDailyScan = true });
+            Equal<string?>(null, store.Task);
+            Equal($"\"{mine}\" --minimized", store.Run);
+            Equal<string?>(null, store.Daily);
+            Equal<string?>(null, store.Menu);
+
+            // A stale daily task is re-pointed without administrator rights.
+            var gone = Path.Combine(dir, "old", "HashGuard.exe");
+            var stale = new FakeStore { Daily = gone };
+            new WindowsIntegration(mine, isElevated: true, stale).RepairAtStartup(new AppSettings { RunElevated = true, ScheduledDailyScan = true });
+            Equal(mine, stale.Daily);
+            False(stale.DailyElevated);
+        })),
         ("Integration: start with Windows uses the Run key, or the elevated task when allowed", () => WithTemp(dir =>
         {
             var mine = Write(dir, "v2", "HashGuard.exe");

@@ -268,27 +268,30 @@ public sealed class WindowsIntegration(string executablePath, bool isElevated, I
 
     /// <summary>
     /// At start-up: re-points registrations that name a HashGuard.exe which no longer exists (moved
-    /// or reinstalled) to this copy, and upgrades a Run-key start to the elevated task once running
-    /// as administrator with "Run as administrator" on. Never throws.
+    /// or reinstalled) to this copy. It adds nothing new. Never throws.
     /// </summary>
     public void RepairAtStartup(AppSettings settings)
     {
         try
         {
-            var status = Read();
             if (IsStale(store.ContextMenuCommand))
             {
                 store.SetContextMenu(ExecutablePath);
             }
 
-            if (IsStale(store.RunCommand) || (status.StartWithWindows && settings.RunElevated && IsElevated && !status.StartsElevated))
+            // Only re-point what already exists, the same kind as before. A copy that has just started
+            // never creates an administrator sign-in task by itself: new, unsigned programs that run
+            // elevated and immediately add an elevated logon task look like malware installing itself,
+            // and Windows Security quarantined the beta for exactly that. The task is made when you
+            // switch "Run as administrator" on in Settings, or by the installer.
+            if (IsStale(store.RunCommand))
             {
-                SetStartWithWindows(on: true, settings.RunElevated);
+                store.SetRunCommand($"\"{ExecutablePath}\" {ElevatedStartupTask.StartupArguments}");
             }
 
-            if (IsStale(store.DailyTaskExecutable) || (settings.ScheduledDailyScan && store.DailyTaskExecutable is null && status.DailyScanOwner is null))
+            if (IsStale(store.DailyTaskExecutable))
             {
-                store.ApplyDailyTask(settings.ScheduledDailyScan, settings.ScheduledScanHour, ExecutablePath, settings.RunElevated && IsElevated);
+                store.ApplyDailyTask(settings.ScheduledDailyScan, settings.ScheduledScanHour, ExecutablePath, highestPrivileges: false);
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
