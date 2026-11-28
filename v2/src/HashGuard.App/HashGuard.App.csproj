@@ -26,7 +26,10 @@
     <!-- Windows App SDK 2.x embeds resources.pri into the single file; it needs the MSIX tooling targets for that (no MSIX is produced). -->
     <EnableMsixTooling>true</EnableMsixTooling>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- No ReadyToRun: it recompiles .NET's own System.Private.CoreLib.dll, which then loses
+         Microsoft's signature, and Windows Security quarantines that unsigned copy as
+         Trojan:Win32/Bearfoos.B!ml. Without it the runtime files stay Microsoft-signed (~70 ms slower start). -->
+    <PublishReadyToRun>false</PublishReadyToRun>
     <DebugType>none</DebugType>
   </PropertyGroup>
 
