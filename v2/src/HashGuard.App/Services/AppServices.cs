@@ -95,6 +95,9 @@ public sealed class AppServices
     /// <summary>A newer release found by the last check, or null.</summary>
     public UpdateOffer? AvailableUpdate { get; private set; }
 
+    /// <summary>Drops the last offer (the channel changed, so it may no longer apply).</summary>
+    public void ForgetUpdate() => AvailableUpdate = null;
+
     /// <summary>Raised (on a worker thread) when a check finds a newer release.</summary>
     public event Action<UpdateOffer>? UpdateFound;
 
@@ -102,7 +105,7 @@ public sealed class AppServices
     public async Task<UpdateOffer?> CheckForUpdateAsync(CancellationToken cancellationToken = default)
     {
         using var http = UpdateService.CreateClient(Version);
-        var offer = await new UpdateService(http, Version).CheckAsync(cancellationToken);
+        var offer = await new UpdateService(http, Version, UpdateChannels.IncludesPreviews(Settings.UpdateChannel, Version)).CheckAsync(cancellationToken);
         AvailableUpdate = offer;
         if (offer is not null)
         {
@@ -117,7 +120,7 @@ public sealed class AppServices
     {
         var exe = Environment.ProcessPath ?? throw new InvalidOperationException("HashGuard couldn't find its own program file.");
         using var http = UpdateService.CreateClient(Version);
-        var download = await new UpdateService(http, Version).DownloadAsync(offer, exe, status);
+        var download = await new UpdateService(http, Version, UpdateChannels.IncludesPreviews(Settings.UpdateChannel, Version)).DownloadAsync(offer, exe, status);
         return UpdateService.StartInstall(exe, download);
     }
 

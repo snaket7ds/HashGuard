@@ -71,17 +71,39 @@ public sealed record ReleaseVersion(Version Number, string Prerelease) : ICompar
 }
 
 /// <summary>A newer release that can be installed.</summary>
+/// <summary>
+/// Which releases a copy is offered. Until you pick one in Settings, a beta build stays on the
+/// beta channel and a release build on the stable channel.
+/// </summary>
+public static class UpdateChannels
+{
+    public const string Stable = "stable";
+    public const string Beta = "beta";
+
+    /// <summary>The channel in effect: the saved choice, else the one matching this build.</summary>
+    public static string Effective(string? saved, ReleaseVersion current) => saved?.Trim().ToLowerInvariant() switch
+    {
+        Stable => Stable,
+        Beta => Beta,
+        _ => current.IsPrerelease ? Beta : Stable,
+    };
+
+    public static bool IncludesPreviews(string? saved, ReleaseVersion current) => Effective(saved, current) == Beta;
+}
+
 public sealed record UpdateOffer(ReleaseVersion Version, string Notes, string ExeUrl, string ExpectedSha256, string? Sha256Url, string SignatureUrl);
 
 /// <summary>
 /// Updates from the GitHub releases, as v1 did and with v1's rules: the release must have a
 /// HashGuard.exe asset, its SHA-256 (the asset digest or a .sha256 asset), and HashGuard.exe.sig,
 /// a detached signature by the release key; a download is installed only when all three check out
-/// and its Authenticode publisher (if signed) matches this build's. A preview build is also
-/// offered newer previews; a release build only releases.
+/// and its Authenticode publisher (if signed) matches this build's. The beta channel is also
+/// offered previews (pre-releases); the stable channel only full releases. See <see cref="UpdateChannels"/>.
 /// </summary>
-public sealed class UpdateService(HttpClient http, ReleaseVersion current)
+public sealed class UpdateService(HttpClient http, ReleaseVersion current, bool? includePreviews = null)
 {
+    private readonly bool previews = includePreviews ?? current.IsPrerelease;
+
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
 
     private static string ReleasesUrl => $"https://api.github.com/repos/{AppConstants.GitHubOwner}/{AppConstants.GitHubRepo}/releases";
@@ -108,7 +130,7 @@ public sealed class UpdateService(HttpClient http, ReleaseVersion current)
         var newest = releases
             .Where(release => !release.Draft)
             .Select(release => (Release: release, Version: ReleaseVersion.TryParse(release.TagName)))
-            .Where(item => item.Version is not null && (current.IsPrerelease || !item.Version.IsPrerelease))
+            .Where(item => item.Version is not null && (previews || !item.Version.IsPrerelease))
             .OrderByDescending(item => item.Version)
             .FirstOrDefault();
         if (newest.Version is null || newest.Version.CompareTo(current) <= 0)

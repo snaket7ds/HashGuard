@@ -28,6 +28,23 @@ internal static class V2UpdateTests
             Equal("2.0.0-beta.1", Run(() => Service(json, "2.0.0-alpha.1").CheckAsync())!.Version.ToString());
             Equal<UpdateOffer?>(null, Run(() => Service(json, "2.0.0-beta.1").CheckAsync()));
         }),
+        ("Updates: a beta build stays on beta, a release on stable, until Settings changes the channel", () =>
+        {
+            var beta = ReleaseVersion.TryParse("2.0.0-beta.1")!;
+            var release = ReleaseVersion.TryParse("2.0.0")!;
+            Equal(UpdateChannels.Beta, UpdateChannels.Effective("", beta));
+            Equal(UpdateChannels.Stable, UpdateChannels.Effective(null, release));
+            Equal(UpdateChannels.Stable, UpdateChannels.Effective("stable", beta));
+            Equal(UpdateChannels.Beta, UpdateChannels.Effective(" Beta ", release));
+            Equal(UpdateChannels.Beta, UpdateChannels.Effective("nightly", beta));
+
+            var json = Releases(("v2.0.0", false), ("v2.0.1-beta.1", false), ("v2.0.0-beta.2", false));
+            // A 2.0.0 release on stable isn't offered previews; switched to beta it is.
+            Equal<UpdateOffer?>(null, Run(() => new UpdateService(Http(json), release, includePreviews: false).CheckAsync()));
+            Equal("2.0.1-beta.1", Run(() => new UpdateService(Http(json), release, includePreviews: true).CheckAsync())!.Version.ToString());
+            // A beta switched to stable is offered the full release only.
+            Equal("2.0.0", Run(() => new UpdateService(Http(json), beta, includePreviews: false).CheckAsync())!.Version.ToString());
+        }),
         ("Updates: a release without a signature or checksum is refused", () =>
         {
             const string unsigned = """[{"tag_name":"v9.0.0","draft":false,"body":"","assets":[{"name":"HashGuard.exe","browser_download_url":"https://x/exe","digest":"sha256:00"}]}]""";
@@ -63,6 +80,8 @@ internal static class V2UpdateTests
 
     private static UpdateService Service(string releasesJson, string current) =>
         new(new HttpClient(new Handler(_ => releasesJson)), ReleaseVersion.TryParse(current)!);
+
+    private static HttpClient Http(string releasesJson) => new(new Handler(_ => releasesJson));
 
     private static string Releases(params (string Tag, bool Draft)[] releases) =>
         "[" + string.Join(",", releases.Select(r =>

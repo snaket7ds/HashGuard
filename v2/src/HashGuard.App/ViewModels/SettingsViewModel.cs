@@ -53,6 +53,30 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnAutoUpdateChecksChanged(bool value) => Save();
 
+    /// <summary>0 = stable (full releases only), 1 = beta (previews too).</summary>
+    [ObservableProperty] public partial int UpdateChannelIndex { get; set; }
+
+    /// <summary>The saved choice; empty until you pick one, so the channel follows this build.</summary>
+    private string updateChannel = "";
+
+    partial void OnUpdateChannelIndexChanged(int value)
+    {
+        if (loading || value < 0)
+        {
+            return;
+        }
+
+        updateChannel = value == 1 ? UpdateChannels.Beta : UpdateChannels.Stable;
+        Save();
+
+        // An offer from the other channel may not apply any more.
+        AppServices.Instance.ForgetUpdate();
+        Offer = null;
+        UpdateStatus = value == 1
+            ? "Beta channel: you'll be offered previews and full releases. Check now to look."
+            : "Stable channel: you'll be offered full releases only. Check now to look.";
+    }
+
     public async Task CheckForUpdateAsync()
     {
         UpdateBusy = true;
@@ -201,6 +225,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             DeltaScanEnabled = s.DeltaScanEnabled;
             ThemeIndex = ThemeIndexOf(s);
             AutoUpdateChecks = s.AutoUpdateChecks;
+            updateChannel = s.UpdateChannel;
+            UpdateChannelIndex = UpdateChannels.Effective(s.UpdateChannel, AppServices.Instance.Version) == UpdateChannels.Beta ? 1 : 0;
             Offer = AppServices.Instance.AvailableUpdate;
             StartMinimized = s.StartMinimized;
             RunElevated = s.RunElevated;
@@ -294,6 +320,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         settings.ColorMode = ThemeName(ThemeIndex);
         settings.TrustedPublishers = [.. TrustedPublishers];
         settings.AutoUpdateChecks = AutoUpdateChecks;
+        settings.UpdateChannel = updateChannel;
         settings.StartMinimized = StartMinimized;
         settings.RunElevated = RunElevated;
         settings.ScheduledDailyScan = IntegrationReady ? DailyScan : settings.ScheduledDailyScan;

@@ -165,6 +165,8 @@ public sealed class AppSettings
     public bool RunElevated { get; set; }
     public bool ScanAllFiles { get; set; }
     public bool AutoUpdateChecks { get; set; }
+    /// <summary>"stable", "beta", or empty: follow this build (a beta gets betas, a release gets releases).</summary>
+    public string UpdateChannel { get; set; } = "";
     /// <summary>On by default since v1.1.0. A saved settings file keeps the user's own choice.</summary>
     public bool TelemetryEnabled { get; set; } = true;
     public string AnonymousInstallId { get; set; } = "";

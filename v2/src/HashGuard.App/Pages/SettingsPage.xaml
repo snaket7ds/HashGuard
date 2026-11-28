@@ -448,6 +448,21 @@
                         <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.AutoUpdateChecks, Mode=TwoWay}" OnContent="On" OffContent="Off" MinWidth="0"
                                       AutomationProperties.Name="Check for updates automatically" />
                     </Grid>
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Update channel" Style="{StaticResource RowTitleStyle}" />
+                            <TextBlock Text="Beta gets previews before everyone else, and full releases too. Stable gets full releases only." Style="{StaticResource RowHintStyle}" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="1" SelectedIndex="{x:Bind ViewModel.UpdateChannelIndex, Mode=TwoWay}" MinWidth="180" VerticalAlignment="Center"
+                                  AutomationProperties.Name="Update channel">
+                            <ComboBoxItem Content="Stable" />
+                            <ComboBoxItem Content="Beta" />
+                        </ComboBox>
+                    </Grid>
                 </StackPanel>
             </Border>
 
